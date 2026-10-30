@@ -51,3 +51,4 @@ fi
 systemctl daemon-reload
 systemctl enable clm-vsatellite.service
 echo "=== Installation complete. Start with: systemctl start clm-vsatellite ==="
+

@@ -36,3 +36,4 @@ USER clm
 ENV CLM_VSATELLITE_CONFIG=/etc/clm/vsatellite.yaml
 
 ENTRYPOINT ["/usr/local/bin/clm-vsatellite"]
+

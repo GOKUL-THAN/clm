@@ -404,3 +404,4 @@ func (a *Agent) reportResult(ctx context.Context, cmdID, status, result string) 
 		zap.String("status", status),
 	)
 }
+
