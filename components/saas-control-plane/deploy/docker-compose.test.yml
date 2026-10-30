@@ -1,0 +1,115 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: clm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: clm_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/000_keycloak_db.sql:/docker-entrypoint-initdb.d/000_keycloak_db.sql
+      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
+      - ./migrations/002_sso_fields.sql:/docker-entrypoint-initdb.d/002_sso_fields.sql
+      - ./migrations/003_tenant_security.sql:/docker-entrypoint-initdb.d/003_tenant_security.sql
+      - ./migrations/004_secure_command_transport.sql:/docker-entrypoint-initdb.d/004_secure_command_transport.sql
+      - ./init-seed.sql:/docker-entrypoint-initdb.d/005_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # This is an isolated test profile. Keycloak uses HTTP only behind the local
+  # nginx proxy; production-facing URLs must use HTTPS.
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: start --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASS:?set KEYCLOAK_ADMIN_PASS in deploy/.env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: clm
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: 8180
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME_URL: ${PUBLIC_URL:-http://localhost}/auth
+      KC_HOSTNAME_ADMIN_URL: ${PUBLIC_URL:-http://localhost}/auth
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+      CLM_SERVER_CLIENT_SECRET: ${CLM_SERVER_CLIENT_SECRET:?set CLM_SERVER_CLIENT_SECRET in deploy/.env}
+      CLM_ADMIN_PORTAL_URL: ${CLM_ADMIN_PORTAL_URL:-http://localhost}
+      CLM_GATEWAY_PORTAL_URL: ${CLM_GATEWAY_PORTAL_URL:-http://localhost}
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./keycloak/clm-realm.json:/opt/keycloak/data/import/clm-realm.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  clm-server:
+    build:
+      context: /opt/clm
+      dockerfile: deploy/Dockerfile.server
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      CLM_CONFIG: /etc/clm/server-test.yaml
+      GIN_MODE: debug
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
+      CLM_JWKS_URL: http://keycloak:8180/auth/realms/clm/protocol/openid-connect/certs
+      CLM_EXTERNAL_JWT_ISSUER: ${PUBLIC_URL:-http://localhost}/auth/realms/clm
+      CLM_EXTERNAL_JWT_AUDIENCE: clm-api
+      CLM_CLOUD_ACCOUNT_MASTER_KEY: ${CLM_CLOUD_ACCOUNT_MASTER_KEY:?set CLM_CLOUD_ACCOUNT_MASTER_KEY in deploy/.env}
+      KEYCLOAK_URL: http://keycloak:8180/auth
+      KEYCLOAK_REALM: clm
+      KEYCLOAK_ADMIN_REALM: master
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASS: ${KEYCLOAK_ADMIN_PASS:?set KEYCLOAK_ADMIN_PASS in deploy/.env}
+    volumes:
+      - /opt/clm/configs/server-test.yaml:/etc/clm/server-test.yaml:ro
+      - /opt/clm/web/admin-portal:/srv/admin-portal:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - /opt/clm/deploy/nginx-test.conf:/etc/nginx/conf.d/default.conf:ro
+      - /opt/clm/web/admin-portal:/usr/share/nginx/html:ro
+    depends_on:
+      - clm-server
+      - keycloak
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

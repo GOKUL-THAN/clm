@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go and dependencies ${{ matrix.module }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - components/saas-control-plane
+          - components/satellite-gateway
+          - components/vsatellite
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+        with:
+          go-version: '1.22.12'
+          cache: false
+      - name: Check formatting of changed Go files
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          base_sha="${PR_BASE_SHA:-${PUSH_BEFORE_SHA:-}}"
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+            base_sha=$(git rev-parse HEAD^ 2>/dev/null || true)
+          fi
+          if [[ -n "$base_sha" ]]; then
+            files=$(git diff --name-only --diff-filter=ACMRT "$base_sha" "$GITHUB_SHA" -- '${{ matrix.module }}/*.go' '${{ matrix.module }}/**/*.go')
+          else
+            files=$(git ls-files -- '${{ matrix.module }}/*.go' '${{ matrix.module }}/**/*.go')
+          fi
+          [[ -z "$files" ]] && exit 0
+          unformatted=$(printf '%s\n' "$files" | xargs gofmt -l)
+          test -z "$unformatted" || { printf '%s\n' "$unformatted"; exit 1; }
+      - name: Prepare monorepo module
+        run: |
+          bash .github/scripts/prepare-go-module.sh '${{ matrix.module }}' "$RUNNER_TEMP/clm-module"
+          cd "$RUNNER_TEMP/clm-module"
+          go mod edit -module=github.com/m2p/clm
+          go mod tidy
+      - name: Vet
+        run: cd "$RUNNER_TEMP/clm-module" && go vet ./...
+      - name: Test
+        run: cd "$RUNNER_TEMP/clm-module" && go test ./... -count=1
+      - name: Build
+        run: cd "$RUNNER_TEMP/clm-module" && go build ./...
+      - name: Dependency vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          cd "$RUNNER_TEMP/clm-module"
+          govulncheck ./...
+
+  syntax:
+    name: Script and configuration syntax
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check JavaScript syntax
+        run: |
+          node --check components/saas-control-plane/web/admin-portal/app.js
+          node --check components/satellite-gateway/web/gateway-ui/app.js
+          node --check components/shared/legacy-dashboard/app.js
+      - name: Check shell syntax
+        run: |
+          bash -n .github/scripts/prepare-go-module.sh
+          bash -n components/shared/scripts/install-cli.sh
+          bash -n components/shared/scripts/install-server.sh
+          bash -n components/shared/scripts/install-satellite.sh
+          bash -n components/saas-control-plane/deploy/deploy-test.sh
+          bash -n components/saas-control-plane/deploy/run-tests.sh
+          bash -n components/satellite-gateway/deploy/build-src-bundle.sh
+      - name: Check JSON and YAML syntax
+        run: |
+          python3 -m json.tool components/saas-control-plane/deploy/keycloak/clm-realm.json >/dev/null
+          docker run --rm -v "$PWD:/work" mikefarah/yq:4.44.6 \
+            eval-all '.' \
+            /work/components/saas-control-plane/configs/server.yaml \
+            /work/components/saas-control-plane/configs/server-test.yaml \
+            /work/components/satellite-gateway/configs/satellite.yaml \
+            /work/components/satellite-gateway/configs/satellite-test.yaml \
+            /work/components/saas-control-plane/deploy/docker-compose.yml \
+            /work/components/saas-control-plane/deploy/docker-compose.test.yml \
+            /work/.github/workflows/ci.yml >/dev/null
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Gitleaks 8.24.2
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.2 detect --source /repo --no-git --redact --verbose
+
+  filesystem-and-sbom:
+    name: Filesystem, IaC, and SBOM
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Trivy filesystem and configuration scan 0.58.2
+        run: |
+          docker run --rm -v "$PWD:/src" aquasec/trivy:0.58.2 fs \
+            --exit-code 1 --severity CRITICAL --scanners vuln,secret,misconfig /src
+      - name: Generate CycloneDX SBOM with Syft 1.18.1
+        run: |
+          docker run --rm -v "$PWD:/src" anchore/syft:v1.18.1 \
+            dir:/src -o cyclonedx-json=/src/sbom.cdx.json
+          test -s sbom.cdx.json
+
+  containers:
+    name: Container image scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build images
+        run: |
+          docker build -t clm-server:ci -f components/saas-control-plane/deploy/Dockerfile.server components/saas-control-plane
+          bash .github/scripts/prepare-go-module.sh components/satellite-gateway "$RUNNER_TEMP/gateway-image"
+          docker build -t clm-satellite:ci -f "$RUNNER_TEMP/gateway-image/deploy/Dockerfile.satellite" "$RUNNER_TEMP/gateway-image"
+      - name: Scan images with Trivy 0.58.2
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.2 image \
+            --exit-code 1 --severity CRITICAL clm-server:ci
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.2 image \
+            --exit-code 1 --severity CRITICAL clm-satellite:ci

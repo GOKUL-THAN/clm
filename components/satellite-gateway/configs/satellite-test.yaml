@@ -1,0 +1,49 @@
+id: "${CLM_TEST_SATELLITE_ID}"
+name: "test-gateway"
+env: "test"
+saas_endpoint: "http://localhost:8080"
+connector_mode: "direct"
+log_level: "debug"
+auth:
+  mode: "saas-delegated"
+  saas_login_url: "http://localhost:8080"
+  allowed_roles:
+    - "super_admin"
+    - "admin"
+    - "tenant_admin"
+    - "cert_manager"
+    - "approver"
+    - "operator"
+    - "viewer"
+  allowed_issuers:
+    - "clm-server-test"
+crypto:
+  default_algorithm: "ECDSA"
+  ecdsa_curve: "P-256"
+  rsa_bits: 4096
+  hsm_enabled: false
+secrets:
+  provider: "aws"
+  region: "ap-south-1"
+  kms_key_id: "${CLM_TEST_AWS_KMS_KEY_ID}"
+  prefix: "clm-test/"
+discovery:
+  schedule: "0 2 * * *"
+  networks:
+    - "10.0.0.0/16"
+  ports:
+    - 443
+    - 8443
+    - 636
+    - 6443
+  concurrency: 50
+  timeout: "5s"
+
+state:
+  dir: ""
+commands:
+  poll_interval: "100ms"
+  timeout: "5s"
+  lease_renewal: "1s"
+  max_result_bytes: 4096
+  network_retries: 2

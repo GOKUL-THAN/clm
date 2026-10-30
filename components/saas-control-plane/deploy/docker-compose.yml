@@ -1,0 +1,80 @@
+# Local development stack. Supply runtime credentials through deploy/.env;
+# there are intentionally no tracked credential fallbacks.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: clm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: clm_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../internal/store/postgres/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
+      - ../internal/store/postgres/migrations/002_sso_fields.sql:/docker-entrypoint-initdb.d/002_sso_fields.sql
+      - ../internal/store/postgres/migrations/003_tenant_security.sql:/docker-entrypoint-initdb.d/003_tenant_security.sql
+      - ../internal/store/postgres/migrations/004_secure_command_transport.sql:/docker-entrypoint-initdb.d/004_secure_command_transport.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  clm-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      CLM_CONFIG: /etc/clm/server.yaml
+      CLM_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      CLM_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      CLM_JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
+      CLM_JWKS_URL: ${CLM_JWKS_URL:-}
+      CLM_EXTERNAL_JWT_ISSUER: ${CLM_EXTERNAL_JWT_ISSUER:-}
+      CLM_EXTERNAL_JWT_AUDIENCE: ${CLM_EXTERNAL_JWT_AUDIENCE:-}
+      CLM_CLOUD_ACCOUNT_MASTER_KEY: ${CLM_CLOUD_ACCOUNT_MASTER_KEY:?set CLM_CLOUD_ACCOUNT_MASTER_KEY in deploy/.env}
+    volumes:
+      - ../configs/server.yaml:/etc/clm/server.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  clm-satellite:
+    build:
+      context: ../../satellite-gateway
+      dockerfile: deploy/Dockerfile.satellite
+    environment:
+      CLM_SATELLITE_CONFIG: /etc/clm/satellite.yaml
+      CLM_SATELLITE_TOKEN: ${CLM_SATELLITE_TOKEN:?set the one-time provisioned credential in deploy/.env}
+      CLM_SATELLITE_ID: ${CLM_SATELLITE_ID:?set the provisioned satellite ID in deploy/.env}
+      CLM_SATELLITE_NAME: ${CLM_SATELLITE_NAME:?set CLM_SATELLITE_NAME in deploy/.env}
+      CLM_SAAS_ENDPOINT: ${CLM_SAAS_ENDPOINT:?set an HTTPS control-plane endpoint in deploy/.env}
+      CLM_TLS_SERVER_NAME: ${CLM_TLS_SERVER_NAME:?set the control-plane certificate server name in deploy/.env}
+    volumes:
+      - ../../satellite-gateway/configs/satellite.yaml:/etc/clm/satellite.yaml:ro
+      - ${CLM_GATEWAY_CERT_DIR:?set CLM_GATEWAY_CERT_DIR in deploy/.env}:/etc/clm/certs:ro
+      - satellite_state:/var/lib/clm/state
+    depends_on:
+      - clm-server
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  satellite_state:

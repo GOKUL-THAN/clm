@@ -1,0 +1,47 @@
+port: 8080
+host: "0.0.0.0"
+env: "test"
+log_level: "debug"
+
+database:
+  host: "postgres"
+  port: 5432
+  user: "clm"
+  password: "${POSTGRES_PASSWORD}"
+  dbname: "clm_db"
+  sslmode: "disable"
+
+redis:
+  addr: "redis:6379"
+  password: "${REDIS_PASSWORD}"
+  db: 0
+
+jwt:
+  secret: "${JWT_SECRET}"
+  expiry_minutes: 120
+  refresh_days: 14
+  issuer: "clm-server-test"
+  audience: "clm-api-test"
+  external_issuer: "${CLM_EXTERNAL_JWT_ISSUER}"
+  external_audience: "${CLM_EXTERNAL_JWT_AUDIENCE}"
+  jwks_url: "${CLM_JWKS_URL}"
+  allowed_algorithms: ["HS256", "RS256"]
+  jwks_cache_ttl: "5m"
+  jwks_http_timeout: "5s"
+
+cloud_accounts:
+  master_key: "${CLM_CLOUD_ACCOUNT_MASTER_KEY}"
+
+grpc:
+  port: 9090
+
+tls:
+  enabled: false
+  client_auth: "none"
+
+gateway:
+  allow_insecure_legacy: true
+  lease_duration: "2m"
+  max_pull_commands: 10
+  max_result_bytes: 262144
+  retry_base: "5s"

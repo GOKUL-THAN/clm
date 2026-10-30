@@ -1,0 +1,49 @@
+# ==============================================================================
+# CLM vSatellite Endpoint Agent Configuration
+# ==============================================================================
+# vSatellite is an outbound-only lightweight agent designed to run in private
+# VPCs, subnets, Kubernetes clusters, or on-premises segments where the central
+# Satellite Gateway has no direct network ingress.
+# ==============================================================================
+
+# Unique identity for this vSatellite agent instance
+id: vsat-ind-aps1-uat-01
+name: "M2P UAT VPC-01 vSatellite Scanner & Deployer"
+
+# Central Satellite Gateway coordinator endpoint (port 9090)
+gateway_endpoint: "http://127.0.0.1:9090"
+
+# Initial enrollment token issued from the Gateway Portal (vSatellites -> Generate Token)
+# Once enrolled, the returned agent_secret can be pasted below or managed automatically
+token: ""
+agent_secret: ""
+
+# Network placement metadata
+vpc: "vpc-0dde6a20ec9b5f5f3"
+subnet: "subnet-021e60b959a95cf82"
+
+# CIDR ranges assigned to this agent for local TLS scanning
+cidrs:
+  - "10.125.0.0/16"
+
+# Supported operational capabilities
+capabilities:
+  - scan_cidr
+  - deploy_cert
+  - health_check
+
+# Heartbeat interval in seconds (default: 30s; gateway marks offline after 120s)
+heartbeat_interval_sec: 30
+
+# Ports probed during TLS discovery sweeps
+scan_ports:
+  - 443
+  - 8443
+  - 636
+  - 6443
+
+# Maximum concurrent worker goroutines for scanning
+concurrency: 50
+
+# Logging level: debug, info, warn, error
+log_level: info

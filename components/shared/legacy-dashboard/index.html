@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLM - Certificate Lifecycle Management</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔐</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #2563eb; --primary-dark: #1d4ed8; --primary-light: #dbeafe;
+            --success: #10b981; --success-light: #d1fae5;
+            --warning: #f59e0b; --warning-light: #fef3c7;
+            --danger: #ef4444; --danger-light: #fee2e2;
+            --purple: #7c3aed; --purple-light: #ede9fe;
+            --bg: #f1f5f9; --card: #ffffff; --border: #e2e8f0;
+            --text: #1e293b; --text-muted: #64748b; --text-light: #94a3b8;
+            --sidebar-bg: #1e293b; --sidebar-text: #cbd5e1; --sidebar-active: #2563eb;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+        .sidebar { width: 240px; background: var(--sidebar-bg); color: var(--sidebar-text); min-height: 100vh; position: fixed; left: 0; top: 0; padding: 1.5rem 0; z-index: 200; }
+        .sidebar-brand { padding: 0 1.5rem 1.5rem; border-bottom: 1px solid #334155; margin-bottom: 1rem; }
+        .sidebar-brand h1 { font-size: 1.2rem; color: #fff; display: flex; align-items: center; gap: 0.5rem; }
+        .sidebar-brand .env { font-size: 0.65rem; background: var(--warning); color: #000; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-weight: 700; }
+        .nav-section { padding: 0 0.75rem; margin-bottom: 0.5rem; }
+        .nav-section-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-light); padding: 0.5rem 0.75rem; }
+        .nav-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.85rem; transition: all 0.15s; color: var(--sidebar-text); text-decoration: none; }
+        .nav-item:hover { background: #334155; color: #fff; }
+        .nav-item.active { background: var(--sidebar-active); color: #fff; }
+        .nav-item .icon { width: 18px; text-align: center; }
+        .nav-item .badge-nav { margin-left: auto; background: var(--danger); color: #fff; font-size: 0.6rem; padding: 0.1rem 0.4rem; border-radius: 1rem; }
+        .main { margin-left: 240px; flex: 1; min-height: 100vh; }
+        .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+        .topbar h2 { font-size: 1.1rem; font-weight: 600; }
+        .topbar .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); display: inline-block; margin-right: 0.5rem; }
+        .topbar .user-info { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); }
+        .content { padding: 1.5rem 2rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; position: relative; overflow: hidden; }
+        .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .stat-card.blue::before { background: var(--primary); }
+        .stat-card.green::before { background: var(--success); }
+        .stat-card.yellow::before { background: var(--warning); }
+        .stat-card.red::before { background: var(--danger); }
+        .stat-card.purple::before { background: var(--purple); }
+        .stat-card .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-card .value { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }
+        .stat-card .sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+        .panel { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; margin-bottom: 1.5rem; }
+        .panel-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+        .panel-header h3 { font-size: 0.9rem; font-weight: 600; }
+        .panel-body { padding: 1rem 1.25rem; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        th { text-align: left; padding: 0.6rem 0.75rem; background: #f8fafc; border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        td { padding: 0.7rem 0.75rem; border-bottom: 1px solid var(--border); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fafc; }
+        .badge { padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 600; display: inline-block; }
+        .badge-active { background: var(--success-light); color: #065f46; }
+        .badge-pending { background: var(--warning-light); color: #92400e; }
+        .badge-expired { background: var(--danger-light); color: #991b1b; }
+        .badge-revoked { background: #f1f5f9; color: #475569; }
+        .badge-online { background: var(--success-light); color: #065f46; }
+        .badge-offline { background: var(--danger-light); color: #991b1b; }
+        .badge-registering { background: var(--primary-light); color: #1e40af; }
+        .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.7rem; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+        .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+        .form-group { margin-bottom: 0.75rem; }
+        .form-group label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.25rem; text-transform: uppercase; }
+        .form-group input, .form-group select { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 0.375rem; font-size: 0.85rem; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+        .expiry-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; margin-top: 0.3rem; }
+        .expiry-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        .hidden { display: none; }
+        .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); }
+        .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+        .login-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+        .login-card { background: var(--card); border: 1px solid var(--border); border-radius: 1rem; padding: 2.5rem; width: 100%; max-width: 380px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .login-card h2 { margin-bottom: 0.5rem; }
+        .login-card p { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+        .login-card .error { color: var(--danger); font-size: 0.8rem; margin-top: 0.5rem; display: none; }
+        .satellite-card { display: flex; align-items: center; gap: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 0.5rem; margin-bottom: 0.75rem; }
+        .satellite-card .sat-icon { width: 40px; height: 40px; border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+        .satellite-card .sat-info { flex: 1; }
+        .satellite-card .sat-info h4 { font-size: 0.85rem; }
+        .satellite-card .sat-info p { font-size: 0.75rem; color: var(--text-muted); }
+        .satellite-card .sat-meta { text-align: right; font-size: 0.75rem; color: var(--text-muted); }
+        .policy-card { padding: 1rem; border: 1px solid var(--border); border-radius: 0.5rem; margin-bottom: 0.75rem; }
+        .policy-card h4 { font-size: 0.85rem; margin-bottom: 0.25rem; }
+        .policy-card p { font-size: 0.75rem; color: var(--text-muted); }
+        .policy-card .policy-value { font-size: 0.8rem; font-weight: 600; color: var(--primary); }
+        .policy-input { padding: 0.4rem 0.6rem; border: 1px solid var(--primary); border-radius: 0.375rem; font-size: 0.8rem; max-width: 300px; }
+    </style>
+</head>
+<body>
+    <!-- Login Overlay -->
+    <div class="login-overlay" id="login-overlay">
+        <div class="login-card">
+            <h2>🔐 CLM</h2>
+            <p>Certificate Lifecycle Management - Sign in to continue</p>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="login-email" value="admin@m2pfintech.com" placeholder="admin@m2pfintech.com">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="login-password" placeholder="Enter password">
+            </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" onclick="doLogin()">Sign In</button>
+            <div class="error" id="login-error"></div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <h1>🔐 CLM <span class="env">TEST</span></h1>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Overview</div>
+            <a class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')"><span class="icon">📊</span> Dashboard</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Management</div>
+            <a class="nav-item" data-page="certificates" onclick="navigate('certificates')"><span class="icon">📜</span> Certificates</a>
+            <a class="nav-item" data-page="endpoints" onclick="navigate('endpoints')"><span class="icon">🖥️</span> Endpoints</a>
+            <a class="nav-item" data-page="satellites" onclick="navigate('satellites')"><span class="icon">📡</span> Satellites</a>
+            <a class="nav-item" data-page="providers" onclick="navigate('providers')"><span class="icon">🏢</span> CA Providers</a>
+            <a class="nav-item" data-page="policies" onclick="navigate('policies')"><span class="icon">🛡️</span> Policies</a>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Operations</div>
+            <a class="nav-item" data-page="discovery" onclick="navigate('discovery')"><span class="icon">🔍</span> Discovery</a>
+            <a class="nav-item" data-page="expiring" onclick="navigate('expiring')"><span class="icon">⏰</span> Expiring Soon <span class="badge-nav" id="expiry-count"></span></a>
+            <a class="nav-item" data-page="approvals" onclick="navigate('approvals')"><span class="icon">✅</span> Approvals</a>
+        </div>
+        <div class="nav-section" style="margin-top:auto;padding-top:1rem;border-top:1px solid #334155">
+            <a class="nav-item" onclick="logout()"><span class="icon">🚪</span> Logout</a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main" id="main-content">
+        <div class="topbar">
+            <h2 id="page-title">Dashboard</h2>
+            <div class="user-info">
+                <span class="status-dot" id="server-dot"></span>
+                <span id="user-email">admin@m2pfintech.com</span>
+            </div>
+        </div>
+        <div class="content" id="content-area"></div>
+    </div>
+<script src="app.js?v=7"></script>
+</body>
+</html>

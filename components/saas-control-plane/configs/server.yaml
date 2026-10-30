@@ -1,0 +1,54 @@
+port: 8080
+host: "0.0.0.0"
+env: "development"
+log_level: "info"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "clm"
+  password: "${CLM_DB_PASSWORD}"
+  dbname: "clm_db"
+  sslmode: "disable"
+
+redis:
+  addr: "localhost:6379"
+  password: "${CLM_REDIS_PASSWORD}"
+  db: 0
+
+jwt:
+  secret: "${CLM_JWT_SECRET}"
+  expiry_minutes: 60
+  refresh_days: 7
+  issuer: "clm-server"
+  audience: "clm-api"
+  external_issuer: "${CLM_EXTERNAL_JWT_ISSUER}"
+  external_audience: "${CLM_EXTERNAL_JWT_AUDIENCE}"
+  jwks_url: "${CLM_JWKS_URL}"
+  allowed_algorithms: ["HS256", "RS256"]
+  jwks_cache_ttl: "5m"
+  jwks_http_timeout: "5s"
+
+cloud_accounts:
+  # In production this must resolve to exactly 32 bytes. Prefer file:// mounted secrets.
+  master_key: "${CLM_CLOUD_ACCOUNT_MASTER_KEY}"
+
+grpc:
+  port: 9090
+
+# Development defaults. Production requires enabled TLS, client_auth: required,
+# and a CA bundle that validates gateway client certificates.
+tls:
+  enabled: false
+  cert_path: "${CLM_TLS_CERT_PATH}"
+  key_path: "${CLM_TLS_KEY_PATH}"
+  client_auth: "none"
+  client_ca_path: "${CLM_GATEWAY_CLIENT_CA_PATH}"
+
+gateway:
+  # Explicit development-only escape hatch. Keep false unless testing a v1 gateway.
+  allow_insecure_legacy: false
+  lease_duration: "2m"
+  max_pull_commands: 10
+  max_result_bytes: 262144
+  retry_base: "5s"

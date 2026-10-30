@@ -1,0 +1,30 @@
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+
+# git is needed by `go mod tidy` to resolve module sources.
+RUN apk --no-cache add git
+
+COPY . .
+
+# The gateway ships as a single module on the host, so the module path is
+# rewritten to match the github.com/m2p/clm/internal/... imports used across the
+# monorepo. go.sum is regenerated here for the same reason, which is why
+# dependencies are not pre-downloaded in a separate layer.
+RUN sed -i 's|module github.com/m2p/clm/satellite-gateway|module github.com/m2p/clm|' go.mod && \
+    go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/clm-satellite ./cmd/clm-satellite
+
+# Runtime
+FROM alpine:3.19
+
+RUN apk --no-cache add ca-certificates tzdata openssl
+
+COPY --from=builder /bin/clm-satellite /usr/local/bin/clm-satellite
+COPY configs/satellite.yaml /etc/clm/satellite.yaml
+
+ENV CLM_SATELLITE_CONFIG=/etc/clm/satellite.yaml
+
+EXPOSE 8080 9090
+
+ENTRYPOINT ["clm-satellite"]

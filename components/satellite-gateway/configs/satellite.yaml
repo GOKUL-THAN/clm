@@ -1,0 +1,60 @@
+id: "${CLM_SATELLITE_ID}"
+name: "${CLM_SATELLITE_NAME}"
+env: "production"
+saas_endpoint: "${CLM_SAAS_ENDPOINT}"
+connector_mode: "direct"
+tls_cert_path: "/etc/clm/certs/satellite.crt"
+tls_key_path: "/etc/clm/certs/satellite.key"
+tls_ca_path: "/etc/clm/certs/control-plane-ca.crt"
+tls_server_name: "${CLM_TLS_SERVER_NAME}"
+insecure_skip_verify: false
+log_level: "info"
+
+auth:
+  mode: "saas-delegated"
+  saas_login_url: "${CLM_SAAS_ENDPOINT}/login"
+  allowed_roles:
+    - "super_admin"
+    - "tenant_admin"
+    - "cert_manager"
+    - "approver"
+    - "operator"
+    - "viewer"
+  allowed_issuers:
+    - "clm-server"
+
+crypto:
+  default_algorithm: "ECDSA"
+  ecdsa_curve: "P-256"
+  rsa_bits: 4096
+  hsm_enabled: false
+
+secrets:
+  provider: "aws"
+  region: "${CLM_AWS_REGION}"
+  kms_key_id: "${CLM_AWS_KMS_KEY_ID}"
+  prefix: "clm/"
+
+discovery:
+  schedule: "0 2 * * *"
+  networks:
+    - "10.0.0.0/16"
+    - "172.16.0.0/12"
+  ports:
+    - 443
+    - 8443
+    - 636
+    - 993
+    - 6443
+  concurrency: 100
+  timeout: "5s"
+
+state:
+  dir: "/var/lib/clm/state"
+
+commands:
+  poll_interval: "5s"
+  timeout: "15m"
+  lease_renewal: "45s"
+  max_result_bytes: 262144
+  network_retries: 5

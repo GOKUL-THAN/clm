@@ -1,0 +1,63 @@
+# Runtime environment and credential files. Keep safe templates tracked.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+!*.env.example
+*.secret
+*.token
+**/secrets/
+**/.install-credentials
+**/.satellite-install-info
+**/satellite.env
+
+# Runtime private keys, certificates, trust stores, and signing material.
+*.pem
+*.key
+*.crt
+*.cer
+*.csr
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+
+# Runtime state and local databases.
+*.pid
+*.state
+*.db
+*.sqlite
+*.sqlite3
+**/data/
+**/state/
+
+# Source packages may legitimately use these names; keep them versioned while
+# the broad rules above continue to exclude runtime artifact directories.
+!**/internal/state/
+!**/internal/state/**
+!**/internal/secrets/
+!**/internal/secrets/**
+!**/internal/**/data/
+!**/internal/**/data/**
+
+# Build, coverage, scan, and generated SBOM output.
+bin/
+dist/
+coverage.out
+coverage.html
+*.test
+*.tar.gz
+sbom*.json
+trivy*.json
+
+# Go
+vendor/
+go.sum.tmp
+
+# Local tooling
+.DS_Store
+.idea/
+.vscode/

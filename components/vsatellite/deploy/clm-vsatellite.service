@@ -1,0 +1,27 @@
+[Unit]
+Description=CLM vSatellite Endpoint Agent
+Documentation=https://github.com/m2pfintech/CLM
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/clm-vsatellite
+ExecStart=/opt/clm-vsatellite/bin/clm-vsatellite
+Environment="CLM_VSATELLITE_CONFIG=/etc/clm/vsatellite.yaml"
+Restart=on-failure
+RestartSec=10s
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
