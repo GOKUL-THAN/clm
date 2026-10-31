@@ -7,9 +7,11 @@ import (
 	"github.com/m2p/clm/internal/api/rest/handlers"
 	"github.com/m2p/clm/internal/api/rest/middleware"
 	"github.com/m2p/clm/internal/core"
+	"github.com/m2p/clm/internal/saas/approval"
 	"github.com/m2p/clm/internal/saas/cloudaccounts"
 	"github.com/m2p/clm/internal/saas/deploy"
 	"github.com/m2p/clm/internal/saas/identity"
+	"github.com/m2p/clm/internal/saas/onboarding"
 	"github.com/m2p/clm/internal/saas/sso"
 	"github.com/m2p/clm/internal/saas/tenant"
 	"github.com/m2p/clm/internal/saas/users"
@@ -27,6 +29,8 @@ type Dependencies struct {
 	CloudAccountService *cloudaccounts.Service
 	AuditService        *auditservice.Service
 	IdentityService     *identity.Service
+	ApprovalEngine      *approval.Engine
+	OnboardingService   *onboarding.Service
 	SatelliteRepo       core.SatelliteRepository
 	Config              *config.ServerConfig
 	Logger              *zap.Logger
@@ -118,6 +122,19 @@ func NewRouter(deps *Dependencies) *gin.Engine {
 				tenants.POST("/:id/sso", middleware.RoleRequired("super_admin", "admin", "tenant_admin"), ssoHandler.ConfigureSSO)
 				tenants.GET("/:id/sso", middleware.RoleRequired("super_admin", "admin", "tenant_admin"), ssoHandler.GetSSO)
 				tenants.DELETE("/:id/sso", middleware.RoleRequired("super_admin", "admin", "tenant_admin"), ssoHandler.DeleteSSO)
+				tenants.GET("/:id/sso/mappings", middleware.RoleRequired("super_admin", "admin", "tenant_admin"), ssoHandler.ListGroupMappings)
+				tenants.POST("/:id/sso/mappings", middleware.RoleRequired("super_admin", "admin", "tenant_admin"), ssoHandler.CreateGroupMapping)
+				tenants.DELETE("/:id/sso/mappings/:mapping_id", middleware.RoleRequired("super_admin", "admin", "tenant_admin"), ssoHandler.DeleteGroupMapping)
+			}
+		}
+
+		// Enterprise customer onboarding (hybrid-managed AWS account bootstrap)
+		if deps.OnboardingService != nil {
+			onboardingHandler := handlers.NewOnboardingHandler(deps.OnboardingService)
+			onboardingGroup := api.Group("/onboarding")
+			{
+				onboardingGroup.POST("/preflight", middleware.RoleRequired("super_admin", "admin"), onboardingHandler.Preflight)
+				onboardingGroup.POST("/bootstrap", middleware.RoleRequired("super_admin", "admin"), onboardingHandler.Bootstrap)
 			}
 		}
 
@@ -177,6 +194,20 @@ func NewRouter(deps *Dependencies) *gin.Engine {
 		if deps.AuditService != nil {
 			auditHandler := handlers.NewAuditHandler(deps.AuditService)
 			api.GET("/audits", middleware.RoleRequired("super_admin", "admin", "tenant_admin", "auditor"), auditHandler.List)
+		}
+
+		// Corporate multi-level approval workflow with segregation of duties (ARC-004)
+		if deps.ApprovalEngine != nil {
+			approvalHandler := handlers.NewApprovalHandler(deps.ApprovalEngine)
+			approvals := api.Group("/approvals")
+			{
+				approvals.POST("", approvalHandler.Submit)
+				approvals.GET("/pending", middleware.RoleRequired("super_admin", "admin", "tenant_admin", "approver"), approvalHandler.ListPending)
+				approvals.GET("/:id", approvalHandler.GetRequest)
+				approvals.POST("/:id/approve", middleware.RoleRequired("super_admin", "admin", "tenant_admin", "approver"), approvalHandler.Approve)
+				approvals.POST("/:id/reject", middleware.RoleRequired("super_admin", "admin", "tenant_admin", "approver"), approvalHandler.Reject)
+				approvals.POST("/:id/escalate", middleware.RoleRequired("super_admin", "admin", "tenant_admin", "approver"), approvalHandler.Escalate)
+			}
 		}
 
 		// Keycloak realm administration, surfaced natively in the Admin Portal

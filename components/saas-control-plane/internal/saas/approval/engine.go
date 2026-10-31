@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	ErrRequestNotFound  = errors.New("approval request not found")
-	ErrAlreadyResolved  = errors.New("request already resolved")
-	ErrNotAuthorized    = errors.New("user not authorized to approve this request")
+	ErrRequestNotFound      = errors.New("approval request not found")
+	ErrAlreadyResolved      = errors.New("request already resolved")
+	ErrNotAuthorized        = errors.New("user not authorized to approve this request")
+	ErrSegregationOfDuties  = errors.New("segregation of duties: requester cannot approve their own request")
 )
 
 // Engine handles the multi-level approval workflow.
@@ -104,7 +105,7 @@ func (e *Engine) SubmitRequest(ctx context.Context, tenantID uuid.UUID, req *Sub
 	return approval, nil
 }
 
-// Approve approves a pending request.
+// Approve approves a pending request with segregation of duties (ARC-004) and multi-tier stage progression.
 func (e *Engine) Approve(ctx context.Context, requestID uuid.UUID, approverID uuid.UUID, comment string) (*models.ApprovalRequest, error) {
 	req, err := e.repo.GetByID(ctx, requestID)
 	if err != nil {
@@ -115,7 +116,52 @@ func (e *Engine) Approve(ctx context.Context, requestID uuid.UUID, approverID uu
 		return nil, ErrAlreadyResolved
 	}
 
+	// ARC-004: Segregation of Duties Enforcement (Requesters cannot approve their own requests)
+	if req.RequestedBy != uuid.Nil && req.RequestedBy == approverID {
+		e.logger.Warn("segregation of duties violation attempt",
+			zap.String("request_id", requestID.String()),
+			zap.String("requester", req.RequestedBy.String()),
+			zap.String("approver", approverID.String()),
+		)
+		return nil, ErrSegregationOfDuties
+	}
+
 	now := time.Now()
+
+	// Multi-Tier Stage Progression:
+	// If currently at L1 and the request represents high financial/security impact, promote to L2
+	if req.Level == models.ApprovalL1 && (req.EstimatedCost >= 100 || req.RequestType == "cert_purchase") {
+		req.Level = models.ApprovalL2
+		req.Comment = "L1 Approved by " + approverID.String() + ": " + comment + " [Advanced to L2 Security Review]"
+		req.UpdatedAt = now
+		req.SLADeadline = now.Add(time.Duration(e.slaForLevel(models.ApprovalL2)) * time.Hour)
+		if err := e.repo.Update(ctx, req); err != nil {
+			return nil, err
+		}
+		e.logger.Info("approval request advanced from L1 to L2",
+			zap.String("request_id", requestID.String()),
+			zap.String("approver", approverID.String()),
+		)
+		return req, nil
+	}
+
+	// If currently at L2 and requires Executive/CISO signoff (cost >= $500), promote to L3
+	if req.Level == models.ApprovalL2 && req.EstimatedCost >= 500 {
+		req.Level = models.ApprovalL3
+		req.Comment = "L2 Approved by " + approverID.String() + ": " + comment + " [Advanced to L3 Executive Review]"
+		req.UpdatedAt = now
+		req.SLADeadline = now.Add(time.Duration(e.slaForLevel(models.ApprovalL3)) * time.Hour)
+		if err := e.repo.Update(ctx, req); err != nil {
+			return nil, err
+		}
+		e.logger.Info("approval request advanced from L2 to L3",
+			zap.String("request_id", requestID.String()),
+			zap.String("approver", approverID.String()),
+		)
+		return req, nil
+	}
+
+	// Final approval reached
 	req.Status = models.ApprovalApproved
 	req.ResolvedBy = &approverID
 	req.ResolvedAt = &now
@@ -126,9 +172,42 @@ func (e *Engine) Approve(ctx context.Context, requestID uuid.UUID, approverID uu
 		return nil, err
 	}
 
-	e.logger.Info("request approved",
+	e.logger.Info("request fully approved",
 		zap.String("request_id", requestID.String()),
 		zap.String("approver", approverID.String()),
+		zap.String("final_level", string(req.Level)),
+	)
+
+	return req, nil
+}
+
+// Escalate manually escalates a pending approval request to the next tier or executive review.
+func (e *Engine) Escalate(ctx context.Context, requestID uuid.UUID, escalaterID uuid.UUID, reason string) (*models.ApprovalRequest, error) {
+	req, err := e.repo.GetByID(ctx, requestID)
+	if err != nil {
+		return nil, ErrRequestNotFound
+	}
+
+	if req.Status != models.ApprovalPending {
+		return nil, ErrAlreadyResolved
+	}
+
+	now := time.Now()
+	nextLevel := e.escalateLevel(req.Level)
+	req.Level = nextLevel
+	req.Comment = "Escalated by " + escalaterID.String() + ": " + reason
+	req.SLADeadline = now.Add(time.Duration(e.slaForLevel(nextLevel)) * time.Hour)
+	req.UpdatedAt = now
+
+	if err := e.repo.Update(ctx, req); err != nil {
+		return nil, err
+	}
+
+	e.logger.Warn("request manually escalated",
+		zap.String("request_id", requestID.String()),
+		zap.String("escalater", escalaterID.String()),
+		zap.String("new_level", string(nextLevel)),
+		zap.String("reason", reason),
 	)
 
 	return req, nil

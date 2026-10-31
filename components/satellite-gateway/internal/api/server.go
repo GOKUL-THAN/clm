@@ -11,6 +11,8 @@ import (
 	"github.com/m2p/clm/internal/satellite/ca"
 	"github.com/m2p/clm/internal/satellite/credstore"
 	"github.com/m2p/clm/internal/satellite/deployment"
+	"github.com/m2p/clm/internal/satellite/deployment/sync"
+	"github.com/m2p/clm/internal/satellite/deployment/migration"
 	"github.com/m2p/clm/internal/satellite/discovery/scanners"
 	"github.com/m2p/clm/internal/satellite/policy"
 	"github.com/m2p/clm/internal/satellite/vsatellite"
@@ -64,29 +66,35 @@ type Server struct {
 	policies *policy.Store
 	// keyDir is where private keys for CA-issued certificates are written.
 	keyDir string
-	logger *zap.Logger
+	syncController       *sync.MultiCloudSyncController
+	complianceController *audit.ComplianceController
+	migrationController  *migration.BulkMigrationController
+	rotationController  *sync.RotationController
+	logger               *zap.Logger
 }
 
 // Options configures the API server.
 type Options struct {
-	SatelliteID   string
-	SatelliteName string
-	SaaSEndpoint  string
-	Version       string
-	Auth          *Authenticator
-	Scanner       *scanners.NetworkScanner
-	DNSScanner    *scanners.DNSScanner
-	Deployer      *deployment.Executor
-	Agents        *vsatellite.Coordinator
-	ACME          *ACMEManager
-	Alerter       *Alerter
-	CARegistry    *ca.Registry
-	Credentials   *credstore.Store
-	EndpointStore *EndpointStore
-	Audit         *audit.Logger
-	Policies      *policy.Store
-	KeyDir        string
-	Logger        *zap.Logger
+	SatelliteID          string
+	SatelliteName        string
+	SaaSEndpoint         string
+	Version              string
+	Auth                 *Authenticator
+	Scanner              *scanners.NetworkScanner
+	DNSScanner           *scanners.DNSScanner
+	Deployer             *deployment.Executor
+	Agents               *vsatellite.Coordinator
+	ACME                 *ACMEManager
+	Alerter              *Alerter
+	CARegistry           *ca.Registry
+	Credentials          *credstore.Store
+	EndpointStore        *EndpointStore
+	Audit                *audit.Logger
+	Policies             *policy.Store
+	SyncController       *sync.MultiCloudSyncController
+	ComplianceController *audit.ComplianceController
+	KeyDir               string
+	Logger               *zap.Logger
 }
 
 // NewServer builds the portal API.
@@ -109,6 +117,8 @@ func NewServer(o Options) *Server {
 		certificateOperationLocks: make(map[string]*sync.Mutex),
 		audit:                     o.Audit,
 		policies:                  o.Policies,
+		syncController:            o.SyncController,
+		complianceController:      o.ComplianceController,
 		keyDir:                    o.KeyDir,
 		deployer:                  o.Deployer,
 		agents:                    o.Agents,
@@ -215,8 +225,11 @@ func (s *Server) Handler() http.Handler {
 		"POST /api/v1/scheduler/run/{job}": s.handleRunJob,
 
 		// Reporting and compliance.
-		"GET /api/v1/reports/compliance": s.handleComplianceReport,
-		"GET /api/v1/reports/export":     s.handleExport,
+		"GET /api/v1/reports/compliance":               s.handleComplianceReport,
+		"GET /api/v1/reports/corporate-compliance":     s.handleCorporateComplianceReport,
+		"GET /api/v1/reports/corporate-compliance/csv": s.handleCorporateComplianceCSV,
+		"GET /api/v1/reports/audit-bundle":             s.handleAuditBundle,
+		"GET /api/v1/reports/export":                   s.handleExport,
 
 		// Audit trail: who did what, when.
 		"GET /api/v1/audit":        s.handleAuditQuery,
@@ -234,6 +247,20 @@ func (s *Server) Handler() http.Handler {
 		"POST /api/v1/vsatellites/{id}/command":          s.handleDispatchVSatelliteCommand,
 		"DELETE /api/v1/vsatellites/{id}":                s.handleDecommissionVSatellite,
 		"DELETE /api/v1/vsatellites/enrollments/{token}": s.handleRevokeEnrolment,
+
+		// Corporate multi-cloud synchronization engine (AWS ACM & GCP Cert Manager)
+		"GET /api/v1/sync/multicloud/status":  s.handleMultiCloudSyncStatus,
+		"POST /api/v1/sync/multicloud/run":    s.handleMultiCloudSyncRun,
+		"GET /api/v1/sync/multicloud/history": s.handleMultiCloudSyncHistory,
+
+		// Bulk certificate migration & secret ingestion (corporate onboarding)
+		"POST /api/v1/migration/validate": s.handleMigrationValidate,
+		"POST /api/v1/migration/import":   s.handleMigrationImport,
+		"GET /api/v1/migration/history":   s.handleMigrationHistory,
+
+		// Automated zero-downtime certificate rotation & rollback
+		"GET /api/v1/rotation/status":        s.handleRotationStatus,
+		"POST /api/v1/rotation/execute/{id}": s.handleRotationExecute,
 	}
 	for pattern, h := range protected {
 		mux.Handle(pattern, s.requireAuth(h))

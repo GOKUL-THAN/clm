@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/m2p/clm/internal/api/rest"
+	"github.com/m2p/clm/internal/saas/approval"
 	"github.com/m2p/clm/internal/saas/cloudaccounts"
 	"github.com/m2p/clm/internal/saas/deploy"
 	"github.com/m2p/clm/internal/saas/identity"
+	"github.com/m2p/clm/internal/saas/onboarding"
 	"github.com/m2p/clm/internal/saas/sso"
 	"github.com/m2p/clm/internal/saas/tenant"
 	"github.com/m2p/clm/internal/saas/users"
@@ -62,12 +64,15 @@ func main() {
 	satRepo := postgres.NewSatelliteRepository(db)
 	auditRepo := postgres.NewAuditRepository(db)
 	cloudAccountRepo := postgres.NewCloudAccountRepository(db)
+	approvalRepo := postgres.NewApprovalRepository(db)
 
 	// Initialize services
 	userService := users.NewService(userRepo, cfg.JWT, logger)
 	tenantService := tenant.NewService(tenantRepo, logger)
 	ssoService := sso.NewService(userRepo, tenantRepo, cfg.JWT, logger)
 	auditService := auditservice.NewService(auditRepo)
+	approvalEngine := approval.NewEngine(approvalRepo, logger)
+	onboardingService := onboarding.NewService(tenantRepo, userRepo, satRepo, logger)
 	var cloudAccountService *cloudaccounts.Service
 	if cfg.CloudAccounts.MasterKey != "" {
 		cloudAccountService, err = cloudaccounts.NewService(cloudAccountRepo, cfg.CloudAccounts.MasterKey)
@@ -121,6 +126,8 @@ func main() {
 		CloudAccountService: cloudAccountService,
 		AuditService:        auditService,
 		IdentityService:     identityService,
+		ApprovalEngine:      approvalEngine,
+		OnboardingService:   onboardingService,
 		SatelliteRepo:       satRepo,
 		Config:              cfg,
 		Logger:              logger,

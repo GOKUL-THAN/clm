@@ -53,3 +53,4 @@ echo -e "\033[36m==========================================================\033[
 echo "Press Ctrl+C to stop the automated services."
 
 wait $SERVER_PID
+

@@ -225,6 +225,9 @@ function navigate(page) {
         case 'cloud-accounts': loadCloudAccounts(); break;
         case 'gateways': loadGateways(); break;
         case 'jobs': loadDeployJobs(); break;
+        case 'approvals': loadApprovals(); break;
+        case 'onboarding': loadCustomerOnboarding(); break;
+        case 'directory-mappings': loadDirectoryMappings(); break;
         case 'activity': loadActivity(); break;
         case 'identity': loadIdentity(); break;
         // Sidebar entries and legacy links that open a specific hub tab.
@@ -3092,4 +3095,378 @@ function removeFromGroup(uid, gid, name) {
             showGroupMembers(gid, name);
             renderIdentityGroups();
         }).catch(e => alert(e.message));
+}
+
+// ==============================================================================
+// Enterprise Multi-Level Approvals & Governance (ARC-004)
+// ==============================================================================
+function loadApprovals() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1.25rem;border-left:4px solid var(--primary)">
+            <h3 style="margin-bottom:0.25rem">Multi-Level Approval Workflow & Segregation of Duties (ARC-004)</h3>
+            <p style="color:var(--muted);font-size:0.85rem">
+                All production wildcard orders, high-value commercial certificates, and elevated permissions require multi-tier authorization.
+                Requesters are strictly prohibited from approving their own lifecycle actions.
+            </p>
+        </div>
+        <div id="approvals-container"><p style="color:var(--muted)">Loading pending approvals...</p></div>
+    `;
+
+    apiGet('/api/v1/approvals/pending').then(data => {
+        const container = document.getElementById('approvals-container');
+        const list = data.approvals || [];
+        if (!list.length) {
+            container.innerHTML = '<div class="card"><p style="color:var(--muted)">No approval requests pending your review.</p></div>';
+            return;
+        }
+
+        let rows = list.map(a => {
+            let badgeClass = 'badge-active';
+            if (a.level === 'L2') badgeClass = 'badge-warning';
+            if (a.level === 'L3') badgeClass = 'badge-disabled';
+
+            return `
+                <tr>
+                    <td><strong>${esc(a.id)}</strong></td>
+                    <td><span class="badge ${badgeClass}" style="font-weight:700">${esc(a.level)}</span></td>
+                    <td>${esc(a.request_type)}</td>
+                    <td>${esc(a.requested_by_email || a.requested_by)}</td>
+                    <td>${esc(a.justification)}</td>
+                    <td>$${(a.estimated_cost || 0).toFixed(2)}</td>
+                    <td style="font-size:0.75rem">${esc(a.comment || 'Awaiting review')}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="doApprove('${esc(a.id)}')">Approve</button>
+                        <button class="btn btn-danger" onclick="doReject('${esc(a.id)}')">Reject</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Request ID</th>
+                            <th>Tier Level</th>
+                            <th>Type</th>
+                            <th>Requester</th>
+                            <th>Justification</th>
+                            <th>Cost</th>
+                            <th>Progress / Comment</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    }).catch(e => {
+        document.getElementById('approvals-container').innerHTML = `<div class="card"><p style="color:var(--danger)">${esc(e.message)}</p></div>`;
+    });
+}
+
+function doApprove(id) {
+    apiPost(`/api/v1/approvals/${encodeURIComponent(id)}/approve`, { comment: "Approved via Admin Portal" })
+        .then(res => {
+            if (res.error) {
+                alert("Approval Error: " + res.error);
+            } else {
+                alert("Decision recorded: " + (res.message || "Approved"));
+                loadApprovals();
+            }
+        }).catch(e => alert(e.message));
+}
+
+function doReject(id) {
+    const reason = prompt("Enter rejection reason:");
+    if (!reason) return;
+    apiPost(`/api/v1/approvals/${encodeURIComponent(id)}/reject`, { comment: reason })
+        .then(res => {
+            alert("Request rejected.");
+            loadApprovals();
+        }).catch(e => alert(e.message));
+}
+
+// ==============================================================================
+// Enterprise Customer / Tenant Onboarding (Hybrid Managed Cloud Architecture)
+// ==============================================================================
+function loadCustomerOnboarding() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1.25rem;border-left:4px solid var(--primary)">
+            <h3 style="margin-bottom:0.25rem">Enterprise Customer Onboarding (Hybrid Managed VPC)</h3>
+            <p style="color:var(--muted);font-size:0.85rem">
+                Onboard a new enterprise tenant into dedicated AWS VPC infrastructure. Preflights cross-account STS trust,
+                enforces strict quotas, provisions initial tenant security leads, and generates primary gateway pairing tokens.
+            </p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+            <div class="card">
+                <h4 style="margin-bottom:1rem;color:var(--text)">1. Customer Cloud Specification</h4>
+                <div class="form-group">
+                    <label>Organization Slug (lowercase)</label>
+                    <input type="text" id="ob-slug" value="m2p-hyc-uat" placeholder="e.g. m2p-hyc-uat">
+                </div>
+                <div class="form-group">
+                    <label>Organization Legal / Display Name</label>
+                    <input type="text" id="ob-name" value="M2P Hybrid Cloud UAT" placeholder="e.g. M2P Financial Technologies">
+                </div>
+                <div class="form-group">
+                    <label>Lead Security / Cloud Contact Email</label>
+                    <input type="email" id="ob-email" value="cloud-sec@m2pfintech.com" placeholder="cloud@customer.io">
+                </div>
+                <div class="form-group">
+                    <label>Customer AWS Account ID (12 digits)</label>
+                    <input type="text" id="ob-account" value="279078306945" placeholder="e.g. 279078306945">
+                </div>
+                <div class="form-group">
+                    <label>Primary Cloud Region</label>
+                    <input type="text" id="ob-region" value="ap-south-1" placeholder="e.g. ap-south-1">
+                </div>
+                <div class="form-group">
+                    <label>Customer VPC ID</label>
+                    <input type="text" id="ob-vpc" value="vpc-00ec0a6fc7686398c" placeholder="e.g. vpc-00ec0a6fc7686398c">
+                </div>
+                <div class="form-group">
+                    <label>Cross-Account AssumeRole ARN</label>
+                    <input type="text" id="ob-role" value="arn:aws:iam::279078306945:role/CrewpeOrchestratorRole">
+                </div>
+                <div class="form-group">
+                    <label>STS External ID</label>
+                    <input type="text" id="ob-extid" value="db95ac738a746230ddda613271903536">
+                </div>
+                <div class="form-group">
+                    <label>Plan Tier</label>
+                    <select id="ob-plan" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+                        <option value="enterprise" selected>Enterprise (10k certs, 50 gateways)</option>
+                        <option value="fintech-sovereign">Fintech Sovereign (Unlimited, Dedicated HSM)</option>
+                        <option value="growth">Growth (100 certs, 5 gateways)</option>
+                        <option value="starter">Starter (5 certs, 1 gateway)</option>
+                    </select>
+                </div>
+                <div style="margin-top:1.25rem;display:flex;gap:0.75rem">
+                    <button class="btn" style="background:#475569;color:#fff" onclick="runPreflight()">Verify Preflight Contract</button>
+                    <button class="btn btn-primary" onclick="runBootstrap()">Provision Customer</button>
+                </div>
+            </div>
+
+            <div>
+                <div class="card" id="preflight-results-card">
+                    <h4 style="margin-bottom:0.75rem">2. Preflight Verification Status</h4>
+                    <p style="color:var(--muted);font-size:0.85rem">Click "Verify Preflight Contract" to validate parameters against corporate security rules.</p>
+                </div>
+                <div class="card hidden" id="bootstrap-results-card" style="margin-top:1rem;border-color:var(--success)">
+                    <h4 style="margin-bottom:0.75rem;color:var(--success)">3. Customer Provisioning Dossier</h4>
+                    <div id="bootstrap-details"></div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function getOnboardingPayload() {
+    return {
+        slug: (document.getElementById('ob-slug').value || '').trim(),
+        name: (document.getElementById('ob-name').value || '').trim(),
+        contact_email: (document.getElementById('ob-email').value || '').trim(),
+        aws_account_id: (document.getElementById('ob-account').value || '').trim(),
+        region: (document.getElementById('ob-region').value || '').trim(),
+        vpc_id: (document.getElementById('ob-vpc').value || '').trim(),
+        cross_account_role_arn: (document.getElementById('ob-role').value || '').trim(),
+        external_id: (document.getElementById('ob-extid').value || '').trim(),
+        plan: document.getElementById('ob-plan').value
+    };
+}
+
+function runPreflight() {
+    const payload = getOnboardingPayload();
+    const card = document.getElementById('preflight-results-card');
+    card.innerHTML = '<p style="color:var(--muted)">Evaluating preflight rules...</p>';
+
+    apiPost('/api/v1/onboarding/preflight', payload).then(res => {
+        let checks = (res.checks || []).map(c => {
+            const icon = c.passed ? '<span style="color:var(--success)">&#10004;</span>' : '<span style="color:var(--danger)">&#10008;</span>';
+            return `<li style="padding:0.35rem 0;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between">
+                <span>${icon} <strong>${esc(c.name)}</strong></span>
+                <span style="font-size:0.75rem;color:var(--muted)">${esc(c.message)}</span>
+            </li>`;
+        }).join('');
+
+        const banner = res.valid 
+            ? '<div style="background:#d1fae5;color:#065f46;padding:0.5rem;border-radius:0.375rem;margin-bottom:0.75rem;font-weight:600">All Enterprise Preflight Checks Passed! Ready to Bootstrap.</div>'
+            : '<div style="background:#fee2e2;color:#991b1b;padding:0.5rem;border-radius:0.375rem;margin-bottom:0.75rem;font-weight:600">Preflight Validation Failed. Review errors below.</div>';
+
+        card.innerHTML = `
+            <h4 style="margin-bottom:0.75rem">2. Preflight Verification Status</h4>
+            ${banner}
+            <ul style="list-style:none;font-size:0.82rem">${checks}</ul>
+        `;
+    }).catch(e => {
+        card.innerHTML = `<p style="color:var(--danger)">Preflight evaluation failed: ${esc(e.message)}</p>`;
+    });
+}
+
+function runBootstrap() {
+    const payload = getOnboardingPayload();
+    const card = document.getElementById('bootstrap-results-card');
+    const details = document.getElementById('bootstrap-details');
+    card.classList.remove('hidden');
+    details.innerHTML = '<p style="color:var(--muted)">Provisioning tenant, security leads, and gateway pairing tokens...</p>';
+
+    apiPost('/api/v1/onboarding/bootstrap', payload).then(res => {
+        if (res.error) {
+            details.innerHTML = `<p style="color:var(--danger)">Bootstrap failed: ${esc(res.error)}</p>`;
+            return;
+        }
+
+        details.innerHTML = `
+            <div style="font-size:0.85rem">
+                <p><strong>Tenant ID:</strong> <code>${esc(res.tenant_id)}</code></p>
+                <p><strong>Slug:</strong> ${esc(res.slug)} | <strong>Plan:</strong> ${esc(res.plan)}</p>
+                <p><strong>Initial Admin Email:</strong> ${esc(res.admin_email)}</p>
+                <p><strong>Temporary Secret:</strong> <code style="background:#fef3c7;padding:0.2rem 0.4rem;border-radius:0.25rem">${esc(res.temporary_secret)}</code></p>
+                <div style="margin-top:1rem">
+                    <p style="font-weight:600">Primary Customer Gateway Bootstrap Command:</p>
+                    <pre style="background:#0f172a;color:#38bdf8;padding:0.75rem;border-radius:0.5rem;font-size:0.75rem;overflow-x:auto;margin-top:0.35rem">${esc(res.primary_gateway.install_script)}</pre>
+                </div>
+            </div>
+        `;
+    }).catch(e => {
+        details.innerHTML = `<p style="color:var(--danger)">Bootstrap error: ${esc(e.message)}</p>`;
+    });
+}
+
+
+// ==============================================================================
+// Enterprise Directory Group Mappings (AWS IAM Identity Center / SAML / OIDC)
+// ==============================================================================
+function loadDirectoryMappings() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1.25rem;border-left:4px solid var(--primary)">
+            <h3 style="margin-bottom:0.25rem">Enterprise Directory Group-to-Role Mappings</h3>
+            <p style="color:var(--muted);font-size:0.85rem">
+                Map incoming enterprise directory groups (AWS IAM Identity Center permission sets, Okta groups, Azure AD groups, Keycloak roles)
+                directly to internal CLM tenant roles with priority-based conflict resolution and Just-In-Time role synchronization.
+            </p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem">
+            <div class="card">
+                <h4 style="margin-bottom:1rem">Active Directory Group Rules</h4>
+                <div id="mappings-table-container"><p style="color:var(--muted)">Loading directory group rules...</p></div>
+            </div>
+
+            <div class="card">
+                <h4 style="margin-bottom:1rem">Add Group Mapping Rule</h4>
+                <div class="form-group">
+                    <label>Enterprise Group Name / Claim</label>
+                    <input type="text" id="map-group-name" placeholder="e.g. AWSReservedSSO_AdministratorAccess">
+                </div>
+                <div class="form-group">
+                    <label>Target CLM Role</label>
+                    <select id="map-target-role" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+                        <option value="super_admin">super_admin (Full Platform Access)</option>
+                        <option value="admin">admin (Tenant Administrator)</option>
+                        <option value="operator">operator (SecOps / Certificates)</option>
+                        <option value="auditor">auditor (Compliance & Audits)</option>
+                        <option value="viewer">viewer (Read-Only)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Priority (1-100, Higher wins)</label>
+                    <input type="number" id="map-priority" value="80" min="1" max="100">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="map-description" placeholder="SecOps or Cloud Admins">
+                </div>
+                <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" onclick="saveDirectoryMapping()">Save Rule</button>
+            </div>
+        </div>
+    `;
+
+    renderDirectoryMappingsTable();
+}
+
+function renderDirectoryMappingsTable() {
+    const tenantId = (currentUser && currentUser.tenant_id) || 'tenant-m2p-uat';
+    apiGet(`/api/v1/tenants/${encodeURIComponent(tenantId)}/sso/mappings`).then(res => {
+        const mappings = res.mappings || [];
+        const container = document.getElementById('mappings-table-container');
+        if (!container) return;
+
+        if (mappings.length === 0) {
+            container.innerHTML = '<p style="color:var(--muted)">No directory group rules configured yet. Add a rule using the form on the right.</p>';
+            return;
+        }
+
+        let rows = mappings.map(m => `
+            <tr>
+                <td><code>${esc(m.group_name)}</code></td>
+                <td><span class="badge badge-active">${esc(m.target_role)}</span></td>
+                <td><strong>${esc(m.priority)}</strong></td>
+                <td style="font-size:0.75rem;color:var(--muted)">${esc(m.description || '-')}</td>
+                <td>
+                    <button class="btn btn-danger" style="padding:0.25rem 0.5rem;font-size:0.75rem" onclick="deleteDirectoryMapping('${esc(m.id)}')">Delete</button>
+                </td>
+            </tr>
+        `).join('');
+
+        container.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Directory Group Name</th>
+                        <th>Target Role</th>
+                        <th>Priority</th>
+                        <th>Description</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }).catch(e => {
+        const container = document.getElementById('mappings-table-container');
+        if (container) container.innerHTML = `<p style="color:var(--danger)">Failed to load rules: ${esc(e.message)}</p>`;
+    });
+}
+
+function saveDirectoryMapping() {
+    const tenantId = (currentUser && currentUser.tenant_id) || 'tenant-m2p-uat';
+    const groupName = (document.getElementById('map-group-name').value || '').trim();
+    const targetRole = document.getElementById('map-target-role').value;
+    const priority = parseInt(document.getElementById('map-priority').value, 10) || 50;
+    const description = (document.getElementById('map-description').value || '').trim();
+
+    if (!groupName) {
+        alert('Group Name is required.');
+        return;
+    }
+
+    const payload = {
+        group_name: groupName,
+        target_role: targetRole,
+        priority: priority,
+        description: description
+    };
+
+    apiPost(`/api/v1/tenants/${encodeURIComponent(tenantId)}/sso/mappings`, payload).then(res => {
+        alert('Directory group rule saved successfully!');
+        document.getElementById('map-group-name').value = '';
+        document.getElementById('map-description').value = '';
+        renderDirectoryMappingsTable();
+    }).catch(e => alert('Error saving rule: ' + e.message));
+}
+
+function deleteDirectoryMapping(mappingId) {
+    if (!confirm('Are you sure you want to remove this directory mapping rule?')) return;
+    const tenantId = (currentUser && currentUser.tenant_id) || 'tenant-m2p-uat';
+    apiDelete(`/api/v1/tenants/${encodeURIComponent(tenantId)}/sso/mappings/${encodeURIComponent(mappingId)}`).then(() => {
+        renderDirectoryMappingsTable();
+    }).catch(e => alert('Error deleting rule: ' + e.message));
 }

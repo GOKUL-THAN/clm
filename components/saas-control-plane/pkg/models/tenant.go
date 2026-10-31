@@ -91,3 +91,10 @@ type TenantSettings struct {
 	MonthlyBudget        float64   `json:"monthly_budget" db:"monthly_budget"`
 	AlertChannels        []string  `json:"alert_channels" db:"alert_channels"`
 }
+
+// PlanQuota specifies operational resource quotas for a plan tier.
+type PlanQuota struct {
+	MaxCerts      int `json:"max_certs"`
+	MaxSatellites int `json:"max_satellites"`
+	MaxUsers      int `json:"max_users"`
+}

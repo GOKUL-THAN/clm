@@ -362,6 +362,90 @@ func (h *SSOHandler) DeleteSSO(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "SSO disabled"})
 }
 
+// --- Enterprise Directory & IdP Group Mappings ---
+
+// ListGroupMappings returns all directory group-to-role mappings for a tenant.
+// GET /api/v1/tenants/:id/sso/mappings
+func (h *SSOHandler) ListGroupMappings(c *gin.Context) {
+	tenantIDStr := c.Param("id")
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant ID"})
+		return
+	}
+	if !middleware.RequireTenantAccess(c, tenantID) {
+		return
+	}
+
+	mappings := h.ssoService.GroupMapper().ListMappings(tenantID)
+	c.JSON(http.StatusOK, gin.H{
+		"mappings": mappings,
+		"count":    len(mappings),
+	})
+}
+
+// CreateGroupMapping adds or updates a directory group-to-role rule.
+// POST /api/v1/tenants/:id/sso/mappings
+func (h *SSOHandler) CreateGroupMapping(c *gin.Context) {
+	tenantIDStr := c.Param("id")
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant ID"})
+		return
+	}
+	if !middleware.RequireRole(c, "super_admin", "admin") {
+		return
+	}
+	if !middleware.RequireTenantAccess(c, tenantID) {
+		return
+	}
+
+	var req sso.GroupRoleMapping
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body", "detail": err.Error()})
+		return
+	}
+
+	saved, err := h.ssoService.GroupMapper().AddMapping(c.Request.Context(), tenantID, &req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"mapping": saved})
+}
+
+// DeleteGroupMapping deletes a directory group-to-role rule.
+// DELETE /api/v1/tenants/:id/sso/mappings/:mapping_id
+func (h *SSOHandler) DeleteGroupMapping(c *gin.Context) {
+	tenantIDStr := c.Param("id")
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant ID"})
+		return
+	}
+	if !middleware.RequireRole(c, "super_admin", "admin") {
+		return
+	}
+	if !middleware.RequireTenantAccess(c, tenantID) {
+		return
+	}
+
+	mappingIDStr := c.Param("mapping_id")
+	mappingID, err := uuid.Parse(mappingIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mapping ID"})
+		return
+	}
+
+	if err := h.ssoService.GroupMapper().DeleteMapping(tenantID, mappingID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "group mapping deleted"})
+}
+
 // --- Helpers ---
 
 func (h *SSOHandler) parseTenantID(c *gin.Context) (uuid.UUID, error) {
