@@ -106,3 +106,4 @@ func (s *Server) handleMigrationHistory(w http.ResponseWriter, r *http.Request) 
 		"count":   len(history),
 	})
 }
+

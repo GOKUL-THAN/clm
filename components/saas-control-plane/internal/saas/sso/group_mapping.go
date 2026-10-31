@@ -180,3 +180,4 @@ func isValidRole(r models.UserRole) bool {
 		return false
 	}
 }
+

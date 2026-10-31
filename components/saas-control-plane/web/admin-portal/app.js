@@ -228,6 +228,10 @@ function navigate(page) {
         case 'approvals': loadApprovals(); break;
         case 'onboarding': loadCustomerOnboarding(); break;
         case 'directory-mappings': loadDirectoryMappings(); break;
+        case 'departments': loadDepartments(); break;
+        case 'itsm': loadITSMWarRoom(); break;
+        case 'risk': loadRiskRegister(); break;
+        case 'integrations': loadIntegrations(); break;
         case 'activity': loadActivity(); break;
         case 'identity': loadIdentity(); break;
         // Sidebar entries and legacy links that open a specific hub tab.
@@ -3469,4 +3473,461 @@ function deleteDirectoryMapping(mappingId) {
     apiDelete(`/api/v1/tenants/${encodeURIComponent(tenantId)}/sso/mappings/${encodeURIComponent(mappingId)}`).then(() => {
         renderDirectoryMappingsTable();
     }).catch(e => alert('Error deleting rule: ' + e.message));
+}
+
+
+// ==============================================================================
+// 1. Departments & Financial Cost Centers (SAP / Workday / FinOps)
+// ==============================================================================
+function loadDepartments() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1.25rem;border-left:4px solid var(--primary)">
+            <h3 style="margin-bottom:0.25rem">Corporate Departments & Financial Cost Centers</h3>
+            <p style="color:var(--muted);font-size:0.85rem">
+                Allocate commercial CA purchasing budgets, track month-to-date (MTD) expenditure, and enforce active certificate quotas across enterprise business units.
+            </p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem">
+            <div class="card">
+                <h4 style="margin-bottom:1rem">Active Business Units</h4>
+                <div id="departments-table-container"><p style="color:var(--muted)">Loading departments...</p></div>
+            </div>
+
+            <div class="card">
+                <h4 style="margin-bottom:1rem">Add Department / Cost Center</h4>
+                <div class="form-group"><label>Department Name</label><input type="text" id="dept-name" placeholder="e.g. Core Banking & Settlements"></div>
+                <div class="form-group"><label>Department Code</label><input type="text" id="dept-code" placeholder="DEPT-BANK-01"></div>
+                <div class="form-group"><label>Financial Cost Center</label><input type="text" id="dept-cost-center" placeholder="CC-FIN-1049"></div>
+                <div class="form-group"><label>Lead Email</label><input type="email" id="dept-lead" placeholder="banking-lead@m2pfintech.com"></div>
+                <div class="form-group"><label>Monthly Budget Cap (USD)</label><input type="number" id="dept-budget" value="5000"></div>
+                <div class="form-group"><label>Certificate Quota</label><input type="number" id="dept-quota" value="250"></div>
+                <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" onclick="saveDepartment()">Create Department</button>
+            </div>
+        </div>
+    `;
+
+    renderDepartments();
+}
+
+function renderDepartments() {
+    apiGet('/api/v1/departments').then(res => {
+        const list = res.departments || [];
+        const container = document.getElementById('departments-table-container');
+        if (!container) return;
+
+        if (list.length === 0) {
+            container.innerHTML = '<p style="color:var(--muted)">No departments configured. Add one on the right.</p>';
+            return;
+        }
+
+        let rows = list.map(d => {
+            const pct = Math.min(100, Math.round(((d.spent_usd || 0) / (d.budget_usd || 1)) * 100));
+            const barColor = pct > 85 ? 'var(--danger)' : pct > 60 ? 'var(--warning)' : 'var(--success)';
+            return `
+                <tr>
+                    <td><strong>${esc(d.name)}</strong><br><small style="color:var(--muted)">${esc(d.code)} | ${esc(d.cost_center)}</small></td>
+                    <td>${esc(d.lead_email)}</td>
+                    <td>$${(d.spent_usd || 0).toFixed(2)} / $${(d.budget_usd || 0).toFixed(2)}
+                        <div style="background:#e2e8f0;height:4px;border-radius:2px;margin-top:4px"><div style="background:${barColor};height:4px;width:${pct}%"></div></div>
+                    </td>
+                    <td><span class="badge badge-active">${d.cert_count || 0} / ${d.cert_quota || 250} certs</span></td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <table>
+                <thead>
+                    <tr><th>Department / Code</th><th>Lead</th><th>Budget Utilization (MTD)</th><th>Quota</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }).catch(e => {
+        const container = document.getElementById('departments-table-container');
+        if (container) container.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
+    });
+}
+
+function saveDepartment() {
+    const name = (document.getElementById('dept-name').value || '').trim();
+    const code = (document.getElementById('dept-code').value || '').trim();
+    const costCenter = (document.getElementById('dept-cost-center').value || '').trim();
+    const lead = (document.getElementById('dept-lead').value || '').trim();
+    const budget = parseFloat(document.getElementById('dept-budget').value) || 5000;
+    const quota = parseInt(document.getElementById('dept-quota').value, 10) || 250;
+
+    if (!name || !code) {
+        alert('Department name and code are required.');
+        return;
+    }
+
+    apiPost('/api/v1/departments', {
+        name: name,
+        code: code,
+        cost_center: costCenter,
+        lead_email: lead,
+        budget_usd: budget,
+        cert_quota: quota
+    }).then(res => {
+        alert('Department created successfully!');
+        document.getElementById('dept-name').value = '';
+        document.getElementById('dept-code').value = '';
+        renderDepartments();
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+// ==============================================================================
+// 2. ITSM Incidents & Service Requests (ServiceNow / ITIL)
+// ==============================================================================
+function loadITSMWarRoom() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1.25rem;border-left:4px solid var(--danger)">
+            <h3 style="margin-bottom:0.25rem">ITSM Incidents & Service Request War Room</h3>
+            <p style="color:var(--muted);font-size:0.85rem">
+                Real-time incident response and ITIL service requests for TLS certificate expirations, chain failures, and emergency rotation workflows.
+            </p>
+        </div>
+
+        <div style="display:flex;gap:1rem;margin-bottom:1rem">
+            <button class="btn btn-primary" onclick="showITSMTab('incidents')">Active Incidents</button>
+            <button class="btn" style="background:#475569;color:#fff" onclick="showITSMTab('requests')">Service Catalog Requests</button>
+        </div>
+
+        <div id="itsm-content-container"></div>
+    `;
+
+    showITSMTab('incidents');
+}
+
+function showITSMTab(tab) {
+    const container = document.getElementById('itsm-content-container');
+    if (!container) return;
+
+    if (tab === 'incidents') {
+        container.innerHTML = `
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                    <h4>Security & Availability Incidents (SEV-1 to SEV-4)</h4>
+                    <button class="btn btn-danger" onclick="promptRaiseIncident()">+ Declare Emergency Incident</button>
+                </div>
+                <div id="itsm-incidents-table"><p style="color:var(--muted)">Loading incidents...</p></div>
+            </div>
+        `;
+        renderIncidents();
+    } else {
+        container.innerHTML = `
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                    <h4>Self-Service Certificate Catalog Requests</h4>
+                    <button class="btn btn-primary" onclick="promptServiceRequest()">+ New Certificate Order Request</button>
+                </div>
+                <div id="itsm-requests-table"><p style="color:var(--muted)">Loading service requests...</p></div>
+            </div>
+        `;
+        renderServiceRequests();
+    }
+}
+
+function renderIncidents() {
+    apiGet('/api/v1/itsm/incidents').then(res => {
+        const list = res.incidents || [];
+        const table = document.getElementById('itsm-incidents-table');
+        if (!table) return;
+
+        if (list.length === 0) {
+            table.innerHTML = '<p style="color:var(--success)">No active incidents. Estate TLS health is normal.</p>';
+            return;
+        }
+
+        let rows = list.map(inc => {
+            const sevBadge = inc.severity === 'SEV1' ? 'badge-danger' : inc.severity === 'SEV2' ? 'badge-warning' : 'badge-active';
+            const statusBadge = inc.status === 'resolved' ? 'badge-active' : 'badge-danger';
+            return `
+                <tr>
+                    <td><code>${esc(inc.itsm_external_ref || inc.id)}</code></td>
+                    <td><span class="badge ${sevBadge}">${esc(inc.severity)}</span></td>
+                    <td><strong>${esc(inc.title)}</strong><br><small style="color:var(--muted)">Domain: ${esc(inc.affected_domain)}</small></td>
+                    <td><span class="badge badge-warning">Blast Radius: ${inc.blast_radius_score}/100</span></td>
+                    <td><span class="badge ${statusBadge}">${esc(inc.status)}</span></td>
+                    <td>
+                        ${inc.status !== 'resolved' ? `<button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem" onclick="resolveIncident('${esc(inc.id)}')">Resolve</button>` : '<small style="color:var(--muted)">Resolved</small>'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        table.innerHTML = `
+            <table>
+                <thead><tr><th>Ticket ID</th><th>Severity</th><th>Incident Summary</th><th>Blast Radius</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }).catch(e => {
+        const table = document.getElementById('itsm-incidents-table');
+        if (table) table.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
+    });
+}
+
+function promptRaiseIncident() {
+    const title = prompt('Enter Incident Summary:');
+    if (!title) return;
+    const domain = prompt('Enter Affected Domain Name:');
+    if (!domain) return;
+    const sev = prompt('Severity (SEV1, SEV2, SEV3, SEV4):', 'SEV1');
+
+    apiPost('/api/v1/itsm/incidents', {
+        title: title,
+        affected_domain: domain,
+        severity: sev.toUpperCase()
+    }).then(() => {
+        alert('Emergency incident created!');
+        renderIncidents();
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+function resolveIncident(id) {
+    const rootCause = prompt('Enter Root Cause Summary:', 'Expired token renewed');
+    if (!rootCause) return;
+    const remediation = prompt('Enter Remediation Actions Taken:', 'Atomic certificate rollout verified');
+
+    apiPost(`/api/v1/itsm/incidents/${encodeURIComponent(id)}/resolve`, {
+        root_cause: rootCause,
+        remediation_steps: remediation
+    }).then(() => {
+        alert('Incident successfully resolved and closed.');
+        renderIncidents();
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+function renderServiceRequests() {
+    apiGet('/api/v1/itsm/requests').then(res => {
+        const list = res.requests || [];
+        const table = document.getElementById('itsm-requests-table');
+        if (!table) return;
+
+        if (list.length === 0) {
+            table.innerHTML = '<p style="color:var(--muted)">No service catalog requests found.</p>';
+            return;
+        }
+
+        let rows = list.map(r => `
+            <tr>
+                <td><code>${esc(r.itsm_ticket_ref || r.id)}</code></td>
+                <td><strong>${esc(r.domain_name)}</strong></td>
+                <td>${esc(r.department || 'General')}</td>
+                <td><span class="badge badge-active">${esc(r.environment || 'prod')}</span></td>
+                <td>${r.validity_months || 12} mos (${esc(r.cert_type || 'ov')})</td>
+                <td><span class="badge badge-warning">${esc(r.status)}</span></td>
+            </tr>
+        `).join('');
+
+        table.innerHTML = `
+            <table>
+                <thead><tr><th>Request Ref</th><th>Domain</th><th>Department</th><th>Env</th><th>Type</th><th>Status</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }).catch(e => {
+        const table = document.getElementById('itsm-requests-table');
+        if (table) table.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
+    });
+}
+
+function promptServiceRequest() {
+    const domain = prompt('Enter Requested Domain Name (e.g. pay.m2pfintech.com):');
+    if (!domain) return;
+    const dept = prompt('Department Name:', 'Payments & Gateway');
+
+    apiPost('/api/v1/itsm/requests', {
+        domain_name: domain,
+        department: dept,
+        environment: 'prod',
+        cert_type: 'ov',
+        validity_months: 12,
+        requester_email: (currentUser && currentUser.email) || 'admin@m2pfintech.com'
+    }).then(() => {
+        alert('Service catalog order request submitted for approval!');
+        renderServiceRequests();
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+// ==============================================================================
+// 3. Cryptographic Risk Register (Deloitte / JPMorgan Chase / PQC)
+// ==============================================================================
+function loadRiskRegister() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1.25rem;border-left:4px solid var(--warning)">
+            <h3 style="margin-bottom:0.25rem">Enterprise Cryptographic Risk Register</h3>
+            <p style="color:var(--muted);font-size:0.85rem">
+                Continuous quantitative assessment of cryptographic vulnerability, Post-Quantum Cryptography (PQC) readiness, single-point-of-failure (SPOF) CA risks, and wildcard blast radiuses.
+            </p>
+        </div>
+
+        <div class="stats">
+            <div class="card stat"><div class="value" id="risk-score" style="color:var(--warning)">-</div><div class="label">Overall Risk Index (0-100)</div></div>
+            <div class="card stat"><div class="value" id="risk-rating">-</div><div class="label">Exposure Level</div></div>
+            <div class="card stat"><div class="value" id="risk-pqc">-</div><div class="label">PQC Transition State</div></div>
+            <div class="card stat"><div class="value" id="risk-total" style="color:var(--danger)">-</div><div class="label">Identified Vulnerabilities</div></div>
+        </div>
+
+        <div class="card">
+            <h4 style="margin-bottom:1rem">Prioritized Cryptographic Risk Findings</h4>
+            <div id="risk-items-table"><p style="color:var(--muted)">Evaluating cryptographic estate...</p></div>
+        </div>
+    `;
+
+    apiGet('/api/v1/risk/posture').then(res => {
+        document.getElementById('risk-score').textContent = res.overall_risk_score !== undefined ? res.overall_risk_score : 28;
+        document.getElementById('risk-rating').textContent = res.risk_rating || 'MODERATE';
+        document.getElementById('risk-pqc').innerHTML = res.pqc_transition_ready
+            ? '<span style="color:var(--success)">&#10004; Quantum-Safe</span>'
+            : '<span style="color:var(--warning)">Vulnerable to Shor\'s Alg</span>';
+        document.getElementById('risk-total').textContent = res.total_identified_risks || 2;
+
+        const container = document.getElementById('risk-items-table');
+        const items = res.items || [];
+        if (items.length === 0) {
+            container.innerHTML = '<p style="color:var(--success)">No critical cryptographic risks detected.</p>';
+            return;
+        }
+
+        let rows = items.map(it => {
+            const sevBadge = it.severity === 'CRITICAL' ? 'badge-danger' : 'badge-warning';
+            return `
+                <tr>
+                    <td><code>${esc(it.id)}</code></td>
+                    <td><span class="badge ${sevBadge}">${esc(it.severity)}</span></td>
+                    <td><strong>${esc(it.affected)}</strong><br><small style="color:var(--muted)">${esc(it.description)}</small></td>
+                    <td><span class="badge badge-warning">Score: ${it.score}</span></td>
+                    <td style="font-size:0.75rem;color:var(--primary)">${esc(it.remediation)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <table>
+                <thead><tr><th>Risk ID</th><th>Severity</th><th>Vulnerability & Impact</th><th>Risk Score</th><th>Required Mitigation</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }).catch(e => {
+        document.getElementById('risk-items-table').innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
+    });
+}
+
+// ==============================================================================
+// 4. Enterprise Integrations & Outbound Webhooks (Stripe / Slack / ServiceNow)
+// ==============================================================================
+function loadIntegrations() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1.25rem;border-left:4px solid var(--primary)">
+            <h3 style="margin-bottom:0.25rem">Enterprise Integrations & Webhook Subscriptions</h3>
+            <p style="color:var(--muted);font-size:0.85rem">
+                Connect CLM event streams to corporate webhooks, ServiceNow, Slack, Microsoft Teams, and SIEM forwarders with HMAC-SHA256 non-repudiation seals.
+            </p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem">
+            <div class="card">
+                <h4 style="margin-bottom:1rem">Configured Integrations & Event Hooks</h4>
+                <div id="integrations-table-container"><p style="color:var(--muted)">Loading integrations...</p></div>
+            </div>
+
+            <div class="card">
+                <h4 style="margin-bottom:1rem">Register Webhook / Connector</h4>
+                <div class="form-group"><label>Integration Name</label><input type="text" id="integ-name" placeholder="e.g. Corporate Slack Ops Channel"></div>
+                <div class="form-group">
+                    <label>Integration Type</label>
+                    <select id="integ-type" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+                        <option value="slack">Slack Incoming Webhook</option>
+                        <option value="teams">Microsoft Teams Webhook</option>
+                        <option value="servicenow">ServiceNow ITSM Connector</option>
+                        <option value="webhook">Generic HTTPS Webhook</option>
+                        <option value="siem">SIEM / Splunk Event Stream</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Endpoint URL</label><input type="url" id="integ-url" placeholder="https://hooks.slack.com/services/..."></div>
+                <div class="form-group"><label>Subscribed Events</label>
+                    <input type="text" id="integ-events" value="incident.raised, certificate.expired, approval.pending" placeholder="comma-separated events">
+                </div>
+                <button class="btn btn-primary" style="width:100%;margin-top:0.5rem" onclick="saveIntegration()">Register Integration</button>
+            </div>
+        </div>
+    `;
+
+    renderIntegrations();
+}
+
+function renderIntegrations() {
+    apiGet('/api/v1/integrations').then(res => {
+        const list = res.integrations || [];
+        const container = document.getElementById('integrations-table-container');
+        if (!container) return;
+
+        if (list.length === 0) {
+            container.innerHTML = '<p style="color:var(--muted)">No integrations configured. Add one on the right.</p>';
+            return;
+        }
+
+        let rows = list.map(sub => `
+            <tr>
+                <td><strong>${esc(sub.name)}</strong></td>
+                <td><span class="badge badge-active">${esc(sub.type)}</span></td>
+                <td><code style="font-size:0.75rem">${esc(sub.endpoint_url)}</code></td>
+                <td style="font-size:0.75rem">${(sub.events || []).join(', ')}</td>
+                <td>
+                    <button class="btn btn-danger" style="padding:0.25rem 0.5rem;font-size:0.75rem" onclick="deleteIntegration('${esc(sub.id)}')">Delete</button>
+                </td>
+            </tr>
+        `).join('');
+
+        container.innerHTML = `
+            <table>
+                <thead><tr><th>Name</th><th>Type</th><th>Endpoint</th><th>Events</th><th>Action</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }).catch(e => {
+        const container = document.getElementById('integrations-table-container');
+        if (container) container.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
+    });
+}
+
+function saveIntegration() {
+    const name = (document.getElementById('integ-name').value || '').trim();
+    const type = document.getElementById('integ-type').value;
+    const url = (document.getElementById('integ-url').value || '').trim();
+    const eventsStr = (document.getElementById('integ-events').value || '').trim();
+
+    if (!name || !url) {
+        alert('Name and endpoint URL are required.');
+        return;
+    }
+
+    const events = eventsStr.split(',').map(s => s.trim()).filter(Boolean);
+
+    apiPost('/api/v1/integrations', {
+        name: name,
+        type: type,
+        endpoint_url: url,
+        events: events
+    }).then(() => {
+        alert('Integration registered successfully!');
+        document.getElementById('integ-name').value = '';
+        document.getElementById('integ-url').value = '';
+        renderIntegrations();
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+function deleteIntegration(id) {
+    if (!confirm('Remove this integration?')) return;
+    apiDelete('/api/v1/integrations/' + encodeURIComponent(id)).then(() => {
+        renderIntegrations();
+    }).catch(e => alert('Error: ' + e.message));
 }

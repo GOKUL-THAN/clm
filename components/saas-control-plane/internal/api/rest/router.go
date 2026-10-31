@@ -12,6 +12,10 @@ import (
 	"github.com/m2p/clm/internal/saas/deploy"
 	"github.com/m2p/clm/internal/saas/identity"
 	"github.com/m2p/clm/internal/saas/onboarding"
+	"github.com/m2p/clm/internal/saas/itsm"
+	"github.com/m2p/clm/internal/saas/risk"
+	"github.com/m2p/clm/internal/saas/integrations"
+	"github.com/m2p/clm/internal/saas/organization"
 	"github.com/m2p/clm/internal/saas/sso"
 	"github.com/m2p/clm/internal/saas/tenant"
 	"github.com/m2p/clm/internal/saas/users"
@@ -31,6 +35,10 @@ type Dependencies struct {
 	IdentityService     *identity.Service
 	ApprovalEngine      *approval.Engine
 	OnboardingService   *onboarding.Service
+	ITSMController        *itsm.ITSMController
+	RiskController        *risk.RiskController
+	IntegrationController *integrations.IntegrationController
+	DepartmentController  *organization.DepartmentController
 	SatelliteRepo       core.SatelliteRepository
 	Config              *config.ServerConfig
 	Logger              *zap.Logger
@@ -52,6 +60,25 @@ func NewRouter(deps *Dependencies) *gin.Engine {
 	})
 
 	// Public routes — auth
+	// Corporate Enterprise Controllers
+	itsmCtrl := deps.ITSMController
+	if itsmCtrl == nil {
+		itsmCtrl = itsm.NewITSMController(deps.Logger)
+	}
+	riskCtrl := deps.RiskController
+	if riskCtrl == nil {
+		riskCtrl = risk.NewRiskController(deps.Logger)
+	}
+	integCtrl := deps.IntegrationController
+	if integCtrl == nil {
+		integCtrl = integrations.NewIntegrationController(deps.Logger)
+	}
+	deptCtrl := deps.DepartmentController
+	if deptCtrl == nil {
+		deptCtrl = organization.NewDepartmentController(deps.Logger)
+	}
+	entHandler := handlers.NewEnterpriseOperationsHandler(itsmCtrl, riskCtrl, integCtrl, deptCtrl, deps.Logger)
+
 	authHandler := handlers.NewAuthHandler(deps.UserService, deps.TenantService)
 	r.POST("/api/v1/auth/login", authHandler.Login)
 	r.POST("/api/v1/auth/register", authHandler.Register)

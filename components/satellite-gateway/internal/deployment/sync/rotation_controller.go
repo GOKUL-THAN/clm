@@ -252,3 +252,4 @@ func (r *RotationController) GetStatus() *RotationSummary {
 	copy(out.RecentRecords, r.history)
 	return out
 }
+

@@ -123,3 +123,4 @@ func TestRotationController_FailedVerificationRollback(t *testing.T) {
 		t.Fatalf("expected health verified false")
 	}
 }
+

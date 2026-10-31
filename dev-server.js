@@ -139,6 +139,42 @@ let mockSyncStatus = {
     }
 };
 
+let mockDepartments = [
+    { id: "dept-01", name: "Core Banking & Settlements", code: "DEPT-BANK-01", cost_center: "CC-FIN-1049", lead_email: "banking-lead@m2pfintech.com", budget_usd: 15000, spent_usd: 3450, cert_quota: 500, cert_count: 142, created_at: new Date().toISOString() },
+    { id: "dept-02", name: "Payments & Card Issuing", code: "DEPT-CARD-02", cost_center: "CC-FIN-2088", lead_email: "cards-lead@m2pfintech.com", budget_usd: 10000, spent_usd: 8200, cert_quota: 250, cert_count: 189, created_at: new Date().toISOString() },
+    { id: "dept-03", name: "DevOps & Cloud Infrastructure", code: "DEPT-OPS-03", cost_center: "CC-ENG-4001", lead_email: "infra-lead@m2pfintech.com", budget_usd: 25000, spent_usd: 12400, cert_quota: 1000, cert_count: 450, created_at: new Date().toISOString() }
+];
+
+let mockIncidents = [
+    { id: "inc-01", severity: "SEV1", title: "Imminent Production TLS Expiry on Payment Gateway", status: "open", affected_domain: "api-payment.m2pfintech.com", blast_radius_score: 95, itsm_external_ref: "INC-009412", opened_at: new Date().toISOString() },
+    { id: "inc-02", severity: "SEV2", title: "Certificate Chain Intermediate Revocation Warning", status: "investigating", affected_domain: "auth-uat.m2p.in", blast_radius_score: 70, itsm_external_ref: "INC-009415", opened_at: new Date().toISOString() }
+];
+
+let mockServiceRequests = [
+    { id: "req-01", requester_email: "devops-lead@m2pfintech.com", department: "Payments & Card Issuing", domain_name: "secure-checkout.m2p.in", environment: "prod", cert_type: "ov", validity_months: 12, status: "pending_approval", itsm_ticket_ref: "REQ-003891", created_at: new Date().toISOString() }
+];
+
+let mockRiskPosture = {
+    evaluated_at: new Date().toISOString(),
+    overall_risk_score: 28,
+    risk_rating: "MODERATE",
+    pqc_transition_ready: false,
+    total_identified_risks: 3,
+    critical_risks: 0,
+    high_risks: 2,
+    medium_risks: 1,
+    items: [
+        { id: "RISK-WILD-01", category: "WILDCARD_BLAST_RADIUS", severity: "HIGH", score: 70, affected: "*.m2pfintech.com", description: "Wildcard cert covers all production microservices under one private key", remediation: "Segregate payment APIs into dedicated domain-scoped certificates." },
+        { id: "RISK-SPOF-CA", category: "SINGLE_CA_DEPENDENCY", severity: "HIGH", score: 65, affected: "DigiCert", description: "Over 85% of production estate relies on a single commercial CA", remediation: "Establish secondary ACME fallback provider." },
+        { id: "RISK-PQC-EXP", category: "PQC_VULNERABILITY", severity: "MEDIUM", score: 45, affected: "RSA-2048 & ECDSA-P256", description: "Standard RSA and ECC asymmetric algorithms vulnerable to future quantum cryptanalysis", remediation: "Prepare crypto-agility roadmap and hybrid post-quantum certificate trials." }
+    ]
+};
+
+let mockIntegrations = [
+    { id: "sub-01", name: "Corporate Slack SecOps War Room", type: "slack", endpoint_url: "https://hooks.slack.com/services/M2P/SECOPS/xyz123", events: ["incident.raised", "certificate.expired"], enabled: true, created_at: new Date().toISOString() },
+    { id: "sub-02", name: "ServiceNow ITSM Incident Gateway", type: "servicenow", endpoint_url: "https://m2p.service-now.com/api/clm/webhook", events: ["*"], enabled: true, created_at: new Date().toISOString() }
+];
+
 let mockGroupMappings = [
     { id: "map-01", group_name: "AWSReservedSSO_AdministratorAccess", target_role: "super_admin", priority: 95, description: "Cloud platform super admins", created_at: new Date().toISOString() },
     { id: "map-02", group_name: "M2P-SECURITY-OPERATIONS", target_role: "operator", priority: 80, description: "SecOps team (Approver L2)", created_at: new Date().toISOString() },
@@ -407,6 +443,165 @@ function handleMockAPI(req, res) {
     }
 
     
+    
+    // 1. Departments & Financial Cost Centers
+    if (pathname === '/api/v1/departments') {
+        if (req.method === 'GET') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ departments: mockDepartments, count: mockDepartments.length }));
+            return true;
+        }
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let input = {};
+                try { input = JSON.parse(body); } catch(e) {}
+                const newDept = {
+                    id: "dept-" + Math.floor(Math.random() * 8999 + 1000),
+                    name: input.name || "Enterprise Unit",
+                    code: input.code || "DEPT-NEW",
+                    cost_center: input.cost_center || "CC-000",
+                    lead_email: input.lead_email || "lead@m2p.in",
+                    budget_usd: input.budget_usd || 5000,
+                    spent_usd: 0,
+                    cert_quota: input.cert_quota || 250,
+                    cert_count: 0,
+                    created_at: new Date().toISOString()
+                };
+                mockDepartments.push(newDept);
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ department: newDept }));
+            });
+            return true;
+        }
+    }
+
+    // 2. ITSM Incidents & Service Requests
+    if (pathname === '/api/v1/itsm/incidents') {
+        if (req.method === 'GET') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ incidents: mockIncidents, count: mockIncidents.length }));
+            return true;
+        }
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let input = {};
+                try { input = JSON.parse(body); } catch(e) {}
+                const newInc = {
+                    id: "inc-" + Math.floor(Math.random() * 8999 + 1000),
+                    severity: input.severity || "SEV1",
+                    title: input.title || "Production Certificate Incident",
+                    status: "open",
+                    affected_domain: input.affected_domain || "api.m2p.in",
+                    blast_radius_score: input.severity === "SEV1" ? 95 : 60,
+                    itsm_external_ref: "INC-" + Math.floor(Math.random() * 89999 + 10000),
+                    opened_at: new Date().toISOString()
+                };
+                mockIncidents.unshift(newInc);
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ incident: newInc }));
+            });
+            return true;
+        }
+    }
+
+    if (pathname.startsWith('/api/v1/itsm/incidents/') && pathname.endsWith('/resolve') && req.method === 'POST') {
+        const parts = pathname.split('/');
+        const id = parts[4];
+        const item = mockIncidents.find(i => i.id === id);
+        if (item) {
+            item.status = "resolved";
+            item.resolved_at = new Date().toISOString();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ incident: item }));
+        } else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: "incident not found" }));
+        }
+        return true;
+    }
+
+    if (pathname === '/api/v1/itsm/requests') {
+        if (req.method === 'GET') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ requests: mockServiceRequests, count: mockServiceRequests.length }));
+            return true;
+        }
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let input = {};
+                try { input = JSON.parse(body); } catch(e) {}
+                const newReq = {
+                    id: "req-" + Math.floor(Math.random() * 8999 + 1000),
+                    requester_email: input.requester_email || "user@m2p.in",
+                    department: input.department || "General",
+                    domain_name: input.domain_name || "new-service.m2p.in",
+                    environment: input.environment || "prod",
+                    cert_type: input.cert_type || "ov",
+                    validity_months: input.validity_months || 12,
+                    status: "submitted",
+                    itsm_ticket_ref: "REQ-" + Math.floor(Math.random() * 89999 + 10000),
+                    created_at: new Date().toISOString()
+                };
+                mockServiceRequests.unshift(newReq);
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ request: newReq }));
+            });
+            return true;
+        }
+    }
+
+    // 3. Cryptographic Risk Register
+    if (pathname === '/api/v1/risk/posture') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(mockRiskPosture));
+        return true;
+    }
+
+    // 4. Enterprise Integrations & Webhooks
+    if (pathname === '/api/v1/integrations') {
+        if (req.method === 'GET') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ integrations: mockIntegrations, count: mockIntegrations.length }));
+            return true;
+        }
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let input = {};
+                try { input = JSON.parse(body); } catch(e) {}
+                const newSub = {
+                    id: "sub-" + Math.floor(Math.random() * 8999 + 1000),
+                    name: input.name || "New Webhook",
+                    type: input.type || "webhook",
+                    endpoint_url: input.endpoint_url || "https://example.com/webhook",
+                    events: input.events || ["*"],
+                    enabled: true,
+                    created_at: new Date().toISOString()
+                };
+                mockIntegrations.unshift(newSub);
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ integration: newSub }));
+            });
+            return true;
+        }
+    }
+
+    if (pathname.startsWith('/api/v1/integrations/') && req.method === 'DELETE') {
+        const parts = pathname.split('/');
+        const id = parts[parts.length - 1];
+        mockIntegrations = mockIntegrations.filter(s => s.id !== id);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: "integration deleted" }));
+        return true;
+    }
+
     // Directory Group Mappings APIs (AWS IAM Identity Center / SAML)
     if (pathname.includes('/sso/mappings')) {
         if (req.method === 'GET') {

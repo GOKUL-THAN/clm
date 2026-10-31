@@ -91,3 +91,4 @@ func TestGroupMapper(t *testing.T) {
 	}
 	_ = auditRule
 }
+

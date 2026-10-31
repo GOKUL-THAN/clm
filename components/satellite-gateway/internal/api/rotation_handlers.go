@@ -95,3 +95,4 @@ func (s *Server) handleRotationExecute(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, rec)
 }
+
