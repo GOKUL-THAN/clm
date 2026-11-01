@@ -66,3 +66,5 @@ go.sum.tmp
 # Kiro agent workflow artifacts (investigation reports, plans, designs, task lists).
 # These are ephemeral working documents generated during development sessions.
 .agents/
+
+.vercel
