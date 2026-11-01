@@ -1,0 +1,23 @@
+{
+  "name": "clm",
+  "version": "3.4.0",
+  "description": "Enterprise Contract & Certificate Lifecycle Management (CLM) Platform",
+  "private": true,
+  "main": "dev-server.js",
+  "scripts": {
+    "start": "node dev-server.js",
+    "test": "node scripts/verify_scenarios_a_to_h.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "clm",
+    "contract-lifecycle-management",
+    "zero-trust",
+    "pki",
+    "enterprise-security"
+  ],
+  "author": "M2P Engineering Team",
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLM Admin Portal</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { --primary: #2563eb; --bg: #f1f5f9; --card: #fff; --border: #e2e8f0; --text: #1e293b; --muted: #64748b; --success: #10b981; --danger: #ef4444; --sidebar-bg: #1e293b; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+        .sidebar { width: 220px; background: var(--sidebar-bg); color: #cbd5e1; min-height: 100vh; position: fixed; padding: 1.5rem 0; }
+        .sidebar h1 { padding: 0 1.5rem 1rem; font-size: 1.1rem; color: #fff; border-bottom: 1px solid #334155; margin-bottom: 1rem; }
+        .nav-item { display: block; padding: 0.6rem 1.5rem; color: #cbd5e1; text-decoration: none; font-size: 0.85rem; cursor: pointer; }
+        .nav-item:hover { background: #334155; color: #fff; }
+        .nav-item.active { background: var(--primary); color: #fff; }
+        .main { margin-left: 220px; flex: 1; }
+        .topbar { background: var(--card); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+        .content { padding: 1.5rem 2rem; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1rem; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .stat .value { font-size: 1.75rem; font-weight: 700; }
+        .stat .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        th { text-align: left; padding: 0.6rem; background: #f8fafc; border-bottom: 1px solid var(--border); font-weight: 600; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; }
+        td { padding: 0.6rem; border-bottom: 1px solid var(--border); }
+        .btn { padding: 0.4rem 0.8rem; border-radius: 0.375rem; border: none; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+        .btn-primary { background: var(--primary); color: #fff; }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .badge { padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 600; }
+        .badge-active { background: #d1fae5; color: #065f46; }
+        .badge-disabled { background: #fee2e2; color: #991b1b; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .login-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+        .login-card { background: var(--card); border: 1px solid var(--border); border-radius: 1rem; padding: 2.5rem; width: 100%; max-width: 380px; }
+        .form-group { margin-bottom: 0.75rem; }
+        .form-group label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--muted); margin-bottom: 0.25rem; }
+        .form-group input { width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.375rem; font-size: 0.85rem; }
+        .sso-btn { display: block; width: 100%; padding: 0.6rem; margin-top: 0.5rem; border: 1px solid var(--border); border-radius: 0.375rem; background: #fff; font-size: 0.85rem; cursor: pointer; text-align: center; }
+        .sso-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .hidden { display: none; }
+    
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        .modal-box { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; width: 90%; max-width: 820px; max-height: 90vh; overflow-y: auto; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+        .tab-btn { padding: 0.45rem 0.9rem; border: none; background: #f1f5f9; color: var(--muted); border-radius: 0.375rem; font-weight: 600; cursor: pointer; font-size: 0.8rem; }
+        .tab-btn.active { background: var(--primary); color: #fff; }
+        .diff-added { background-color: #dcfce7; color: #166534; padding: 2px 4px; border-radius: 3px; }
+        .diff-removed { background-color: #fee2e2; color: #991b1b; text-decoration: line-through; padding: 2px 4px; border-radius: 3px; }
+        .chat-bubble-user { background: #e0f2fe; color: #0369a1; padding: 0.75rem; border-radius: 0.5rem 0.5rem 0 0.5rem; margin-left: 20%; margin-bottom: 0.75rem; font-size: 0.85rem; }
+        .chat-bubble-ai { background: #f8fafc; border: 1px solid #e2e8f0; color: #1e293b; padding: 0.75rem; border-radius: 0.5rem 0.5rem 0.5rem 0; margin-right: 20%; margin-bottom: 0.75rem; font-size: 0.85rem; }
+        .badge-info { background: #e0f2fe; color: #0369a1; }
+        .badge-purple { background: #f3e8ff; color: #6b21a8; }
+
+    </style>
+</head>
+<body>
+    <div class="login-overlay" id="login-overlay">
+        <div class="login-card" id="login-card">
+            <h2>CLM Admin Portal</h2>
+            <p style="color:var(--muted);font-size:0.85rem;margin:0.5rem 0 1.5rem">Sign in with your account</p>
+            <div class="form-group"><label>Email</label><input type="email" id="login-email" placeholder="admin@aiforgers.tech"></div>
+            <div class="form-group"><label>Password</label><input type="password" id="login-password" placeholder="Password" onkeypress="if(event.key==='Enter')doLogin()"></div>
+            <button class="btn btn-primary" style="width:100%;margin-top:0.5rem;padding:0.6rem" onclick="doLogin()">Sign In</button>
+            <div id="login-error" style="color:var(--danger);font-size:0.8rem;margin-top:0.5rem"></div>
+            <p style="text-align:center;margin-top:1rem;font-size:0.75rem;color:var(--muted)">Powered by Keycloak Identity</p>
+        </div>
+    </div>
+
+    <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main Navigation">
+        <h1>CLM Admin</h1>
+        <a class="nav-item active" onclick="navigate('dashboard')">Dashboard</a>
+        <!-- Organization, Tenants, Subscription and Billing are sub-tabs of one
+             hub. Direct entries are kept for the admin-only tabs so they stay
+             discoverable from the sidebar instead of being buried in the hub. -->
+        <a class="nav-item" onclick="navigate('organization')">Organization</a>
+        <a class="nav-item hidden" id="nav-tenants" onclick="navigate('tenants')" style="padding-left:2.2rem;font-size:0.8rem">Tenants</a>
+        <a class="nav-item hidden" id="nav-subscription" onclick="navigate('subscription')" style="padding-left:2.2rem;font-size:0.8rem">Subscription</a>
+        <a class="nav-item hidden" id="nav-billing" onclick="navigate('billing')" style="padding-left:2.2rem;font-size:0.8rem">Billing</a>
+        <a class="nav-item" onclick="navigate('sso')">SSO Config</a>
+        <a class="nav-item" onclick="navigate('cloud-accounts')">Cloud Accounts</a>
+        <span style="display:block;padding:0.8rem 1.5rem 0.3rem;font-size:0.65rem;text-transform:uppercase;color:#64748b;letter-spacing:0.05em">Gateway Management</span>
+        <a class="nav-item" onclick="navigate('gateways')">Gateways</a>
+        <a class="nav-item" onclick="navigate('jobs')">Deploy Jobs</a>
+        <span style="display:block;padding:0.8rem 1.5rem 0.3rem;font-size:0.65rem;text-transform:uppercase;color:#64748b;letter-spacing:0.05em">Enterprise Governance</span>
+        <a class="nav-item" onclick="navigate('approvals')">Approvals (L1/L2/L3)</a>
+        <a class="nav-item" onclick="navigate('onboarding')">Customer Onboarding</a>
+        <a class="nav-item" onclick="navigate('directory-mappings')">Directory Group Mappings</a>
+        <a class="nav-item" onclick="navigate('departments')">Departments & Budgets</a>
+        <a class="nav-item" onclick="navigate('itsm')">ITSM Incidents & Requests</a>
+        <a class="nav-item" onclick="navigate('risk')">Cryptographic Risk Register</a>
+        <a class="nav-item" onclick="navigate('integrations')">Webhooks & Integrations</a>
+        <span style="display:block;padding:0.8rem 1.5rem 0.3rem;font-size:0.65rem;text-transform:uppercase;color:#64748b;letter-spacing:0.05em">Contract Lifecycle (CLM)</span>
+        <a class="nav-item" id="nav-corporate-depts" onclick="navigate('corporate-depts')">Corporate Departments (14)</a>
+        <a class="nav-item" id="nav-contracts" onclick="navigate('contracts')">Contracts Repository</a>
+        <a class="nav-item" id="nav-contract-requests" onclick="navigate('contract-requests')">Intake & Requests</a>
+        <a class="nav-item" id="nav-contract-templates" onclick="navigate('contract-templates')">Templates & Clauses</a>
+        <a class="nav-item" id="nav-contract-negotiations" onclick="navigate('contract-negotiations')">Negotiation & Redlines</a>
+        <a class="nav-item" id="nav-contract-signatures" onclick="navigate('contract-signatures')">E-Sign & Digital PKI</a>
+        <a class="nav-item" id="nav-contract-obligations" onclick="navigate('contract-obligations')">Obligation Calendar</a>
+        <a class="nav-item" id="nav-procurement-suppliers" onclick="navigate('procurement-suppliers')">Procurement & Suppliers</a>
+        <a class="nav-item" id="nav-legal-matters" onclick="navigate('legal-matters')">Legal Operations & Matters</a>
+        <a class="nav-item" id="nav-contract-financials" onclick="navigate('contract-financials')">Financial & Spend Terms</a>
+        <a class="nav-item" id="nav-ai-contracts" onclick="navigate('ai-contracts')">AI Legal Intelligence</a>
+        <a class="nav-item" id="nav-clm-analytics" onclick="navigate('clm-analytics')">CLM Analytics & Reports</a>
+        <span style="display:block;padding:0.8rem 1.5rem 0.3rem;font-size:0.65rem;text-transform:uppercase;color:#64748b;letter-spacing:0.05em">Platform</span>
+        <a class="nav-item" onclick="navigate('activity')">Activity Log</a>
+        <!-- Users, Groups, Roles, Identity Providers, Sessions and Clients are
+             all sub-tabs of Identity Management. -->
+        <a class="nav-item hidden" id="nav-keycloak" onclick="navigate('identity')">Identity Management</a>
+        <a class="nav-item hidden" id="nav-id-users" onclick="navigate('users')" style="padding-left:2.2rem;font-size:0.8rem">Users</a>
+        <a class="nav-item hidden" id="nav-id-groups" onclick="navigate('groups')" style="padding-left:2.2rem;font-size:0.8rem">Groups</a>
+        <a class="nav-item hidden" id="nav-id-providers" onclick="navigate('providers')" style="padding-left:2.2rem;font-size:0.8rem">Identity Providers</a>
+        <a class="nav-item" style="margin-top:auto;border-top:1px solid #334155;padding-top:1rem" onclick="logout()">Logout</a>
+    </aside>
+
+    <div class="main">
+        <div class="topbar">
+            <h2 id="page-title">Dashboard</h2>
+            <span id="user-email" style="font-size:0.85rem;color:var(--muted)"></span>
+        </div>
+        <div class="content" id="content-area"></div>
+    </div>
+    <script src="app.js?v=20261031-clm"></script>
+</body>
+</html>
