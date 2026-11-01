@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/m2p/clm/pkg/models"
 	"go.uber.org/zap"
@@ -34,7 +35,7 @@ func NewGoDaddyProvider(apiKey, apiSecret, customerID string, production bool, l
 		apiSecret:  apiSecret,
 		baseURL:    baseURL,
 		customerID: customerID,
-		client:     &http.Client{},
+		client:     &http.Client{Timeout: 30 * time.Second},
 		logger:     logger,
 	}
 }

@@ -28,8 +28,6 @@ secrets:
   kms_key_id: "${CLM_TEST_AWS_KMS_KEY_ID}"
   prefix: "clm-test/"
 discovery:
-  enabled: true
-  interval: "1h"
   schedule: "0 2 * * *"
   networks:
     - "10.0.0.0/16"
@@ -40,23 +38,6 @@ discovery:
     - 6443
   concurrency: 50
   timeout: "5s"
-
-acme:
-  enabled: true
-  directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory"
-  email: "test@m2pfintech.com"
-  accept_tos: true
-  renew_before_days: 30
-  renew_interval: "2h"
-  order_poll_interval: "5m"
-
-alerting:
-  enabled: true
-  interval: "30m"
-  warn_days: 30
-  critical_days: 7
-  cooldown: "6h"
-  alert_on_self_signed: true
 
 state:
   dir: ""

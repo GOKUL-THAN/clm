@@ -7,7 +7,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 )
+
+// cliHTTPClient enforces a strict 30-second timeout on all outbound CLI API requests.
+var cliHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
 
 // apiGet performs an authenticated GET request to the CLM API.
 func apiGet(path string) (map[string]interface{}, error) {
@@ -40,7 +46,7 @@ func doRequest(method, path string, body interface{}) (map[string]interface{}, e
 		req.Header.Set("Authorization", "Bearer "+apiToken)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := cliHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

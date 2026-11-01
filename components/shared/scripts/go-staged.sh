@@ -33,11 +33,6 @@ case "$COMPONENT" in
     tar xzf "$STAGE/source.tar.gz" -C "$STAGE"
     rm -rf "$STAGE/cmd" "$STAGE/source.tar.gz"
     cp -R "$SOURCE/cmd" "$STAGE/"
-    if [ -d "$SOURCE/internal" ]; then
-      mkdir -p "$STAGE/vsatellite"
-      cp -R "$SOURCE/internal" "$STAGE/vsatellite/"
-      cp -R "$SOURCE/internal" "$STAGE/"
-    fi
     sed -i.bak 's|module github.com/m2p/clm/satellite-gateway|module github.com/m2p/clm|' "$STAGE/go.mod"
     rm -f "$STAGE/go.mod.bak"
     (cd "$STAGE" && go mod tidy)

@@ -27,7 +27,7 @@ func NewDigiCertProvider(apiKey, orgID string, logger *zap.Logger) *DigiCertProv
 		apiKey:  apiKey,
 		orgID:   orgID,
 		baseURL: "https://www.digicert.com/services/v2",
-		client:  &http.Client{},
+		client:  &http.Client{Timeout: 30 * time.Second},
 		logger:  logger,
 	}
 }

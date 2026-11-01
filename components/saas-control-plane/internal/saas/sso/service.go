@@ -18,30 +18,23 @@ import (
 
 // Service orchestrates SSO login flows across all providers.
 type Service struct {
-	userRepo    core.UserRepository
-	tenantRepo  core.TenantRepository
-	jwtCfg      config.JWTConfig
-	groupMapper *GroupMapper
-	configs     map[uuid.UUID]*SSOConfig // tenant_id → SSO config (cached)
-	mu          sync.RWMutex
-	logger      *zap.Logger
+	userRepo   core.UserRepository
+	tenantRepo core.TenantRepository
+	jwtCfg     config.JWTConfig
+	configs    map[uuid.UUID]*SSOConfig // tenant_id → SSO config (cached)
+	mu         sync.RWMutex
+	logger     *zap.Logger
 }
 
 // NewService creates a new SSO service.
 func NewService(userRepo core.UserRepository, tenantRepo core.TenantRepository, jwtCfg config.JWTConfig, logger *zap.Logger) *Service {
 	return &Service{
-		userRepo:    userRepo,
-		tenantRepo:  tenantRepo,
-		jwtCfg:      jwtCfg,
-		groupMapper: NewGroupMapper(logger),
-		configs:     make(map[uuid.UUID]*SSOConfig),
-		logger:      logger,
+		userRepo:   userRepo,
+		tenantRepo: tenantRepo,
+		jwtCfg:     jwtCfg,
+		configs:    make(map[uuid.UUID]*SSOConfig),
+		logger:     logger,
 	}
-}
-
-// GroupMapper returns the directory group mapping controller.
-func (s *Service) GroupMapper() *GroupMapper {
-	return s.groupMapper
 }
 
 // RegisterTenantSSO stores/updates SSO configuration for a tenant.
@@ -189,20 +182,6 @@ func (s *Service) ProcessSSOLogin(ctx context.Context, tenantID uuid.UUID, ssoUs
 		return nil, fmt.Errorf("user account is disabled")
 	}
 
-	// JIT (Just-In-Time) role synchronization based on IdP directory groups
-	if len(ssoUser.Groups) > 0 {
-		resolvedRole, matchedRule := s.groupMapper.ResolveRole(tenantID, ssoUser.Groups, user.Role)
-		if matchedRule != nil && user.Role != resolvedRole {
-			s.logger.Info("SSO JIT role updated from directory groups",
-				zap.String("user", user.Email),
-				zap.String("old_role", string(user.Role)),
-				zap.String("new_role", string(resolvedRole)),
-				zap.String("matched_group", matchedRule.GroupName),
-			)
-			user.Role = resolvedRole
-		}
-	}
-
 	// Update last login
 	now := time.Now()
 	user.LastLoginAt = &now
@@ -228,18 +207,6 @@ func (s *Service) autoProvisionUser(ctx context.Context, tenantID uuid.UUID, sso
 	role := cfg.DefaultRole
 	if role == "" {
 		role = models.RoleViewer
-	}
-
-	if len(ssoUser.Groups) > 0 {
-		resolvedRole, matchedRule := s.groupMapper.ResolveRole(tenantID, ssoUser.Groups, role)
-		if matchedRule != nil {
-			s.logger.Info("auto-provisioned user assigned role via directory group mapping",
-				zap.String("user", ssoUser.Email),
-				zap.String("role", string(resolvedRole)),
-				zap.String("matched_group", matchedRule.GroupName),
-			)
-			role = resolvedRole
-		}
 	}
 
 	user := &models.User{

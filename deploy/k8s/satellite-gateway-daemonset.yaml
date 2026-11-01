@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clm-customer-satellite-gateway
+  namespace: clm-in-vpc
+  labels:
+    app.kubernetes.io/name: clm-satellite-gateway
+    app.kubernetes.io/part-of: enterprise-clm
+    app.kubernetes.io/component: customer-in-vpc-enclave
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clm-satellite-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clm-satellite-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8443"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: clm-satellite-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        fsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: satellite-daemon
+          image: ghcr.io/m2p/clm-satellite:v3.4.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: local-api
+              containerPort: 8443
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: SATELLITE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SAAS_CONTROL_PLANE_URL
+              value: "grpcs://api.clm.saas.enterprise:9090"
+            - name: KMS_PROVIDER
+              value: "aws-kms" # aws-kms, azure-keyvault, gcp-kms, pkcs11-hsm
+            - name: KMS_KEY_ARN
+              value: "arn:aws:kms:us-east-1:123456789012:key/clm-customer-signing-master"
+            - name: MTLS_CERT_PATH
+              value: "/etc/satellite/certs/satellite-client.crt"
+            - name: MTLS_KEY_PATH
+              value: "/etc/satellite/certs/satellite-client.key"
+            - name: CA_CERT_PATH
+              value: "/etc/satellite/certs/ca-chain.crt"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: mtls-certs
+              mountPath: /etc/satellite/certs
+              readOnly: true
+            - name: local-storage
+              mountPath: /var/lib/clm-satellite
+            - name: tmp-dir
+              mountPath: /tmp
+      volumes:
+        - name: mtls-certs
+          secret:
+            secretName: clm-satellite-mtls-certs
+            defaultMode: 0400
+        - name: local-storage
+          persistentVolumeClaim:
+            claimName: clm-satellite-local-pvc
+        - name: tmp-dir
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clm-satellite-local-service
+  namespace: clm-in-vpc
+spec:
+  type: ClusterIP
+  ports:
+    - name: local-api
+      port: 8443
+      targetPort: local-api
+  selector:
+    app.kubernetes.io/name: clm-satellite-gateway
+

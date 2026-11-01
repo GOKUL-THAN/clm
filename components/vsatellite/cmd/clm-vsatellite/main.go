@@ -1,117 +1,257 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/m2p/clm/vsatellite/internal/agent"
-	"github.com/m2p/clm/vsatellite/internal/deployer"
-	"github.com/m2p/clm/vsatellite/internal/scanner"
+	"github.com/m2p/clm/internal/satellite/deployment"
+	linuxdeployer "github.com/m2p/clm/internal/satellite/deployment/deployers/os"
+	datadeployer "github.com/m2p/clm/internal/satellite/deployment/deployers/data"
+	"github.com/m2p/clm/internal/satellite/discovery/scanners"
+	"github.com/m2p/clm/pkg/config"
+	"github.com/m2p/clm/pkg/utils"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"gopkg.in/yaml.v3"
 )
+
+// VSatelliteConfig holds vSatellite agent configuration.
+type VSatelliteConfig struct {
+	ID              string   `mapstructure:"id"`
+	Name            string   `mapstructure:"name"`
+	GatewayEndpoint string   `mapstructure:"gateway_endpoint"`
+	Token           string   `mapstructure:"token"`
+	VPC             string   `mapstructure:"vpc"`
+	Subnet          string   `mapstructure:"subnet"`
+	CIDRs           []string `mapstructure:"cidrs"`
+	Capabilities    []string `mapstructure:"capabilities"`
+	HeartbeatSec    int      `mapstructure:"heartbeat_interval_sec"`
+	ScanPorts       []int    `mapstructure:"scan_ports"`
+	Concurrency     int      `mapstructure:"concurrency"`
+}
 
 func main() {
 	cfgPath := os.Getenv("CLM_VSATELLITE_CONFIG")
 	if cfgPath == "" {
-		cfgPath = "configs/vsatellite.yaml"
-		if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-			cfgPath = "/etc/clm/vsatellite.yaml"
-		}
+		cfgPath = "/etc/clm/vsatellite.yaml"
 	}
 
-	cfg := &agent.Config{
-		HeartbeatSec: 30,
-		Concurrency:  50,
-		ScanPorts:    []int{443, 8443, 636, 6443},
-		LogLevel:     "info",
-		Capabilities: []string{"scan_cidr", "deploy_cert", "health_check"},
-	}
-
-	if data, err := os.ReadFile(cfgPath); err == nil {
-		if err := yaml.Unmarshal(data, cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to parse config %s: %v\n", cfgPath, err)
-			os.Exit(1)
-		}
-	} else if !os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "failed to read config %s: %v\n", cfgPath, err)
+	cfg, err := config.LoadYAML[VSatelliteConfig](cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Environment variable overrides
-	if ep := os.Getenv("CLM_GATEWAY_ENDPOINT"); ep != "" {
-		cfg.GatewayEndpoint = ep
-	}
-	if tok := os.Getenv("CLM_ENROLL_TOKEN"); tok != "" {
-		cfg.Token = tok
-	}
-	if id := os.Getenv("CLM_VSATELLITE_ID"); id != "" {
-		cfg.ID = id
-	}
-
-	logger := initLogger(cfg.LogLevel)
+	logger := utils.NewLogger("info")
 	defer logger.Sync()
 
-	logger.Info("starting CLM vSatellite endpoint agent",
+	logger.Info("starting CLM vSatellite agent",
 		zap.String("id", cfg.ID),
 		zap.String("name", cfg.Name),
-		zap.String("gateway_endpoint", cfg.GatewayEndpoint),
+		zap.String("gateway", cfg.GatewayEndpoint),
 		zap.Strings("cidrs", cfg.CIDRs),
-		zap.Strings("capabilities", cfg.Capabilities),
 	)
 
-	// Initialize local scanner
-	scanTimeout := 5 * time.Second
-	sc := scanner.NewScanner(cfg.Concurrency, scanTimeout, cfg.ScanPorts, logger)
+	// Initialize scanner
+	ports := cfg.ScanPorts
+	if len(ports) == 0 {
+		ports = []int{443, 8443, 636, 6443}
+	}
+	concurrency := cfg.Concurrency
+	if concurrency == 0 {
+		concurrency = 50
+	}
+	scanner := scanners.NewNetworkScanner(concurrency, 5*time.Second, ports, logger)
 
-	// Initialize local deployer
-	dp := deployer.NewDeployer(logger)
+	// Initialize deployment executor
+	deployExec := deployment.NewExecutor(logger)
+	deployExec.RegisterDeployer(linuxdeployer.NewLinuxDeployer(logger))
+	deployExec.RegisterDeployer(datadeployer.NewPostgreSQLDeployer(logger))
 
-	// Initialize agent runtime
-	ag := agent.NewAgent(cfg, sc, dp, logger)
+	// Create agent
+	agent := &Agent{
+		config:   cfg,
+		scanner:  scanner,
+		deployer: deployExec,
+		client:   &http.Client{Timeout: 30 * time.Second},
+		logger:   logger,
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigCh
-		logger.Info("received termination signal", zap.String("signal", sig.String()))
-		cancel()
-	}()
+	go func() { <-sigCh; logger.Info("shutting down"); cancel() }()
 
-	ag.Run(ctx)
-	logger.Info("vSatellite agent shutdown complete")
+	agent.Run(ctx)
+	logger.Info("vSatellite agent stopped")
 }
 
-func initLogger(levelStr string) *zap.Logger {
-	var lvl zapcore.Level
-	switch levelStr {
-	case "debug":
-		lvl = zapcore.DebugLevel
-	case "warn":
-		lvl = zapcore.WarnLevel
-	case "error":
-		lvl = zapcore.ErrorLevel
-	default:
-		lvl = zapcore.InfoLevel
+// Agent is the vSatellite runtime.
+type Agent struct {
+	config   *VSatelliteConfig
+	scanner  *scanners.NetworkScanner
+	deployer *deployment.Executor
+	client   *http.Client
+	logger   *zap.Logger
+	certCount int
+}
+
+// Run starts the agent loop — heartbeat + command execution.
+func (a *Agent) Run(ctx context.Context) {
+	interval := time.Duration(a.config.HeartbeatSec) * time.Second
+	if interval == 0 {
+		interval = 30 * time.Second
 	}
 
-	encoderCfg := zap.NewProductionEncoderConfig()
-	encoderCfg.TimeKey = "ts"
-	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	// Initial registration heartbeat
+	a.sendHeartbeat()
 
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderCfg),
-		zapcore.AddSync(os.Stdout),
-		lvl,
-	)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
-	return zap.New(core)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cmds := a.sendHeartbeat()
+			for _, cmd := range cmds {
+				go a.executeCommand(ctx, cmd)
+			}
+		}
+	}
+}
+
+type gatewayCommand struct {
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Payload string `json:"payload"`
+}
+
+func (a *Agent) sendHeartbeat() []gatewayCommand {
+	body := map[string]interface{}{
+		"agent_id":   a.config.ID,
+		"cert_count": a.certCount,
+		"version":    "1.0.0",
+	}
+	data, _ := json.Marshal(body)
+
+	url := a.config.GatewayEndpoint + "/vsatellite/heartbeat"
+	resp, err := a.client.Post(url, "application/json", bytes.NewReader(data))
+	if err != nil {
+		a.logger.Warn("heartbeat failed", zap.Error(err))
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		a.logger.Warn("heartbeat rejected", zap.Int("status", resp.StatusCode))
+		return nil
+	}
+
+	var result struct {
+		Commands []gatewayCommand `json:"commands"`
+	}
+	respBody, _ := io.ReadAll(resp.Body)
+	json.Unmarshal(respBody, &result)
+
+	if len(result.Commands) > 0 {
+		a.logger.Info("received commands", zap.Int("count", len(result.Commands)))
+	}
+
+	return result.Commands
+}
+
+func (a *Agent) executeCommand(ctx context.Context, cmd gatewayCommand) {
+	a.logger.Info("executing command", zap.String("id", cmd.ID), zap.String("type", cmd.Type))
+
+	var result string
+	var status string
+
+	switch cmd.Type {
+	case "scan_cidr":
+		result, status = a.handleScanCIDR(ctx, cmd.Payload)
+	case "deploy_cert":
+		result, status = a.handleDeployCert(ctx, cmd.Payload)
+	case "health_check":
+		result, status = `{"status":"healthy"}`, "completed"
+	default:
+		result, status = fmt.Sprintf("unknown command type: %s", cmd.Type), "failed"
+	}
+
+	// Report result back to gateway
+	a.reportResult(cmd.ID, status, result)
+}
+
+func (a *Agent) handleScanCIDR(ctx context.Context, payload string) (string, string) {
+	var req struct {
+		CIDRs []string `json:"cidrs"`
+	}
+	if err := json.Unmarshal([]byte(payload), &req); err != nil {
+		return err.Error(), "failed"
+	}
+
+	cidrs := req.CIDRs
+	if len(cidrs) == 0 {
+		cidrs = a.config.CIDRs
+	}
+
+	var allCerts []*scanners.DiscoveredCert
+	for _, cidr := range cidrs {
+		certs, err := a.scanner.ScanNetwork(ctx, cidr)
+		if err != nil {
+			a.logger.Warn("scan failed", zap.String("cidr", cidr), zap.Error(err))
+			continue
+		}
+		allCerts = append(allCerts, certs...)
+	}
+
+	result := map[string]interface{}{
+		"status":      "scan_complete",
+		"certs_found": len(allCerts),
+		"results":     allCerts,
+	}
+	data, _ := json.Marshal(result)
+	return string(data), "completed"
+}
+
+func (a *Agent) handleDeployCert(ctx context.Context, payload string) (string, string) {
+	req, err := deployment.ParseDeployPayload(payload)
+	if err != nil {
+		return err.Error(), "failed"
+	}
+
+	result, err := a.deployer.Deploy(ctx, req)
+	if err != nil {
+		return err.Error(), "failed"
+	}
+
+	data, _ := json.Marshal(result)
+	return string(data), "completed"
+}
+
+func (a *Agent) reportResult(cmdID, status, result string) {
+	body := map[string]string{
+		"agent_id": a.config.ID,
+		"cmd_id":   cmdID,
+		"status":   status,
+		"result":   result,
+	}
+	data, _ := json.Marshal(body)
+
+	url := a.config.GatewayEndpoint + "/vsatellite/result"
+	resp, err := a.client.Post(url, "application/json", bytes.NewReader(data))
+	if err != nil {
+		a.logger.Warn("result report failed", zap.Error(err))
+		return
+	}
+	resp.Body.Close()
 }

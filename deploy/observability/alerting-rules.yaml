@@ -1,0 +1,53 @@
+groups:
+  - name: enterprise_clm_alerts
+    rules:
+      - alert: CLMTenantIsolationViolationAttempt
+        expr: increase(clm_security_tenant_isolation_failures_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          compliance: "SOC2-CC6.1-ISO27001-A.8.20"
+        annotations:
+          summary: "Potential cross-tenant access violation detected"
+          description: "Tenant isolation policy blocked an unauthorized cross-tenant query."
+
+      - alert: CLMSegregationOfDutiesViolation
+        expr: increase(clm_approval_sod_violations_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          compliance: "SOC2-CC6.3-ISO27001-A.5.3"
+        annotations:
+          summary: "Segregation of Duties (SoD) violation attempt"
+          description: "A contract author attempted to self-approve a contract or milestone."
+
+      - alert: CLMProcurementThreeWayMatchVariance
+        expr: increase(clm_procurement_3way_match_variances_total[1h]) > 5
+        for: 15m
+        labels:
+          severity: warning
+          compliance: "SOX-Financial-Integrity"
+        annotations:
+          summary: "Spike in procurement invoice variances"
+          description: "Multiple invoices exceeded tolerance thresholds against PO and Goods Receipt."
+
+      - alert: CLMContractSLABreached
+        expr: clm_obligation_overdue_count > 0
+        for: 30m
+        labels:
+          severity: high
+          domain: "Contract-Operations"
+        annotations:
+          summary: "Contractual SLA or deliverable obligation is overdue"
+          description: "One or more active contracts have unfulfilled obligations past SLA deadlines."
+
+      - alert: CLMCertificateExpiringSoon
+        expr: clm_certificate_days_to_expiration < 30
+        for: 1h
+        labels:
+          severity: high
+          domain: "PKI-Governance"
+        annotations:
+          summary: "PKI Certificate expiring in less than 30 days"
+          description: "Automated renewal required to prevent production service disruption."
+

@@ -1,0 +1,82 @@
+{
+  "name": "CLM Structured Feature Development",
+  "description": "Full structured feature pipeline for the CLM platform: design → implement → review loop with a final validation gate.",
+  "inputs": {
+    "feature_request": "prompt",
+    "component": "string"
+  },
+  "steps": [
+    {
+      "type": "step",
+      "id": "design",
+      "agent": "wf-design",
+      "prompt": "You are designing a feature for the Enterprise CLM (Contract & Certificate Lifecycle Management) platform.\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\nComponents: saas-control-plane, satellite-gateway, vsatellite, shared\nTarget component: {{component}}\n\nArchitectural constraints (non-negotiable):\n- Multi-tenant isolation must be preserved in every change\n- Zero-egress AI — AI processing stays inside the customer VPC via satellite-gateway\n- Cryptographic integrity — contracts use PKI / X.509 digital signatures\n- Immutable audit trail — all state transitions must be audit-logged\n- Compliance: GDPR, PCI-DSS, SOC 2, HIPAA\n\nFeature request:\n{{feature_request}}\n\nYour deliverables:\n1. Read the relevant component source code to understand existing patterns before designing.\n2. Write a technical design document to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\n   Include: goal, affected components, API changes (backward-compatible unless justified), data model changes, security & tenant-isolation impact, compliance impact, and open questions.\n3. Identify which of the 26 CLM lifecycle stages this feature touches and note them explicitly."
+    },
+    {
+      "type": "repeat",
+      "id": "design-review-loop",
+      "maxIterations": 3,
+      "onMaxIterations": "pause",
+      "stopCondition": {
+        "fileCheck": {
+          "path": "d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design-approved.json",
+          "jsonPath": "approved",
+          "value": true
+        }
+      },
+      "steps": [
+        {
+          "type": "step",
+          "id": "design-reviewer",
+          "agent": "wf-design-reviewer",
+          "prompt": "Review the CLM feature design document at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\n\nFocus on:\n- Ambiguity or gaps in the design\n- Multi-tenant isolation risks\n- Compliance gaps (GDPR, PCI-DSS, SOC 2, HIPAA)\n- Cryptographic / audit trail integrity\n- Backward compatibility of API changes\n- Missing migration scripts for schema changes\n- Security-sensitive paths (auth, crypto, approval workflow, e-signature) that need extra scrutiny\n\nIf design passes all checks, write: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design-approved.json with {\"approved\": true}\nIf design needs revision, write: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design-approved.json with {\"approved\": false} and provide specific actionable feedback."
+        },
+        {
+          "type": "step",
+          "id": "design-revise",
+          "agent": "wf-design",
+          "prompt": "Read the design review feedback. If the design was approved (approved=true in d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design-approved.json), do nothing and exit immediately.\n\nIf not approved, revise the design document at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\nAddress every issue raised by the reviewer. Then reset the approval file to {\"approved\": false} so the reviewer re-checks in the next iteration."
+        }
+      ]
+    },
+    {
+      "type": "step",
+      "id": "plan",
+      "agent": "wf-planner",
+      "prompt": "The feature design has been approved. Read it at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\n\nProduce an ordered implementation plan as: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-plan.md\n\nBreak the work into discrete, testable tasks. Each task must specify:\n- What files to create or modify (exact paths)\n- What the change is\n- How to verify it (build step, test name, or observable behavior)\n\nOrder tasks so that foundational changes (schema, shared types) come before features that depend on them."
+    },
+    {
+      "type": "repeat",
+      "id": "implement-review-loop",
+      "maxIterations": 5,
+      "onMaxIterations": "pause",
+      "stopCondition": {
+        "fileCheck": {
+          "path": "d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-impl-approved.json",
+          "jsonPath": "approved",
+          "value": true
+        }
+      },
+      "steps": [
+        {
+          "type": "step",
+          "id": "implement",
+          "agent": "wf-coder",
+          "prompt": "Implement the next uncompleted task from the plan at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-plan.md\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\n\nRules:\n- Read existing code before editing — match the project's style, patterns, and libraries\n- Preserve multi-tenant isolation in every change\n- All state transitions must be audit-logged\n- Security-sensitive code (auth, crypto, tenant isolation, e-signature) must include inline comments explaining the security rationale\n- Run `make test` and `make lint` from d:\\cmd project\\M2P-Git\\CLM after each task; fix any failures before marking the task done\n- Mark completed tasks in the plan file with [x]\n- When ALL tasks in the plan are marked [x], write: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-impl-approved.json with {\"approved\": false, \"ready_for_review\": true}"
+        },
+        {
+          "type": "step",
+          "id": "code-reviewer",
+          "agent": "semantic_reviewer",
+          "prompt": "Review the implementation changes for the CLM feature.\n\nPlan: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-plan.md\nDesign: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\n\nCheck the git diff in d:\\cmd project\\M2P-Git\\CLM against the plan and design.\n\nFocus on:\n- Correctness against the design spec\n- Multi-tenant isolation preserved\n- Audit logging present on all state transitions\n- No secrets or credentials hardcoded\n- Error handling and edge cases covered\n- Tests present for new logic\n\nIf implementation passes: write d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-impl-approved.json with {\"approved\": true}\nIf not: write {\"approved\": false} and list specific issues for the coder to fix."
+        }
+      ]
+    },
+    {
+      "type": "step",
+      "id": "validate",
+      "agent": "wf-coder",
+      "prompt": "Run the full validation gate for the CLM feature.\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\n\n1. Run `make test` — all tests must pass\n2. Run `make lint` — no lint errors\n3. Confirm the feature-plan.md shows all tasks marked [x]\n4. Confirm the design doc at d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md has no unresolved open questions\n5. Write a summary to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-summary.md covering: what was built, files changed, tests added, compliance impact, and any follow-up items."
+    }
+  ]
+}

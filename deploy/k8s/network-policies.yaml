@@ -1,0 +1,81 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: clm-production
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-control-plane-ingress
+  namespace: clm-production
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: clm-control-plane
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from enterprise ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow mTLS gRPC uplink from Satellite Gateways
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0 # or customer VPC CIDR range
+      ports:
+        - protocol: TCP
+          port: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-control-plane-egress
+  namespace: clm-production
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: clm-control-plane
+  policyTypes:
+    - Egress
+  egress:
+    # Egress to PostgreSQL Database
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Egress to Keycloak Identity Provider
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Egress to CoreDNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+

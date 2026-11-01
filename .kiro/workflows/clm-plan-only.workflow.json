@@ -1,0 +1,16 @@
+{
+  "name": "CLM Plan-Only Mode",
+  "description": "Break down a CLM feature idea or task into a concrete implementation plan — no code changes made.",
+  "inputs": {
+    "idea": "prompt",
+    "component": "string"
+  },
+  "steps": [
+    {
+      "type": "step",
+      "id": "investigate",
+      "agent": "wf-planner",
+      "prompt": "You are in PLAN-ONLY mode for the CLM platform. Do NOT make any code changes. Your job is to investigate and plan.\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\nTarget component: {{component}}\n\nIdea / task to plan:\n{{idea}}\n\nStep 1 — Investigate:\n- Read the relevant source files in d:\\cmd project\\M2P-Git\\CLM\\components\\{{component}}\\ to understand the current implementation\n- Read d:\\cmd project\\M2P-Git\\CLM\\README.md for the 26 lifecycle stages and architectural constraints\n- Identify which lifecycle stages this idea touches\n- Identify which files will need to change\n- Identify dependencies, risks, and unknowns\n\nStep 2 — Produce the plan:\nWrite a structured implementation plan to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\plan-output.md\n\nPlan structure:\n## Summary\nOne-paragraph description of what will be built and why.\n\n## CLM Lifecycle Stages Affected\nList the stages from the 26-stage lifecycle that this touches.\n\n## Architectural Impact\n- Multi-tenant isolation impact\n- Compliance impact (GDPR, PCI-DSS, SOC 2, HIPAA)\n- Audit trail / cryptographic integrity impact\n- API changes (backward-compatible?)\n- Schema / data model changes (migration needed?)\n\n## Implementation Tasks\nOrdered list. Each task:\n- [ ] Task N: <title>\n  - Files: <exact paths>\n  - Change: <what to do>\n  - Risk: <low/medium/high> — <reason>\n  - Verify: <how to confirm it works>\n\n## Open Questions\nList anything that needs a decision before implementation can start.\n\n## Estimated Complexity\n<S / M / L / XL> — with reasoning.\n\nRemember: NO code changes. Investigation and planning only."
+    }
+  ]
+}

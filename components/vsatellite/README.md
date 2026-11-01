@@ -1,11 +1,13 @@
 # Component 3: vSatellite (Virtual Satellite Agent)
 
-> ## Status: Implemented
+> ## Status: Not Implemented
 >
-> Core agent runtime, concurrent TLS network scanning, local endpoint deployment with verification
-> and rollback, configuration templates, and deployment artifacts (Dockerfile, systemd unit, install script)
-> are implemented. The agent communicates with the Satellite Gateway coordinator on port `9090` via
-> authenticated enrollment, periodic heartbeats, command execution, and result reporting.
+> This component is **scaffolding**. `cmd/clm-vsatellite/main.go` exists (~257 lines), but the
+> `internal/agent/`, `internal/scanner/`, and `internal/deployer/` directories are **empty**, as are
+> `configs/` and `deploy/`. Nothing here is deployed, and no agent has ever registered with a gateway.
+>
+> Everything below describes the **intended** design, not shipped behaviour. Do not size
+> infrastructure or plan integrations from this document.
 
 ---
 

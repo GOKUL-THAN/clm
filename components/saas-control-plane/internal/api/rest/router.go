@@ -7,6 +7,8 @@ import (
 	"github.com/m2p/clm/internal/api/rest/handlers"
 	"github.com/m2p/clm/internal/api/rest/middleware"
 	"github.com/m2p/clm/internal/core"
+	"github.com/m2p/clm/internal/saas/aicontract"
+	"github.com/m2p/clm/internal/saas/contract"
 	"github.com/m2p/clm/internal/saas/approval"
 	"github.com/m2p/clm/internal/saas/cloudaccounts"
 	"github.com/m2p/clm/internal/saas/deploy"
@@ -39,6 +41,8 @@ type Dependencies struct {
 	RiskController        *risk.RiskController
 	IntegrationController *integrations.IntegrationController
 	DepartmentController  *organization.DepartmentController
+	ContractService       contract.Service
+	AIContractService     aicontract.Service
 	SatelliteRepo       core.SatelliteRepository
 	Config              *config.ServerConfig
 	Logger              *zap.Logger
@@ -78,6 +82,16 @@ func NewRouter(deps *Dependencies) *gin.Engine {
 		deptCtrl = organization.NewDepartmentController(deps.Logger)
 	}
 	entHandler := handlers.NewEnterpriseOperationsHandler(itsmCtrl, riskCtrl, integCtrl, deptCtrl, deps.Logger)
+
+	contractSvc := deps.ContractService
+	if contractSvc == nil {
+		contractSvc = contract.NewService(deps.Logger)
+	}
+	aiSvc := deps.AIContractService
+	if aiSvc == nil {
+		aiSvc = aicontract.NewEngine(deps.Logger)
+	}
+	contractHandler := handlers.NewContractsHandler(contractSvc, aiSvc, deps.Logger)
 
 	authHandler := handlers.NewAuthHandler(deps.UserService, deps.TenantService)
 	r.POST("/api/v1/auth/login", authHandler.Login)
@@ -281,6 +295,57 @@ func NewRouter(deps *Dependencies) *gin.Engine {
 				ident.DELETE("/sessions/:sid", idHandler.DeleteSession)
 			}
 		}
+		// Enterprise Operations (ITSM, Risk, Integrations, Departments)
+		enterprise := api.Group("/enterprise")
+		{
+			enterprise.GET("/incidents", entHandler.ListIncidents)
+			enterprise.POST("/incidents", entHandler.RaiseIncident)
+			enterprise.PATCH("/incidents/:id/resolve", entHandler.ResolveIncident)
+			enterprise.GET("/risks", entHandler.ListRisks)
+			enterprise.POST("/risks", entHandler.LogRisk)
+			enterprise.GET("/integrations", entHandler.ListIntegrations)
+			enterprise.POST("/integrations", entHandler.CreateIntegration)
+			enterprise.GET("/departments", entHandler.ListDepartments)
+			enterprise.POST("/departments", entHandler.CreateDepartment)
+		}
+
+		// Enterprise Contract Lifecycle Management (CLM)
+		contracts := api.Group("/contracts")
+		{
+			contracts.GET("", contractHandler.ListContracts)
+			contracts.POST("", contractHandler.CreateContract)
+			contracts.GET("/analytics", contractHandler.GetAnalytics)
+			contracts.GET("/:id", contractHandler.GetContract)
+			contracts.PUT("/:id", contractHandler.UpdateContract)
+			contracts.POST("/:id/transition", contractHandler.TransitionContract)
+			contracts.GET("/:id/versions", contractHandler.ListVersions)
+			contracts.POST("/:id/versions", contractHandler.CreateVersion)
+			contracts.GET("/:id/negotiations", contractHandler.ListNegotiations)
+			contracts.POST("/:id/negotiations", contractHandler.SubmitNegotiation)
+			contracts.GET("/:id/signatures", contractHandler.ListSignatures)
+			contracts.POST("/:id/signatures", contractHandler.AddSigner)
+			contracts.POST("/signatures/:sig_id/execute", contractHandler.ExecuteSignature)
+			contracts.GET("/obligations", contractHandler.ListObligations)
+			contracts.POST("/:id/obligations", contractHandler.AddObligation)
+			contracts.POST("/obligations/:obl_id/fulfill", contractHandler.FulfillObligation)
+			contracts.POST("/:id/ai-analyze", contractHandler.AnalyzeContractAI)
+			contracts.GET("/:id/ai-analysis", contractHandler.GetAIAnalysis)
+			contracts.POST("/:id/ask", contractHandler.AskAI)
+
+			// Requests & Intake
+			contracts.GET("/requests", contractHandler.ListRequests)
+			contracts.POST("/requests", contractHandler.SubmitRequest)
+			contracts.PATCH("/requests/:id/triage", contractHandler.TriageRequest)
+			contracts.POST("/requests/:id/convert", contractHandler.ConvertRequest)
+
+			// Templates & Clauses
+			contracts.GET("/templates", contractHandler.ListTemplates)
+			contracts.POST("/templates", contractHandler.CreateTemplate)
+			contracts.GET("/clauses", contractHandler.ListClauses)
+			contracts.POST("/clauses", contractHandler.CreateClause)
+			contracts.POST("/templates/assemble", contractHandler.AssembleContract)
+		}
+
 	}
 
 	return r

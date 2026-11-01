@@ -50,10 +50,7 @@ case "$MODULE" in
         ;;
     components/vsatellite)
         cp -R "$VSATELLITE"/. "$DESTINATION/"
-        mkdir -p "$DESTINATION/vsatellite"
-        if [[ -d "$DESTINATION/internal" ]]; then
-            cp -R "$DESTINATION/internal" "$DESTINATION/vsatellite/"
-        fi
+        rm -rf "$DESTINATION/internal" "$DESTINATION/pkg"
         mkdir -p "$DESTINATION/internal/satellite" "$DESTINATION/internal/core"
         cp -R "$GATEWAY/internal/deployment" "$DESTINATION/internal/satellite/"
         cp -R "$GATEWAY/internal/discovery" "$DESTINATION/internal/satellite/"

@@ -1,0 +1,34 @@
+{
+  "name": "CLM SpecFast",
+  "description": "Rapid spec generation for CLM: clarify the idea, then auto-generate a requirements document, technical design, and implementation task list.",
+  "inputs": {
+    "idea": "prompt",
+    "component": "string"
+  },
+  "steps": [
+    {
+      "type": "step",
+      "id": "clarify",
+      "agent": "wf-design",
+      "prompt": "You are running SpecFast for the CLM (Contract & Certificate Lifecycle Management) platform.\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\nTarget component: {{component}}\n\nIdea:\n{{idea}}\n\nPhase 1 — Clarify (read-only):\n1. Read d:\\cmd project\\M2P-Git\\CLM\\README.md to understand the 26 lifecycle stages and architectural constraints\n2. Read the relevant component source at d:\\cmd project\\M2P-Git\\CLM\\components\\{{component}}\\\n3. Identify ambiguities in the idea that, if unresolved, would lead to incorrect requirements\n\nWrite a clarification summary to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-clarifications.md\n\nStructure:\n## Idea Restated\nYour interpretation of the idea in plain language.\n\n## Assumptions Made\nList every assumption you are making to fill gaps in the idea. Be explicit.\n\n## Ambiguities That Need a Decision\nList questions where you genuinely cannot pick a direction without user input. If there are none, say so.\n\n## CLM Context\n- Which of the 26 lifecycle stages does this touch?\n- Which architectural constraints apply (tenant isolation / compliance / crypto / audit)?\n- Does this touch the approval workflow or e-signature path? (If yes, note compliance doc requirement.)"
+    },
+    {
+      "type": "step",
+      "id": "requirements",
+      "agent": "wf-design",
+      "prompt": "Read the clarification document at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-clarifications.md\n\nNow generate a formal requirements document for this CLM feature.\nWrite it to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-requirements.md\n\nRequirements document structure:\n\n# Requirements: <Feature Name>\n\n## Overview\nOne-paragraph executive summary.\n\n## Scope\n- In scope\n- Out of scope\n\n## Functional Requirements\nNumbered list. Each requirement:\n- FR-N: <requirement statement>\n  - Priority: Must / Should / Nice-to-have\n  - Acceptance criteria: <measurable condition>\n\n## Non-Functional Requirements\n- Performance targets\n- Security requirements (tenant isolation, encryption, audit logging)\n- Compliance requirements (GDPR / PCI-DSS / SOC 2 / HIPAA as applicable)\n- Availability / reliability targets\n\n## Constraints\n- Technical constraints from the existing architecture\n- Regulatory constraints\n\n## Assumptions\nCarry forward from the clarifications document.\n\n## Open Questions\nCarry forward any unresolved ambiguities."
+    },
+    {
+      "type": "step",
+      "id": "design",
+      "agent": "wf-design",
+      "prompt": "Read:\n- Requirements: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-requirements.md\n- Clarifications: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-clarifications.md\n\nGenerate the technical design document.\nWrite it to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-design.md\n\nDesign document structure:\n\n# Technical Design: <Feature Name>\n\n## Architecture Overview\nDiagram in ASCII or Mermaid showing the components involved and data flow.\n\n## Component Changes\nFor each affected component (saas-control-plane / satellite-gateway / vsatellite / shared):\n- What changes\n- New modules / files to create\n- Existing files to modify\n\n## API Design\n- New endpoints or messages (request/response shapes)\n- Backward compatibility notes\n- Authentication / authorization model\n\n## Data Model\n- New tables / fields / indexes\n- Migration strategy\n- Tenant isolation enforcement (row-level security / tenant_id columns)\n\n## Security Design\n- Tenant isolation mechanism\n- Cryptographic operations (if any)\n- Audit log events generated\n- Compliance controls satisfied\n\n## Error Handling\nKey error scenarios and how each is handled.\n\n## Testing Strategy\n- Unit tests\n- Integration tests\n- Compliance/audit verification tests"
+    },
+    {
+      "type": "step",
+      "id": "tasks",
+      "agent": "wf-planner",
+      "prompt": "Read:\n- Requirements: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-requirements.md\n- Design: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-design.md\n\nGenerate a complete, ordered implementation task list.\nWrite it to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-tasks.md\n\nTask list structure:\n\n# Implementation Tasks: <Feature Name>\n\n## Dependency Order\nBrief note on the order constraints (e.g., schema first, then service layer, then API, then UI).\n\n## Tasks\n\n- [ ] TASK-001: <title>\n  - Component: <component name>\n  - Files: <exact paths to create or modify>\n  - Description: <what to implement>\n  - Acceptance: <how to verify it's done>\n  - Estimated size: XS / S / M / L\n\n(continue for all tasks)\n\n## Compliance Checklist\n- [ ] Audit log events defined and implemented\n- [ ] Tenant isolation verified in all new queries\n- [ ] Compliance documentation updated (if approval/e-signature path touched)\n- [ ] Migration script written and tested\n- [ ] Security review completed (if auth/crypto touched)\n\n## Total Estimate\n<Overall S / M / L / XL> with reasoning.\n\nAfter writing the task list, also write a combined spec index to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\spec-index.md listing the paths to all four generated artifacts (clarifications, requirements, design, tasks) so the developer has a single entry point."
+    }
+  ]
+}

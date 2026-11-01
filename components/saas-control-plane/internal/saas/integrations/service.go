@@ -14,7 +14,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,8 +28,118 @@ import (
 
 var (
 	ErrIntegrationNotFound = errors.New("integration subscription not found")
-	ErrInvalidEndpointURL   = errors.New("endpoint URL must be a valid HTTP/HTTPS URL")
+	ErrInvalidEndpointURL  = errors.New("endpoint URL must be a valid HTTPS URL (private IPs, localhost, and cloud metadata prohibited)")
 )
+
+// IsPrivateOrReservedIP verifies whether an IP address belongs to loopback, private RFC 1918,
+// link-local, cloud metadata (169.254.0.0/16), carrier-grade NAT, or IPv6 unique local space.
+func IsPrivateOrReservedIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+	metadataNet := net.IPNet{
+		IP:   net.ParseIP("169.254.0.0"),
+		Mask: net.CIDRMask(16, 32),
+	}
+	if metadataNet.Contains(ip) {
+		return true
+	}
+	cgnatNet := net.IPNet{
+		IP:   net.ParseIP("100.64.0.0"),
+		Mask: net.CIDRMask(10, 32),
+	}
+	if cgnatNet.Contains(ip) {
+		return true
+	}
+	if len(ip) == net.IPv6len {
+		if ip[0] == 0xfe && (ip[1]&0xc0) == 0x80 {
+			return true
+		}
+		if (ip[0] & 0xfe) == 0xfc {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateWebhookURL strictly validates URL scheme, internal domains, and IP literals.
+func ValidateWebhookURL(endpoint string) error {
+	if endpoint == "" {
+		return ErrInvalidEndpointURL
+	}
+	parsed, err := url.ParseRequestURI(endpoint)
+	if err != nil {
+		return fmt.Errorf("%w: malformed URL: %v", ErrInvalidEndpointURL, err)
+	}
+	if strings.ToLower(parsed.Scheme) != "https" {
+		return fmt.Errorf("%w: scheme must strictly be https", ErrInvalidEndpointURL)
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") ||
+		strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".local") ||
+		host == "metadata.google.internal" || host == "instance-data" {
+		return fmt.Errorf("%w: internal hostname %s is forbidden", ErrInvalidEndpointURL, host)
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if IsPrivateOrReservedIP(ip) {
+			return fmt.Errorf("%w: destination IP %s is prohibited", ErrInvalidEndpointURL, ip.String())
+		}
+	}
+	return nil
+}
+
+// NewSafeHTTPClient constructs an HTTP client that validates destination IPs at connection time
+// and prohibits redirects, completely neutralizing DNS rebinding and redirect SSRF attacks.
+func NewSafeHTTPClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid destination address: %w", err)
+			}
+			// IP literal immediate validation (bypasses DNS and pins directly)
+			if ip := net.ParseIP(host); ip != nil {
+				if IsPrivateOrReservedIP(ip) {
+					return nil, fmt.Errorf("SSRF defense: destination IP %s is private/metadata/prohibited", ip.String())
+				}
+				pinnedAddr := net.JoinHostPort(ip.String(), port)
+				return dialer.DialContext(ctx, network, pinnedAddr)
+			}
+			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+			if err != nil {
+				return nil, fmt.Errorf("DNS resolution failed for %s: %w", host, err)
+			}
+			if len(ips) == 0 {
+				return nil, fmt.Errorf("zero IP addresses returned for host %s", host)
+			}
+			for _, ip := range ips {
+				if IsPrivateOrReservedIP(ip) {
+					return nil, fmt.Errorf("SSRF defense: resolved IP %s is private/metadata/prohibited", ip.String())
+				}
+			}
+			pinnedAddr := net.JoinHostPort(ips[0].String(), port)
+			return dialer.DialContext(ctx, network, pinnedAddr)
+		},
+		TLSHandshakeTimeout: 5 * time.Second,
+	}
+	return &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return errors.New("SSRF defense: HTTP redirects are strictly prohibited for webhook delivery")
+		},
+	}
+}
 
 type IntegrationType string
 
@@ -74,18 +188,26 @@ type IntegrationController struct {
 
 // NewIntegrationController creates a new integration controller.
 func NewIntegrationController(logger *zap.Logger) *IntegrationController {
+	return NewIntegrationControllerWithClient(NewSafeHTTPClient(), logger)
+}
+
+// NewIntegrationControllerWithClient allows injecting a custom HTTP client (e.g. for testing).
+func NewIntegrationControllerWithClient(client *http.Client, logger *zap.Logger) *IntegrationController {
+	if client == nil {
+		client = NewSafeHTTPClient()
+	}
 	return &IntegrationController{
 		subscriptions: make(map[uuid.UUID]*Subscription),
 		history:       make([]*DeliveryRecord, 0, 100),
-		httpClient:    &http.Client{Timeout: 10 * time.Second},
+		httpClient:    client,
 		logger:        logger,
 	}
 }
 
 // RegisterSubscription creates a new webhook or connector.
 func (c *IntegrationController) RegisterSubscription(ctx context.Context, tenantID uuid.UUID, sub *Subscription) (*Subscription, error) {
-	if sub.EndpointURL == "" {
-		return nil, ErrInvalidEndpointURL
+	if err := ValidateWebhookURL(sub.EndpointURL); err != nil {
+		return nil, err
 	}
 
 	c.mu.Lock()
@@ -208,6 +330,8 @@ func (c *IntegrationController) dispatchToOne(ctx context.Context, sub *Subscrip
 	} else {
 		record.StatusCode = resp.StatusCode
 		record.Success = (resp.StatusCode >= 200 && resp.StatusCode < 300)
+		// Drain up to 1MB of response body to permit HTTP connection reuse while bounding memory
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024*1024))
 		_ = resp.Body.Close()
 	}
 

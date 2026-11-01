@@ -1,0 +1,62 @@
+# ==============================================================================
+# CLM PRODUCTION SECURITY GATES CONFIGURATION
+# Enforces zero-tolerance deployment gates across CI/CD and production Kubernetes
+# In accordance with NIST SP 800-218 (SSDF) and SLSA Level 3
+# ==============================================================================
+
+version: "1.0"
+pipeline: "enterprise-clm-deployment-gates"
+strict_mode: true
+
+gates:
+  - id: GATE-01-VULNERABILITY-ZERO-TOLERANCE
+    name: "Vulnerability Scanning Gate"
+    severity_threshold:
+      critical: 0
+      high: 0 # Zero unresolved high-risk vulnerabilities without approved exception
+    tools:
+      - name: "Trivy Container Scanner"
+        fail_on_cve: true
+      - name: "Gosec AST Scanner"
+        fail_on_cve: true
+    approved_exceptions_ledger: "compliance/evidence/VULNERABILITY_EXCEPTIONS.json"
+
+  - id: GATE-02-EXPOSED-SECRETS-ZERO-TOLERANCE
+    name: "Exposed Secrets & Private Keys Gate"
+    rule: "No plaintext private keys, API secrets, or passwords in repository or container image"
+    scanner: "TruffleHog / GitGuardian / Gitleaks"
+    enforce_zero_private_key_saas: true
+
+  - id: GATE-03-TENANT-ISOLATION-ENFORCEMENT
+    name: "Multi-Tenant Isolation Gate"
+    test_suite: "scripts/verify_scenarios_a_to_h.js"
+    scenario: "Scenario C (Cross-Tenant Leakage Check)"
+    allowed_leakage_records: 0
+    enforce_rls_policies: true
+
+  - id: GATE-04-AUTH-AND-SOD-ENFORCEMENT
+    name: "Authentication & Segregation of Duties Gate"
+    test_suite: "scripts/verify_scenarios_a_to_h.js"
+    scenario: "Scenario D (DOA & ARC-004 SoD Enforcement)"
+    allow_self_approval: false
+    enforce_mfa_in_identity: true
+
+  - id: GATE-05-CRYPTOGRAPHIC-INTEGRITY-GATE
+    name: "FIPS 140-3 & Digital Signature Gate"
+    test_suite: "scripts/verify_scenarios_a_to_h.js"
+    scenario: "Scenario E (SHA-256 Digest & Detached Signature)"
+    tamper_detection_required: true
+    allow_unverified_signing: false
+
+  - id: GATE-06-WORM-AUDIT-INTEGRITY-GATE
+    name: "WORM Immutable Audit Trail Gate"
+    test_suite: "scripts/verify_scenarios_a_to_h.js"
+    scenario: "Scenario H (WORM Triggers & RLS Configuration)"
+    allow_audit_log_mutation: false
+
+  - id: GATE-07-DATABASE-MIGRATION-VALIDATION
+    name: "Database Schema Migration Validation"
+    migration_directory: "components/saas-control-plane/deploy/migrations"
+    require_forward_idempotent: true
+    enforce_rls_on_all_tables: true
+

@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-10-31T15:28:28.717Z",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "win32",
+    "arch": "x64",
+    "dockerAvailable": false,
+    "k8sAvailable": false,
+    "psqlAvailable": false
+  },
+  "totalAttacks": 21,
+  "blockedAttacks": 18,
+  "successfulBreaches": 3,
+  "findings": [
+    {
+      "id": "ATK-013",
+      "category": "Compliance Claims",
+      "name": "Unsubstantiated FIPS 140-3 Validation Claim (False Positive)",
+      "attackDescription": "Claiming FIPS 140-3 Level 3 passed without a NIST CMVP validation certificate number.",
+      "status": "VULNERABLE",
+      "details": "No NIST CMVP certificate exists. The platform uses standard crypto libraries and external HSM interfaces, which represents FIPS-compliant design (L1/L2), NOT formal CMVP validation (L5).",
+      "cwe": "ISO/IEC 17021 / False Claims Policy",
+      "cvss": 7
+    },
+    {
+      "id": "ATK-014",
+      "category": "Compliance Claims",
+      "name": "Premature SOC 2 Type II Attestation Claim (False Positive)",
+      "attackDescription": "Claiming SOC 2 Type II passed in a development / pre-production repository.",
+      "status": "VULNERABLE",
+      "details": "SOC 2 Type II requires an independent CPA firm to observe control operating effectiveness over a 6 to 12 month production period. Cannot be certified in development without a live audit window.",
+      "cwe": "AICPA SSAE 18 / AT-C 205",
+      "cvss": 7
+    },
+    {
+      "id": "ATK-015",
+      "category": "Compliance Claims",
+      "name": "eIDAS Qualified Electronic Signature (QES) Misclassification",
+      "attackDescription": "Claiming QES compliance without integration to an EU Qualified Trust Service Provider (QTSP).",
+      "status": "VULNERABLE",
+      "details": "The platform implements Advanced Electronic Signatures (AdES). QES requires a certified QTSP on the EU Trusted List (EUTL) and a Qualified Signature Creation Device (QSCD).",
+      "cwe": "Regulation (EU) No 910/2014 Art. 25-29",
+      "cvss": 6.5
+    }
+  ]
+}

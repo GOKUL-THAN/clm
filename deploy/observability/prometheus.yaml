@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alerting-rules.yaml"
+
+scrape_configs:
+  - job_name: "clm-saas-control-plane"
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - clm-production
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: keep
+        regex: clm-control-plane
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: "8080"
+
+  - job_name: "clm-satellite-gateway-in-vpc"
+    static_configs:
+      - targets: ["clm-satellite.customer.internal:8443"]
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/certs/ca.crt
+      cert_file: /etc/prometheus/certs/prom-client.crt
+      key_file: /etc/prometheus/certs/prom-client.key
+      insecure_skip_verify: false
+
+  - job_name: "clm-postgresql-exporter"
+    static_configs:
+      - targets: ["postgresql-exporter.clm-production.svc.cluster.local:9187"]
+
+  - job_name: "clm-keycloak-metrics"
+    static_configs:
+      - targets: ["keycloak.clm-production.svc.cluster.local:8080"]
+    metrics_path: /metrics
+

@@ -1,0 +1,28 @@
+{
+  "name": "CLM Structured Bug-Fix",
+  "description": "Structured three-phase bug resolution for CLM: investigate → diagnose root cause → fix with verification.",
+  "inputs": {
+    "bug_report": "prompt",
+    "component": "string"
+  },
+  "steps": [
+    {
+      "type": "step",
+      "id": "investigate",
+      "agent": "wf-planner",
+      "prompt": "You are investigating a bug in the CLM (Contract & Certificate Lifecycle Management) platform.\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\nAffected component hint: {{component}}\n\nBug report:\n{{bug_report}}\n\nInvestigation tasks (read only — no code changes yet):\n1. Read relevant source files to understand the code path involved\n2. Read recent git log in d:\\cmd project\\M2P-Git\\CLM to identify recent changes that could have introduced this\n3. Check d:\\cmd project\\M2P-Git\\CLM\\compliance\\ for any related compliance constraints\n4. Identify all callers and consumers of the affected code\n\nWrite your findings to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\bug-investigation.md\n\nInvestigation report structure:\n## Bug Summary\nRestate the bug in your own words after reading the code.\n\n## Code Path\nTrace the exact execution path that leads to the bug.\n\n## Suspect Root Causes\nList 2-3 possible root causes, ranked by likelihood. For each:\n- Hypothesis\n- Supporting evidence from the code\n- How to confirm\n\n## Recent Changes\nAny git commits in the last 30 days touching the affected files.\n\n## Blast Radius\n- Which tenants / lifecycle stages are affected\n- Any compliance or audit trail impact\n- Any cryptographic / signature integrity impact"
+    },
+    {
+      "type": "step",
+      "id": "diagnose",
+      "agent": "wf-planner",
+      "prompt": "Read the investigation report at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\bug-investigation.md\n\nNow diagnose the confirmed root cause and write a fix plan to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\bug-diagnosis.md\n\nDiagnosis document structure:\n## Confirmed Root Cause\nThe single root cause, stated precisely. Explain why the other hypotheses were ruled out.\n\n## Fix Approach\nDescribe the fix at a design level — what logic changes, what invariants are restored.\n\n## Fix Tasks\nOrdered list of discrete changes:\n- [ ] Task 1: <title>\n  - File: <exact path>\n  - Change: <what to modify>\n  - Verify: <how to confirm it's fixed>\n\n## Regression Risk\nWhat else could break? What tests must pass?\n\n## Compliance / Audit Impact\nDoes this bug affect audit logs, cryptographic integrity, or tenant isolation? If yes, note the remediation requirement.\n\n## Test Cases to Add\nList specific test cases that would catch this bug in future."
+    },
+    {
+      "type": "step",
+      "id": "fix",
+      "agent": "wf-coder",
+      "prompt": "Read the bug diagnosis at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\bug-diagnosis.md\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\n\nImplement the fix:\n1. Read the affected files before editing — understand the full context\n2. Apply the fix exactly as described in the diagnosis\n3. Add the regression test cases listed in the diagnosis\n4. Run `make test` — all tests must pass\n5. Run `make lint` — no lint errors\n6. If the diagnosis flagged compliance / audit impact, ensure the fix preserves or restores audit log integrity and tenant isolation\n\nAfter fixing, write a close-out note to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\bug-fix-summary.md\n\nSummary structure:\n## Root Cause\nOne sentence.\n\n## Fix Applied\nFiles changed and what was changed.\n\n## Tests Added\nTest file paths and what each test covers.\n\n## Verification\nOutput of `make test` and `make lint` confirming all green.\n\n## Follow-up Items\nAnything that should be done as a separate ticket (related debt, missing coverage, etc.)."
+    }
+  ]
+}

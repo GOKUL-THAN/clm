@@ -1,0 +1,67 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": 1,
+  "title": "Enterprise CLM Executive & Operational Telemetry",
+  "tags": ["clm", "contracts", "pki", "executive"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total Contract Portfolio Value",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(clm_contract_total_value_usd)", "legendFormat": "Portfolio Value" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "id": 2,
+      "title": "Active Contracts Across 14 Departments",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "sum(clm_contracts_count{status='active'})", "legendFormat": "Active Contracts" }]
+    },
+    {
+      "id": 3,
+      "title": "Overall Obligation Compliance Rate",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [{ "expr": "clm_portfolio_compliance_rate_percent", "legendFormat": "Compliance %" }],
+      "fieldConfig": { "defaults": { "min": 0, "max": 100, "unit": "percent" } }
+    },
+    {
+      "id": 4,
+      "title": "Three-Way Match Verification Rate",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "clm_procurement_3way_match_success_percent", "legendFormat": "Match %" }],
+      "fieldConfig": { "defaults": { "min": 0, "max": 100, "unit": "percent" } }
+    },
+    {
+      "id": 5,
+      "title": "Contracts by Corporate Department (14 Departments)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{ "expr": "clm_contracts_by_department_count", "legendFormat": "{{department}}" }]
+    },
+    {
+      "id": 6,
+      "title": "Contract Cycle Time by Lifecycle Stage (Days)",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [{ "expr": "clm_stage_cycle_time_days", "legendFormat": "{{stage}}" }]
+    },
+    {
+      "id": 7,
+      "title": "Portfolio Risk Exposure Heatmap",
+      "type": "heatmap",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "targets": [{ "expr": "rate(clm_risk_score_distribution[1h])", "legendFormat": "{{severity}}" }]
+    }
+  ]
+}
+

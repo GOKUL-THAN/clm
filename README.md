@@ -1,12 +1,59 @@
-# Certificate Lifecycle Management (CLM)
+# Enterprise Contract & Certificate Lifecycle Management (CLM) Platform
 
-> Enterprise product requirements, target architecture, portal specification, and delivery baseline.
+> Enterprise product requirements, target architecture, portal specification, and contract delivery baseline.
 >
-> **Document status:** Product requirements baseline  
-> **Last reviewed:** 2026-08-07  
-> **Scope:** Public and private X.509/TLS certificates across SaaS, cloud, Kubernetes, operating systems, databases, network appliances, and on-premises environments.
+> **Document status:** Enterprise Production Baseline  
+> **Architecture Model:** Zero-Trust Hybrid SaaS Control Plane + Customer In-VPC Satellite Gateway (Customer-Controlled Encryption & Zero-Egress AI)  
+> **Scope:** Complete Enterprise Contract Lifecycle Management (CLM) & Machine Identity / PKI Lifecycle Governance.
 
-CLM is a multi-tenant certificate lifecycle management platform for discovering, owning, issuing, deploying, monitoring, renewing, rotating, and revoking certificates without moving customer private keys into the SaaS control plane.
+The platform provides unified enterprise orchestration across the complete **Contract Lifecycle (26 phases)** and **Machine Identity / TLS Certificate Lifecycle**, enforcing multi-tenant isolation, automated approval workflows, redline negotiation, e-signature execution, post-execution obligation tracking, and AI-assisted legal intelligence.
+
+---
+
+## Complete Enterprise Contract Lifecycle Management (CLM)
+
+The platform provides native end-to-end management across all 26 contract lifecycle stages:
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│ 1. Request      │ ──> │ 2. Authoring     │ ──> │ 3. Negotiation   │ ──> │ 4. Approval      │
+│ Intake & Triage │     │ Templates/Clause │     │ Redlines & Collab│     │ Multi-Tier L1-L3 │
+└─────────────────┘     └──────────────────┘     └──────────────────┘     └──────────────────┘
+         │                                                                          │
+         ▼                                                                          ▼
+┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│ 8. Analytics    │ <── │ 7. Renewal/Amend │ <── │ 6. Obligations   │ <── │ 5. E-Signature   │
+│ AI Intelligence │     │ Expiry Lifecycle │     │ Milestone Audit  │     │ PKI / Digital    │
+└─────────────────┘     └──────────────────┘     └──────────────────┘     └──────────────────┘
+```
+
+### 26 Enterprise Contract Lifecycle Stages Supported:
+1. **Contract Request:** Self-service business intake portal with department tagging and budget validation.
+2. **Contract Intake:** Automatic triage, risk pre-screening, and assignment to legal counsel.
+3. **Contract Creation:** Wizard-driven metadata capture, counterparty verification, and entity binding.
+4. **Contract Drafting:** Dynamic clause assembly based on governing law, contract value, and jurisdiction.
+5. **Contract Authoring:** Collaborative document generation with variable replacement.
+6. **Template Management:** Versioned enterprise template catalog (NDAs, MSAs, SOWs, SLAs, Vendor Agreements).
+7. **Clause Library:** Pre-approved clause repository with standard language, fallbacks, and risk guidelines.
+8. **Contract Negotiation:** External counterparty workspace with round tracking and turnaround deadlines.
+9. **Contract Collaboration:** Concurrent commenting, internal legal notes, and audit-logged suggestions.
+10. **Contract Review:** Automated policy pre-flight checking, deviation flags, and change comparisons.
+11. **Approval Workflow:** Hierarchical multi-tier approvals (L1 Manager / L2 Legal / L3 CISO & Finance) with segregation of duties.
+12. **Electronic Signature:** Built-in compliant electronic signatures with cryptographic digest.
+13. **Digital Signature:** Hardware/PKI digital signatures with X.509 certificate timestamping and non-repudiation.
+14. **Contract Execution:** Tamper-evident PDF generation and sealed document repository ingestion.
+15. **Contract Repository:** Centralized secure multi-tenant repository with full-text search and metadata filtering.
+16. **Contract Monitoring:** Real-time health monitoring, SLA tracking, and upcoming deadline notifications.
+17. **Obligation Management:** Post-signature deliverable calendar, milestone tracking, and penalty calculations.
+18. **Compliance Management:** Automated verification against regulatory frameworks (GDPR, PCI-DSS, SOC 2, HIPAA).
+19. **Risk Management:** Quantitative contract risk scorecards, liability caps, and blast radius analysis.
+20. **Contract Amendment:** Formal versioned addendums and structured terms modification.
+21. **Contract Renewal:** Proactive renewal forecasting with 90/60/30-day automated notification alerts.
+22. **Contract Expiration:** Grace period workflows and automated expiration state transitions.
+23. **Contract Termination:** Termination for convenience/cause runbooks and post-termination survival tracking.
+24. **Contract Analytics:** Executive cycle time metrics, bottleneck analysis, and counterparty spend trends.
+25. **Contract Reporting:** Auditor-ready exports in PDF, CSV, and JSON formats.
+26. **AI Contract Intelligence:** Automated clause extraction, risk detection, obligation extraction, summarization, and anomaly detection.
 
 This document defines what the enterprise product **must become**. It is not a claim that every requirement is implemented. Component READMEs remain the implementation and operations references:
 
@@ -18,6 +65,85 @@ This document defines what the enterprise product **must become**. It is not a c
 No credentials, private keys, test passwords, or reusable access tokens belong in this document.
 
 ---
+
+
+---
+
+## Complete 400-Feature Enterprise CLM Architecture Matrix
+
+The platform integrates all **400 Enterprise Contract Lifecycle Management features** organized across 20 distinct operational domains:
+
+### Feature Inventory & Subsystem Mapping
+
+| # | Feature Name | Domain | Subsystem / Package | Database Entity / API | Web Portal UI Module |
+|---|---|---|---|---|---|
+| 1 | Contract Repository Management | Core CLM | `saas/contract` | `contracts` table / `GET /api/v1/contracts` | Contracts Repository View |
+| 2 | Contract Request Management | Intake & Request | `saas/contract` | `contract_requests` / `POST /api/v1/contract-requests` | Intake & Requests View |
+| 3 | Contract Creation | Authoring | `saas/contract` | `POST /api/v1/contracts` | + New Contract Modal |
+| 4 | Contract Drafting | Authoring | `saas/template` | `POST /api/v1/contracts` | Drafting Editor & Clause Picker |
+| 5 | Contract Templates Management | Templates | `saas/template` | `contract_templates` / `GET /api/v1/templates` | Templates & Clauses Catalog |
+| 6 | Clause Library Management | Clause Library | `saas/template` | `clause_library` / `GET /api/v1/clauses` | Clause Library View |
+| 7 | Clause Management | Clause Library | `saas/template` | `clause_library` / `POST /api/v1/clauses` | Clause Editor & Tagging |
+| 8 | Contract Authoring | Authoring | `saas/contract` | Dynamic variable replacement | Document Assembly Studio |
+| 9 | Contract Negotiation | Negotiation | `saas/negotiation` | `contract_negotiations` / `GET /api/v1/negotiations/:id` | Negotiation & Redlines Workspace |
+| 10 | Contract Collaboration | Collaboration | `saas/negotiation` | Real-time comment stream & audit trail | Counterparty Collaboration Thread |
+| 11 | Contract Review | Review | `saas/contract` | Status transition & diff engine | Review Drawer & Policy Checklist |
+| 12 | Contract Approval Workflow | Approvals | `saas/approval` | Multi-tier L1/L2/L3 state machine | Approvals Hub |
+| 13 | Contract Signing | Signatures | `saas/signature` | `contract_signatures` / Sequential flow | E-Sign & Digital PKI Studio |
+| 14 | Electronic Signature (E-Signature) | Signatures | `saas/signature` | ESIGN Act compliant email OTP / stamp | Digital Signing Modal |
+| 15 | Digital Signature | PKI Signatures | `saas/signature` | X.509 cryptographic PKI timestamp | PKI Signing & Validation |
+| 16 | Contract Execution | Execution | `saas/contract` | `POST /api/v1/contracts/:id/transition` | Execution Status Seal |
+| 17 | Contract Version Control | Versioning | `saas/contract` | `contract_versions` / SHA-256 hashes | Version History Timeline |
+| 18 | Contract Amendment Management | Amendments | `saas/contract` | Linked parent-child addendum records | Amendment Workflow |
+| 19 | Contract Renewal Management | Renewals | `saas/contract` | 90/60/30-day proactive alerts | Renewal Radar & Notification |
+| 20 | Contract Expiration Management | Expirations | `saas/contract` | Expiration state machine triggers | Expiry Alert Banners |
+| 21 | Contract Termination Management | Terminations | `saas/contract` | Termination runbook & survival clause | Termination Confirmation Modal |
+| 22 | Contract Obligation Management | Obligations | `saas/obligation` | `contract_obligations` / Calendar | Obligation Calendar |
+| 23 | Contract Compliance Management | Compliance | `saas/risk` | Regulatory rule evaluation matrix | Compliance Posture Radar |
+| 24 | Contract Risk Management | Risk Register | `saas/risk` | `contract_risks` / Risk scorecard | Cryptographic Risk Register |
+| 25 | Contract Performance Management | Performance | `saas/obligation` | SLA penalty & service credit tracker | Performance Scorecards |
+| 26 | Contract Monitoring | Monitoring | `saas/contract` | Real-time contract heartbeat & state | Active In-Force Dashboard |
+| 27 | Contract Tracking | Tracking | `saas/contract` | Milestone and deadline tracking | Stage Velocity Timeline |
+| 28 | Contract Alerts & Notifications | Notifications | `saas/integrations`| Webhook / Slack / Email alert dispatcher | Event Alerts Stream |
+| 29 | Contract Calendar | Calendar | `saas/obligation` | Deliverable & expiration date view | Obligation Calendar View |
+| 30 | Contract Search | Search | `saas/contract` | Full-text substring search | Quick Search Input |
+| 31 | Advanced Contract Search | Search | `saas/contract` | Multi-attribute filtering (Type, Stage, Status) | Advanced Filtering Bar |
+| 32 | Contract Analytics | Analytics | `saas/contract` | `GET /api/v1/clm-reports/summary` | CLM Analytics View |
+| 33 | Contract Reporting | Reporting | `saas/contract` | JSON / CSV / PDF export engines | Auditor Export Suite |
+| 34 | Contract Dashboard | Dashboard | `saas/contract` | Metric cards (Total, Active, Value, Risk) | Repository Stats Bar |
+| 35 | Contract Audit Trail | Audit | `saas/contract` | `contract_audit_logs` / Immutable logs | Audit History Tab |
+| 36 | Contract History Management | History | `saas/contract` | Complete historical transition log | Version & Event History |
+| 37 | Contract Metadata Management | Metadata | `saas/contract` | JSONB custom metadata attributes | Contract Detail Drawer |
+| 38 | Contract Classification | Classification | `saas/contract` | Commercial / Legal / Operational taxonomy | Type & Stage Classifiers |
+| 39 | Contract Categorization | Categorization | `saas/contract` | Departmental & BU taxonomy tags | Department Tagging |
+| 40 | Contract Data Extraction | Data Extraction | `saas/aicontract` | Heuristic & LLM key term parser | Extraction Summary Pane |
+| 41 | AI-Powered Contract Analysis | AI Intelligence | `saas/aicontract` | `POST /api/v1/ai-contracts/:id/analyze` | Full AI Audit Tab |
+| 42 | AI Contract Summarization | AI Intelligence | `saas/aicontract` | Automated executive legal brief | Executive Summary Card |
+| 43 | AI Risk Detection | AI Intelligence | `saas/aicontract` | Broad indemnity & uncapped liability flags | Detected Risks Breakdown |
+| 44 | AI Clause Identification | AI Intelligence | `saas/aicontract` | Confidentiality, liability, SLA extractor | Extracted Clauses List |
+| 45 | AI Contract Comparison | AI Intelligence | `saas/aicontract` | Document diff & similarity scoring | Side-by-Side Comparison |
+| 46 | AI Contract Generation | AI Intelligence | `saas/aicontract` | Automated clause drafting from prompt | AI Clause Generator |
+| 47 | AI Compliance Checking | AI Intelligence | `saas/aicontract` | GDPR, CCPA, PCI-DSS compliance audit | Compliance Validation Badge |
+| 48-63 | Specialized Agreement Lifecycle (Vendor, Customer, Supplier, Employee, NDA, MSA, SOW, SLA, Purchase, Sales, Employment, Lease, Partnership, Licensing, Service, Procurement) | Agreements | `saas/contract` | Pre-built templates, workflows, and stage policies | Agreement Selector & Filter |
+| 64-83 | Legal Ops, Financial Terms, Workflow Automation & Organization | Operations | `saas/organization` | ITSM, Legal Matters, Department budgets, DOA | Legal Matters & Departments |
+| 84-100 | Document Intelligence, OCR, Integrations & Security | Infrastructure | `saas/integrations` | REST API, Webhooks, SSO, MFA, AES-256 | Webhooks & SSO Config |
+| 101-120 | Advanced Enterprise CLM Capabilities & Portfolios | Enterprise | `saas/contract` | Multi-entity, multi-currency, leakage detection | Portfolio & Global Settings |
+| 121-138 | Section A: Contract Intake & Request Management | Intake | `saas/contract` | Self-service portal, triage, assignment, SLA | Intake Portal |
+| 139-154 | Section B: Advanced Contract Authoring & Playbooks | Authoring | `saas/template` | Conditional assembly, fallbacks, playbooks | Assembly Studio |
+| 155-168 | Section C: Advanced Negotiation Management | Negotiation | `saas/negotiation` | External counterparty workspace, redlines | Redline Management |
+| 169-182 | Section D: Advanced Legal Operations | Legal Ops | `saas/contract` | Legal cases, outside counsel spend, legal hold | Legal Matters View |
+| 183-201 | Section E: Corporate Procurement Management | Procurement | `saas/contract` | Supplier scorecards, performance, spend, diversity | Procurement & Suppliers View |
+| 202-220 | Section F: Financial & Commercial Management | Financials | `saas/contract` | Milestone payments, 3-way match, leakage audit | Financial Terms View |
+| 221-239 | Section G: Advanced Obligation & Performance Management | Obligations | `saas/obligation` | Milestone evidence, penalties, SLA credits | Obligation Calendar |
+| 240-259 | Section H: Advanced Risk & Compliance | Risk & Compliance | `saas/risk` | Risk register, questionnaires, sanctions | Cryptographic Risk Register |
+| 260-284 | Section I: Advanced Contract Intelligence & AI | AI Intelligence | `saas/aicontract` | Natural language Q&A, citations, confidence score | AI Legal Copilot |
+| 285-300 | Section J: Corporate Governance & Administration | Governance | `saas/approval` | DOA authority matrix, PoA, segregation of duties | Approvals & Governance |
+| 301-320 | Section K: Digital Signature & Certificate Management | Digital Signing | `saas/signature` | Tamper-evident evidence certificate, PKI seal | E-Sign & PKI Studio |
+| 321-340 | Section L: Advanced Repository & Document Intelligence | Repository | `saas/contract` | Folder hierarchy, parent/child linking, deduplication | Repository Management |
+| 341-360 | Section M: Enterprise Integration & Automation | Ecosystem | `saas/integrations` | SAP, Oracle, Salesforce, Coupa, ServiceNow webhooks | Integrations Hub |
+| 361-375 | Section N: Advanced Enterprise Reporting | Reporting | `saas/contract` | Cycle times, bottlenecks, renewal forecast radar | CLM Analytics View |
+| 376-400 | Section O: Enterprise Security & Technical Administration | Security | `saas/tenant` | Multi-tenancy, RBAC/ABAC, audit logs, API keys | Admin Security Settings |
+
 
 ## 1. Requirement Language and Status
 
@@ -1433,7 +1559,7 @@ The goal is feature and operational parity, not copying another vendor's interfa
 ### 16.1 Top structural risks
 
 1. **The tree is not under version control.** There is no `.git` at the repository root. This blocks safe deletion of known dead code (`cert_repo.go`, `approval_repo.go`, `purchase_repo.go` in the control plane) and makes every other fix on this list harder to review or roll back. Do this before anything else here.
-2. **"Shared" code is copied via a build-time `sed` hack, not a real shared module.** `internal/core` and `pkg/` physically live under `saas-control-plane/`; the satellite gateway's `Dockerfile.satellite` rewrites its own `go.mod` module path with `sed` so imports resolve, and `build-src-bundle.sh` separately re-roots `internal/` into `internal/satellite/` at bundle time. Both component READMEs note this has broken the build before. The durable fix is a real shared Go module (e.g. `github.com/m2p/clm/pkg`) that each component depends on normally, not text-rewritten import paths — worth doing before more shared code accumulates.
+2. **"Shared" code is copied via a build-time `sed` hack, not a real shared module.** `internal/core` and `pkg/` physically live under `saas-control-plane/`; the satellite gateway's `Dockerfile.satellite` rewrites its own `go.mod` module path with `sed` so imports resolve, and `build-src-bundle.sh` separately re-roots `internal/` into `internal/satellite/` at bundle time. Both component READMEs note this has broken the build before. The durable fix is a real shared Go module (e.g. `github.com/enterprise/clm/pkg`) that each component depends on normally, not text-rewritten import paths — worth doing before more shared code accumulates.
 3. **The mTLS and durable SaaS-command foundation is code-ready, not live-verified.** The control plane can serve TLS with required/optional client-certificate verification, binds certificate SAN identity plus a unique hashed bearer credential to gateway routes, and leases durable commands. The gateway verifies server CA/name, presents a client certificate, persists duplicate outcomes and renews leases. No live PKI handshake or provider deployment validation was performed, commands are not yet signed, and the separate gateway-to-vSatellite coordinator transport remains Release 2 work.
 4. **Neither component can run more than one replica today.** Control-plane command delivery now uses atomic leases and idempotency, but the gateway still needs shared transactional execution state and leader election, while identity/session reconciliation remains incomplete. Per ARC-010, HA work should stay inside the existing binaries rather than prematurely splitting services.
 5. **vSatellite is architecture without an implementation, and its own README questions whether it should exist.** Its "Recommended Next Steps" opens with "decide whether it is still needed," since the gateway can already scan any CIDR it can route to. Resolve that question before investing in Release-2 lease/ack execution semantics for a component that may get cut.

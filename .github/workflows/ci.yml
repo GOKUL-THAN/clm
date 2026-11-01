@@ -57,8 +57,15 @@ jobs:
         run: cd "$RUNNER_TEMP/clm-module" && go vet ./...
       - name: Test
         run: cd "$RUNNER_TEMP/clm-module" && go test ./... -count=1
+      - name: Test with Race Detector
+        run: cd "$RUNNER_TEMP/clm-module" && go test -race ./...
       - name: Build
         run: cd "$RUNNER_TEMP/clm-module" && go build ./...
+      - name: Security Static Analysis (Gosec)
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+          cd "$RUNNER_TEMP/clm-module"
+          gosec -exclude-dir=web ./...
       - name: Dependency vulnerability scan
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
@@ -144,3 +151,86 @@ jobs:
             --exit-code 1 --severity CRITICAL clm-server:ci
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.2 image \
             --exit-code 1 --severity CRITICAL clm-satellite:ci
+
+  postgres-rls-test:
+    name: PostgreSQL 15 RLS and Immutable Audit Verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: clm_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: superuser_ci_secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install PostgreSQL Client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Initialize Isolated Role Architecture (Superuser Setup)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGDATABASE: clm_test
+          PGUSER: postgres
+          PGPASSWORD: superuser_ci_secret
+        run: |
+          psql -v ON_ERROR_STOP=1 -f scripts/setup_ci_postgres_roles.sql
+
+      - name: Apply Migrations as Migration Owner (Table Ownership: clm_table_owner)
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGDATABASE: clm_test
+          PGUSER: clm_migration_owner
+          PGPASSWORD: migration_ci_secret
+        run: |
+          for file in $(ls components/saas-control-plane/deploy/migrations/*.sql | sort); do
+            if [ "$(basename "$file")" = "000_keycloak_db.sql" ]; then
+              echo "Skipping container init script: $file"
+              continue
+            fi
+            echo "Applying migration: $file"
+            psql -v ON_ERROR_STOP=1 -c "SET ROLE clm_table_owner;" -f "$file"
+          done
+
+      - name: Execute Live RLS and Immutable Audit Tests as Non-Superuser clm_app_role
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGDATABASE: clm_test
+          PGUSER: clm_app_role
+          PGPASSWORD: app_ci_secret
+        run: |
+          psql -v ON_ERROR_STOP=1 -f scripts/test_postgres_rls_live.sql
+
+      - name: Execute Table Owner FORCE RLS Test as clm_table_owner
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGDATABASE: clm_test
+          PGUSER: clm_table_owner
+          PGPASSWORD: owner_ci_secret
+        run: |
+          psql -v ON_ERROR_STOP=1 -f scripts/test_postgres_table_owner_rls.sql
+
+      - name: Execute Superuser Negative-Control Test as postgres
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGDATABASE: clm_test
+          PGUSER: postgres
+          PGPASSWORD: superuser_ci_secret
+        run: |
+          psql -v ON_ERROR_STOP=1 -f scripts/test_postgres_superuser_negative_control.sql
+

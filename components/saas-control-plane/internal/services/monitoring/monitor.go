@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"bytes"
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -51,7 +52,8 @@ type Monitor struct {
 	certRepo core.CertificateRepository
 	satRepo  core.SatelliteRepository
 	config   *AlertConfig
-	logger   *zap.Logger
+	logger     *zap.Logger
+	httpClient *http.Client
 }
 
 // NewMonitor creates a new certificate monitor.
@@ -77,7 +79,8 @@ func NewMonitor(
 		certRepo: certRepo,
 		satRepo:  satRepo,
 		config:   config,
-		logger:   logger,
+		logger:     logger,
+		httpClient: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return errors.New("redirects prohibited") }},
 	}
 }
 
@@ -221,7 +224,7 @@ func (m *Monitor) sendAlert(alert Alert) {
 
 func (m *Monitor) sendWebhook(alert Alert) {
 	payload, _ := json.Marshal(alert)
-	resp, err := http.Post(m.config.WebhookURL, "application/json", bytes.NewReader(payload))
+	resp, err := m.httpClient.Post(m.config.WebhookURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		m.logger.Debug("webhook delivery failed", zap.Error(err))
 		return
@@ -235,7 +238,7 @@ func (m *Monitor) sendSlack(alert Alert) {
 		"text": fmt.Sprintf("%s *%s*\n%s", emoji[alert.Level], alert.Title, alert.Message),
 	}
 	payload, _ := json.Marshal(slackPayload)
-	resp, err := http.Post(m.config.SlackURL, "application/json", bytes.NewReader(payload))
+	resp, err := m.httpClient.Post(m.config.SlackURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		m.logger.Debug("slack delivery failed", zap.Error(err))
 		return
