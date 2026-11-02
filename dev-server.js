@@ -1,4 +1,4 @@
-﻿// ==============================================================================
+// ==============================================================================
 // CLM Unified Development Web Server
 // ==============================================================================
 // Serves both CLM web portals and provides lightweight mock APIs for instant
@@ -31,6 +31,8 @@ try {
 
 const SAAS_DIR = path.join(__dirname, 'components', 'saas-control-plane', 'web', 'admin-portal');
 const GATEWAY_DIR = path.join(__dirname, 'components', 'satellite-gateway', 'web', 'gateway-ui');
+const USE_GO_API = process.env.CLM_DEMO_API === 'go';
+const GO_API_PORT = 8081;
 
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -2781,6 +2783,591 @@ function handleMockAPI(req, res) {
     }
 
     // --------------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // GATEWAY PORTAL API ROUTES (Certificate Lifecycle Management)
+    // -----------------------------------------------------------------------
+
+    if (pathname === '/api/v1/status') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'online', version: '1.2.0', uptime: '14d 6h', last_sync: new Date().toISOString(), gateway_id: 'sat-enterprise-ind-aps1', region: 'ap-south-1' }));
+        return true;
+    }
+    if (pathname === '/api/v1/acme/status') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ enabled: true, directory_url: 'https://acme-v02.api.letsencrypt.org/directory', challenges_supported: ['http-01','dns-01','tls-alpn-01'], orders_pending: 0, orders_completed: 12, orders_failed: 1 }));
+        return true;
+    }
+    if (pathname === '/api/v1/alerts') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ alerts: [
+            { id:'alert-001', severity:'critical', title:'Certificate Expiring in 12 Days', domain:'api-uat.enterprise.internal', created_at:new Date().toISOString(), status:'active' },
+            { id:'alert-002', severity:'warning', title:'Certificate Renewal Recommended', domain:'*.enterprise.internal', created_at:new Date(Date.now()-86400000).toISOString(), status:'active' },
+            { id:'alert-003', severity:'info', title:'Discovery Scan Completed', domain:'10.125.0.0/16', created_at:new Date(Date.now()-3600000).toISOString(), status:'resolved' }
+        ], total: 3 }));
+        return true;
+    }
+    if (pathname === '/api/v1/alerts/test' && req.method === 'POST') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ sent: true, channels: ['email','slack','webhook'] }));
+        return true;
+    }
+    if (pathname === '/api/v1/audit') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ entries: [
+            { id:'aud-001', action:'cert_issued', actor:'gateway-scheduler', target:'cert-01', timestamp:new Date(Date.now()-3600000).toISOString(), details:'Certificate issued for *.enterprise.internal' },
+            { id:'aud-002', action:'cert_deployed', actor:'deploy-engine', target:'cert-01', timestamp:new Date(Date.now()-1800000).toISOString(), details:'Deployed to 3 endpoints' },
+            { id:'aud-003', action:'discovery_scan', actor:'discovery-engine', target:'10.125.0.0/16', timestamp:new Date(Date.now()-7200000).toISOString(), details:'Scanned 256 IPs, found 8 certificates' }
+        ], total: 3 }));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/audit/export')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ format:'json', exported_at:new Date().toISOString(), entries:[] }));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/providers') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ providers: [
+            { id:'ca-lets-encrypt', name:"Let's Encrypt", type:'acme', status:'active', orders_total:12, orders_pending:0, configured:true },
+            { id:'ca-digicert', name:'DigiCert', type:'api', status:'active', orders_total:3, orders_pending:1, configured:true },
+            { id:'ca-internal-pki', name:'Enterprise Private CA', type:'adcs', status:'active', orders_total:8, orders_pending:0, configured:true },
+            { id:'ca-aws-acm', name:'AWS ACM Private CA', type:'aws-acm-pca', status:'inactive', orders_total:0, orders_pending:0, configured:false }
+        ], total: 4 }));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/vendors') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ vendors: ['DigiCert',"Let's Encrypt",'Sectigo','GlobalSign','Entrust','AWS ACM','Azure Key Vault','HashiCorp Vault'] }));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/accounts') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ accounts: [
+            { id:'ca-acct-01', provider:'DigiCert', api_key_ref:'vault://secrets/digicert-api', status:'active', balance:15, auto_renew:true },
+            { id:'ca-acct-02', provider:"Let's Encrypt", account_url:'https://acme-v02.api.letsencrypt.org/acme/acct/12345', status:'active', balance:0, auto_renew:true }
+        ], total: 2 }));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/ca/accounts/') && req.method === 'POST') {
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id:'ca-acct-'+Date.now(), status:'active', message:'CA account created' }));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/orders') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ orders: [
+            { id:'order-001', provider:'DigiCert', domain:'*.enterprise.internal', type:'wildcard', status:'completed', created_at:new Date(Date.now()-30*86400000).toISOString(), completed_at:new Date(Date.now()-28*86400000).toISOString(), cert_id:'cert-01' },
+            { id:'order-002', provider:"Let's Encrypt", domain:'api-uat.enterprise.internal', type:'single', status:'pending_validation', created_at:new Date(Date.now()-3600000).toISOString() },
+            { id:'order-003', provider:'Enterprise Private CA', domain:'internal-mgmt.local', type:'single', status:'completed', created_at:new Date(Date.now()-60*86400000).toISOString(), completed_at:new Date(Date.now()-59*86400000).toISOString(), cert_id:'cert-03' }
+        ], total: 3 }));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/ca/orders/') && req.method === 'GET') {
+        const orderId = pathname.split('/').pop();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id:orderId, provider:'DigiCert', domain:'*.enterprise.internal', type:'wildcard', status:'completed', cert_id:'cert-01' }));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/quote' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ provider:input.provider||'DigiCert', product:input.product||'wildcard', price:499.00, currency:'USD', validity:input.validity||365, san_price:99.00 }));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/certificates/issue' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            const newCert = { id:'cert-'+Date.now(), domain:input.domain||'new.enterprise.internal', subject:'CN='+(input.domain||'new.enterprise.internal'), issuer:input.provider||'DigiCert', sans:input.sans||[], status:'pending', key_algorithm:input.key_algorithm||'RSA', key_size:input.key_size||2048, environment:input.environment||'prod', not_after:new Date(Date.now()+365*86400000).toISOString(), order_id:'order-'+Date.now() };
+            mockCerts.push(newCert);
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ certificate:newCert, order_id:newCert.order_id, message:'Certificate order submitted' }));
+        });
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/credentials')) {
+        if (req.method === 'POST' && pathname.match(/\/api\/v1\/credentials\/[^/]+\/rotate/)) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success:true, message:'Credential rotated', rotated_at:new Date().toISOString() }));
+            return true;
+        }
+        if (req.method === 'POST') {
+            let body = ''; req.on('data', c => body += c); req.on('end', () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ id:'cred-'+Date.now(), name:input.name||'New Credential', kind:input.kind||'deploy', status:'active', created_at:new Date().toISOString() }));
+            });
+            return true;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ credentials: [
+            { id:'cred-01', name:'AWS IAM Deploy Role (ap-south-1)', kind:'deploy', status:'active', target:'arn:aws:iam::279078306945:role/CLM-Deploy', last_rotated:new Date(Date.now()-30*86400000).toISOString() },
+            { id:'cred-02', name:'Kubernetes Service Account', kind:'deploy', status:'active', target:'k8s://default/clm-deployer', last_rotated:new Date(Date.now()-15*86400000).toISOString() },
+            { id:'cred-03', name:'DigiCert API Key', kind:'ca', status:'active', target:'vault://secrets/digicert-api', last_rotated:new Date(Date.now()-90*86400000).toISOString() }
+        ], total: 3 }));
+        return true;
+    }
+    if (pathname === '/api/v1/discover' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(202, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ scan_id:'scan-'+Date.now(), status:'started', target:input.cidr||input.host||'10.125.0.0/16', message:'Discovery scan started' }));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/discover/dns' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ domain:input.domain||'enterprise.internal', records: [
+                { type:'A', name:'api', value:'10.125.4.10', tls_port:443, cert_found:true },
+                { type:'A', name:'auth', value:'10.125.4.20', tls_port:443, cert_found:true },
+                { type:'CNAME', name:'www', value:'enterprise.internal', tls_port:443, cert_found:false }
+            ]}));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/deploy' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(202, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ job_id:'deploy-'+Date.now(), status:'started', cert_id:input.cert_id, targets:input.targets||[], message:'Deployment job started' }));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/deploy/targets') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ targets: [
+            { id:'tgt-01', name:'AWS ALB (prod)', type:'aws-alb', region:'ap-south-1', arn:'arn:aws:elasticloadbalancing:ap-south-1:279078306945:loadbalancer/app/clm-prod-alb', status:'healthy', last_deploy:new Date(Date.now()-86400000).toISOString() },
+            { id:'tgt-02', name:'Kubernetes Secret (prod)', type:'k8s-secret', cluster:'prod-cluster-01', namespace:'ingress-nginx', status:'healthy', last_deploy:new Date(Date.now()-3600000).toISOString() },
+            { id:'tgt-03', name:'Nginx Server (on-prem)', type:'file', host:'10.125.4.50', path:'/etc/nginx/ssl/', status:'healthy', last_deploy:new Date(Date.now()-3*86400000).toISOString() }
+        ], total: 3 }));
+        return true;
+    }
+    if (pathname === '/api/v1/deploy/endpoints') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ endpoints: [
+            { id:'ep-01', host:'api.enterprise.internal', port:443, protocol:'https', cert_id:'cert-01', health:'healthy', last_verified:new Date().toISOString() },
+            { id:'ep-02', host:'auth.enterprise.internal', port:443, protocol:'https', cert_id:'cert-03', health:'healthy', last_verified:new Date().toISOString() },
+            { id:'ep-03', host:'internal-mgmt.local', port:8443, protocol:'https', cert_id:'cert-03', health:'warning', last_verified:new Date(Date.now()-7200000).toISOString() }
+        ], total: 3 }));
+        return true;
+    }
+    if (pathname === '/api/v1/inventory') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ certificates:mockCerts, total:mockCerts.length, managed:mockCerts.length, unmanaged:0 }));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/inventory') && pathname.includes('managed')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ certificates:mockCerts, total:mockCerts.length }));
+        return true;
+    }
+    if (pathname === '/api/v1/inventory/deployments') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ deployments: [
+            { id:'dep-01', cert_id:'cert-01', target:'AWS ALB (prod)', status:'deployed', deployed_at:new Date(Date.now()-86400000).toISOString() },
+            { id:'dep-02', cert_id:'cert-01', target:'Kubernetes Secret (prod)', status:'deployed', deployed_at:new Date(Date.now()-3600000).toISOString() },
+            { id:'dep-03', cert_id:'cert-03', target:'Nginx Server (on-prem)', status:'deployed', deployed_at:new Date(Date.now()-3*86400000).toISOString() }
+        ], total: 3 }));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/inventory/deployments/') && req.method === 'DELETE') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success:true, message:'Deployment record deleted' }));
+        return true;
+    }
+    if (pathname === '/api/v1/inventory/prune' && req.method === 'POST') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ pruned:0, message:'No stale entries to prune' }));
+        return true;
+    }
+    if (pathname === '/api/v1/lifecycle') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ stages: [
+            { stage:'discovery', count:3, last_run:new Date(Date.now()-3600000).toISOString() },
+            { stage:'issuance', count:12, last_run:new Date(Date.now()-86400000).toISOString() },
+            { stage:'deployment', count:5, last_run:new Date(Date.now()-3600000).toISOString() },
+            { stage:'verification', count:3, last_run:new Date().toISOString() },
+            { stage:'renewal', count:1, last_run:new Date(Date.now()-7200000).toISOString() },
+            { stage:'revocation', count:0, last_run:null }
+        ]}));
+        return true;
+    }
+    if (pathname === '/api/v1/policies') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ policies: [
+            { id:'pol-01', name:'Enforce RSA-2048 Minimum', type:'key_strength', enabled:true, severity:'block', description:'Reject CSRs with RSA keys below 2048 bits' },
+            { id:'pol-02', name:'Auto-Renew 30 Days', type:'renewal_window', enabled:true, severity:'warn', description:'Trigger renewal when cert has 30 days remaining' },
+            { id:'pol-03', name:'Production Requires EV', type:'validation_level', enabled:false, severity:'block', description:'Production certificates must be EV-validated' },
+            { id:'pol-04', name:'Block Self-Signed in Prod', type:'self_signed', enabled:true, severity:'block', description:'Reject self-signed certificates in production environment' },
+            { id:'pol-05', name:'Minimum TLS 1.2', type:'tls_version', enabled:true, severity:'warn', description:'Flag certificates on endpoints below TLS 1.2' }
+        ], total: 5 }));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/policies/') && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ id:'pol-'+Date.now(), ...input, enabled:true }));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/policies/evaluate' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ compliant:true, violations:[], evaluated_at:new Date().toISOString() }));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/scheduler') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ jobs: [
+            { id:'job-renew-01', type:'renewal', schedule:'0 2 * * *', enabled:true, last_run:new Date(Date.now()-3600000).toISOString(), next_run:new Date(Date.now()+82800000).toISOString(), status:'completed' },
+            { id:'job-discover-01', type:'discovery', schedule:'0 */6 * * *', enabled:true, last_run:new Date(Date.now()-7200000).toISOString(), next_run:new Date(Date.now()+14400000).toISOString(), status:'completed' },
+            { id:'job-verify-01', type:'verification', schedule:'*/30 * * * *', enabled:true, last_run:new Date(Date.now()-1800000).toISOString(), next_run:new Date(Date.now()+1800000).toISOString(), status:'completed' },
+            { id:'job-deploy-01', type:'deployment', schedule:'manual', enabled:true, last_run:new Date(Date.now()-86400000).toISOString(), next_run:null, status:'completed' }
+        ], total: 4 }));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/scheduler/run/') && req.method === 'POST') {
+        const jobId = pathname.split('/').pop();
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ job_id:jobId, status:'started', message:'Job triggered manually' }));
+        return true;
+    }
+    if (pathname === '/api/v1/reports/compliance') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ compliant:true, frameworks: [
+            { name:'GDPR', status:'compliant', checks:8, passed:8, failed:0 },
+            { name:'PCI-DSS', status:'compliant', checks:12, passed:12, failed:0 },
+            { name:'SOC 2', status:'compliant', checks:10, passed:10, failed:0 },
+            { name:'HIPAA', status:'compliant', checks:6, passed:6, failed:0 }
+        ], last_audit:new Date(Date.now()-7*86400000).toISOString() }));
+        return true;
+    }
+    if (pathname === '/api/v1/vsatellites/enroll' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ id:'vsat-'+Date.now(), name:input.name||'New vSatellite', status:'enrolled', host:input.host||'unknown', enrolled_at:new Date().toISOString(), capabilities:['scan_cidr','deploy_cert','health_check'] }));
+        });
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/vsatellites/') && req.method === 'GET') {
+        const vsatId = pathname.split('/').pop();
+        const agent = mockAgents.find(a => a.id === vsatId) || { ...mockAgents[0], id: vsatId };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(agent));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/certificates/') && req.method === 'GET') {
+        const certId = pathname.split('/').pop();
+        const cert = mockCerts.find(c => c.id === certId) || { ...mockCerts[0], id: certId };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(cert));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/rotation/execute/') && req.method === 'POST') {
+        const certId = pathname.split('/').pop();
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ cert_id:certId, status:'rotation_started', message:'Certificate rotation initiated' }));
+        return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // GATEWAY PORTAL API ROUTES (Certificate Lifecycle Management)
+    // -----------------------------------------------------------------------
+    if (pathname === '/api/v1/status') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({status:'online',version:'1.2.0',uptime:'14d 6h',last_sync:new Date().toISOString(),gateway_id:'sat-enterprise-ind-aps1',region:'ap-south-1'}));
+        return true;
+    }
+    if (pathname === '/api/v1/acme/status') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({enabled:true,directory_url:'https://acme-v02.api.letsencrypt.org/directory',challenges_supported:['http-01','dns-01','tls-alpn-01'],orders_pending:0,orders_completed:12,orders_failed:1}));
+        return true;
+    }
+    if (pathname === '/api/v1/alerts') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({alerts:[
+            {id:'alert-001',severity:'critical',title:'Certificate Expiring in 12 Days',domain:'api-uat.enterprise.internal',created_at:new Date().toISOString(),status:'active'},
+            {id:'alert-002',severity:'warning',title:'Certificate Renewal Recommended',domain:'*.enterprise.internal',created_at:new Date(Date.now()-86400000).toISOString(),status:'active'},
+            {id:'alert-003',severity:'info',title:'Discovery Scan Completed',domain:'10.125.0.0/16',created_at:new Date(Date.now()-3600000).toISOString(),status:'resolved'}
+        ],total:3}));
+        return true;
+    }
+    if (pathname === '/api/v1/alerts/test' && req.method === 'POST') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({sent:true,channels:['email','slack','webhook']}));
+        return true;
+    }
+    if (pathname === '/api/v1/audit') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({entries:[
+            {id:'aud-001',action:'cert_issued',actor:'gateway-scheduler',target:'cert-01',timestamp:new Date(Date.now()-3600000).toISOString(),details:'Certificate issued for *.enterprise.internal'},
+            {id:'aud-002',action:'cert_deployed',actor:'deploy-engine',target:'cert-01',timestamp:new Date(Date.now()-1800000).toISOString(),details:'Deployed to 3 endpoints'},
+            {id:'aud-003',action:'discovery_scan',actor:'discovery-engine',target:'10.125.0.0/16',timestamp:new Date(Date.now()-7200000).toISOString(),details:'Scanned 256 IPs, found 8 certificates'}
+        ],total:3}));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/audit/export')) {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({format:'json',exported_at:new Date().toISOString(),entries:[]}));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/providers') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({providers:[
+            {id:'ca-lets-encrypt',name:"Let's Encrypt",type:'acme',status:'active',orders_total:12,orders_pending:0,configured:true},
+            {id:'ca-digicert',name:'DigiCert',type:'api',status:'active',orders_total:3,orders_pending:1,configured:true},
+            {id:'ca-internal-pki',name:'Enterprise Private CA',type:'adcs',status:'active',orders_total:8,orders_pending:0,configured:true},
+            {id:'ca-aws-acm',name:'AWS ACM Private CA',type:'aws-acm-pca',status:'inactive',orders_total:0,orders_pending:0,configured:false}
+        ],total:4}));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/vendors') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({vendors:['DigiCert',"Let's Encrypt",'Sectigo','GlobalSign','Entrust','AWS ACM','Azure Key Vault','HashiCorp Vault']}));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/accounts') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({accounts:[
+            {id:'ca-acct-01',provider:'DigiCert',api_key_ref:'vault://secrets/digicert-api',status:'active',balance:15,auto_renew:true},
+            {id:'ca-acct-02',provider:"Let's Encrypt",account_url:'https://acme-v02.api.letsencrypt.org/acme/acct/12345',status:'active',balance:0,auto_renew:true}
+        ],total:2}));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/ca/accounts/') && req.method === 'POST') {
+        res.writeHead(201, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({id:'ca-acct-'+Date.now(),status:'active',message:'CA account created'}));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/orders') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({orders:[
+            {id:'order-001',provider:'DigiCert',domain:'*.enterprise.internal',type:'wildcard',status:'completed',created_at:new Date(Date.now()-30*86400000).toISOString(),completed_at:new Date(Date.now()-28*86400000).toISOString(),cert_id:'cert-01'},
+            {id:'order-002',provider:"Let's Encrypt",domain:'api-uat.enterprise.internal',type:'single',status:'pending_validation',created_at:new Date(Date.now()-3600000).toISOString()},
+            {id:'order-003',provider:'Enterprise Private CA',domain:'internal-mgmt.local',type:'single',status:'completed',created_at:new Date(Date.now()-60*86400000).toISOString(),completed_at:new Date(Date.now()-59*86400000).toISOString(),cert_id:'cert-03'}
+        ],total:3}));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/ca/orders/') && req.method === 'GET') {
+        const orderId = pathname.split('/').pop();
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({id:orderId,provider:'DigiCert',domain:'*.enterprise.internal',type:'wildcard',status:'completed',cert_id:'cert-01'}));
+        return true;
+    }
+    if (pathname === '/api/v1/ca/quote' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({provider:input.provider||'DigiCert',product:input.product||'wildcard',price:499.00,currency:'USD',validity:input.validity||365,san_price:99.00}));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/certificates/issue' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            const newCert = {id:'cert-'+Date.now(),domain:input.domain||'new.enterprise.internal',subject:'CN='+(input.domain||'new.enterprise.internal'),issuer:input.provider||'DigiCert',sans:input.sans||[],status:'pending',key_algorithm:input.key_algorithm||'RSA',key_size:input.key_size||2048,environment:input.environment||'prod',not_after:new Date(Date.now()+365*86400000).toISOString(),order_id:'order-'+Date.now()};
+            mockCerts.push(newCert);
+            res.writeHead(201, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({certificate:newCert,order_id:newCert.order_id,message:'Certificate order submitted'}));
+        });
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/credentials')) {
+        if (req.method === 'POST' && pathname.match(/\/api\/v1\/credentials\/[^/]+\/rotate/)) {
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({success:true,message:'Credential rotated',rotated_at:new Date().toISOString()}));
+            return true;
+        }
+        if (req.method === 'POST') {
+            let body = ''; req.on('data', c => body += c); req.on('end', () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                res.writeHead(201, {'Content-Type':'application/json'});
+                res.end(JSON.stringify({id:'cred-'+Date.now(),name:input.name||'New Credential',kind:input.kind||'deploy',status:'active',created_at:new Date().toISOString()}));
+            });
+            return true;
+        }
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({credentials:[
+            {id:'cred-01',name:'AWS IAM Deploy Role (ap-south-1)',kind:'deploy',status:'active',target:'arn:aws:iam::279078306945:role/CLM-Deploy',last_rotated:new Date(Date.now()-30*86400000).toISOString()},
+            {id:'cred-02',name:'Kubernetes Service Account',kind:'deploy',status:'active',target:'k8s://default/clm-deployer',last_rotated:new Date(Date.now()-15*86400000).toISOString()},
+            {id:'cred-03',name:'DigiCert API Key',kind:'ca',status:'active',target:'vault://secrets/digicert-api',last_rotated:new Date(Date.now()-90*86400000).toISOString()}
+        ],total:3}));
+        return true;
+    }
+    if (pathname === '/api/v1/discover' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(202, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({scan_id:'scan-'+Date.now(),status:'started',target:input.cidr||input.host||'10.125.0.0/16',message:'Discovery scan started'}));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/discover/dns' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({domain:input.domain||'enterprise.internal',records:[
+                {type:'A',name:'api',value:'10.125.4.10',tls_port:443,cert_found:true},
+                {type:'A',name:'auth',value:'10.125.4.20',tls_port:443,cert_found:true},
+                {type:'CNAME',name:'www',value:'enterprise.internal',tls_port:443,cert_found:false}
+            ]}));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/deploy' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(202, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({job_id:'deploy-'+Date.now(),status:'started',cert_id:input.cert_id,targets:input.targets||[],message:'Deployment job started'}));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/deploy/targets') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({targets:[
+            {id:'tgt-01',name:'AWS ALB (prod)',type:'aws-alb',region:'ap-south-1',arn:'arn:aws:elasticloadbalancing:ap-south-1:279078306945:loadbalancer/app/clm-prod-alb',status:'healthy',last_deploy:new Date(Date.now()-86400000).toISOString()},
+            {id:'tgt-02',name:'Kubernetes Secret (prod)',type:'k8s-secret',cluster:'prod-cluster-01',namespace:'ingress-nginx',status:'healthy',last_deploy:new Date(Date.now()-3600000).toISOString()},
+            {id:'tgt-03',name:'Nginx Server (on-prem)',type:'file',host:'10.125.4.50',path:'/etc/nginx/ssl/',status:'healthy',last_deploy:new Date(Date.now()-3*86400000).toISOString()}
+        ],total:3}));
+        return true;
+    }
+    if (pathname === '/api/v1/deploy/endpoints') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({endpoints:[
+            {id:'ep-01',host:'api.enterprise.internal',port:443,protocol:'https',cert_id:'cert-01',health:'healthy',last_verified:new Date().toISOString()},
+            {id:'ep-02',host:'auth.enterprise.internal',port:443,protocol:'https',cert_id:'cert-03',health:'healthy',last_verified:new Date().toISOString()},
+            {id:'ep-03',host:'internal-mgmt.local',port:8443,protocol:'https',cert_id:'cert-03',health:'warning',last_verified:new Date(Date.now()-7200000).toISOString()}
+        ],total:3}));
+        return true;
+    }
+    if (pathname === '/api/v1/inventory') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({certificates:mockCerts,total:mockCerts.length,managed:mockCerts.length,unmanaged:0}));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/inventory') && pathname.includes('managed')) {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({certificates:mockCerts,total:mockCerts.length}));
+        return true;
+    }
+    if (pathname === '/api/v1/inventory/deployments') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({deployments:[
+            {id:'dep-01',cert_id:'cert-01',target:'AWS ALB (prod)',status:'deployed',deployed_at:new Date(Date.now()-86400000).toISOString()},
+            {id:'dep-02',cert_id:'cert-01',target:'Kubernetes Secret (prod)',status:'deployed',deployed_at:new Date(Date.now()-3600000).toISOString()},
+            {id:'dep-03',cert_id:'cert-03',target:'Nginx Server (on-prem)',status:'deployed',deployed_at:new Date(Date.now()-3*86400000).toISOString()}
+        ],total:3}));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/inventory/deployments/') && req.method === 'DELETE') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({success:true,message:'Deployment record deleted'}));
+        return true;
+    }
+    if (pathname === '/api/v1/inventory/prune' && req.method === 'POST') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({pruned:0,message:'No stale entries to prune'}));
+        return true;
+    }
+    if (pathname === '/api/v1/lifecycle') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({stages:[
+            {stage:'discovery',count:3,last_run:new Date(Date.now()-3600000).toISOString()},
+            {stage:'issuance',count:12,last_run:new Date(Date.now()-86400000).toISOString()},
+            {stage:'deployment',count:5,last_run:new Date(Date.now()-3600000).toISOString()},
+            {stage:'verification',count:3,last_run:new Date().toISOString()},
+            {stage:'renewal',count:1,last_run:new Date(Date.now()-7200000).toISOString()},
+            {stage:'revocation',count:0,last_run:null}
+        ]}));
+        return true;
+    }
+    if (pathname === '/api/v1/policies') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({policies:[
+            {id:'pol-01',name:'Enforce RSA-2048 Minimum',type:'key_strength',enabled:true,severity:'block',description:'Reject CSRs with RSA keys below 2048 bits'},
+            {id:'pol-02',name:'Auto-Renew 30 Days',type:'renewal_window',enabled:true,severity:'warn',description:'Trigger renewal when cert has 30 days remaining'},
+            {id:'pol-03',name:'Production Requires EV',type:'validation_level',enabled:false,severity:'block',description:'Production certificates must be EV-validated'},
+            {id:'pol-04',name:'Block Self-Signed in Prod',type:'self_signed',enabled:true,severity:'block',description:'Reject self-signed certificates in production environment'},
+            {id:'pol-05',name:'Minimum TLS 1.2',type:'tls_version',enabled:true,severity:'warn',description:'Flag certificates on endpoints below TLS 1.2'}
+        ],total:5}));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/policies/') && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(201, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({id:'pol-'+Date.now(),...input,enabled:true}));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/policies/evaluate' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({compliant:true,violations:[],evaluated_at:new Date().toISOString()}));
+        });
+        return true;
+    }
+    if (pathname === '/api/v1/scheduler') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({jobs:[
+            {id:'job-renew-01',type:'renewal',schedule:'0 2 * * *',enabled:true,last_run:new Date(Date.now()-3600000).toISOString(),next_run:new Date(Date.now()+82800000).toISOString(),status:'completed'},
+            {id:'job-discover-01',type:'discovery',schedule:'0 */6 * * *',enabled:true,last_run:new Date(Date.now()-7200000).toISOString(),next_run:new Date(Date.now()+14400000).toISOString(),status:'completed'},
+            {id:'job-verify-01',type:'verification',schedule:'*/30 * * * *',enabled:true,last_run:new Date(Date.now()-1800000).toISOString(),next_run:new Date(Date.now()+1800000).toISOString(),status:'completed'},
+            {id:'job-deploy-01',type:'deployment',schedule:'manual',enabled:true,last_run:new Date(Date.now()-86400000).toISOString(),next_run:null,status:'completed'}
+        ],total:4}));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/scheduler/run/') && req.method === 'POST') {
+        const jobId = pathname.split('/').pop();
+        res.writeHead(202, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({job_id:jobId,status:'started',message:'Job triggered manually'}));
+        return true;
+    }
+    if (pathname === '/api/v1/reports/compliance') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({compliant:true,frameworks:[
+            {name:'GDPR',status:'compliant',checks:8,passed:8,failed:0},
+            {name:'PCI-DSS',status:'compliant',checks:12,passed:12,failed:0},
+            {name:'SOC 2',status:'compliant',checks:10,passed:10,failed:0},
+            {name:'HIPAA',status:'compliant',checks:6,passed:6,failed:0}
+        ],last_audit:new Date(Date.now()-7*86400000).toISOString()}));
+        return true;
+    }
+    if (pathname === '/api/v1/vsatellites/enroll' && req.method === 'POST') {
+        let body = ''; req.on('data', c => body += c); req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            res.writeHead(201, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({id:'vsat-'+Date.now(),name:input.name||'New vSatellite',status:'enrolled',host:input.host||'unknown',enrolled_at:new Date().toISOString(),capabilities:['scan_cidr','deploy_cert','health_check']}));
+        });
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/vsatellites/') && req.method === 'GET') {
+        const vsatId = pathname.split('/').pop();
+        const agent = mockAgents.find(a => a.id === vsatId) || { ...mockAgents[0], id: vsatId };
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify(agent));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/certificates/') && req.method === 'GET') {
+        const certId = pathname.split('/').pop();
+        const cert = mockCerts.find(c => c.id === certId) || { ...mockCerts[0], id: certId };
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify(cert));
+        return true;
+    }
+    if (pathname.startsWith('/api/v1/rotation/execute/') && req.method === 'POST') {
+        const certId = pathname.split('/').pop();
+        res.writeHead(202, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({cert_id:certId,status:'rotation_started',message:'Certificate rotation initiated'}));
+        return true;
+    }
+
     // 400 CLM ENTERPRISE FEATURES & SDLC WORKFLOWS API
     // --------------------------------------------------------------------------
     if (pathname === '/api/v1/features' && req.method === 'GET') {
@@ -2917,27 +3504,62 @@ function handleMockAPI(req, res) {
     return false;
 }
 
+function proxyGoApi(req, res) {
+    if (!USE_GO_API) return false;
+    const parsed = new URL(req.url, 'http://127.0.0.1');
+    if (!parsed.pathname || !parsed.pathname.startsWith('/api/v1/')) return false;
+
+    const targetPath = parsed.pathname === '/api/v1/health'
+        ? '/health' + (parsed.search || '')
+        : req.url;
+    const proxy = http.request({
+        hostname: '127.0.0.1',
+        port: GO_API_PORT,
+        path: targetPath,
+        method: req.method,
+        headers: { ...req.headers, host: `127.0.0.1:${GO_API_PORT}` }
+    }, upstream => {
+        res.writeHead(upstream.statusCode, upstream.headers);
+        upstream.pipe(res);
+    });
+
+    proxy.setTimeout(30000, () => proxy.destroy(new Error('Go API request timed out')));
+    proxy.on('error', error => {
+        console.error(`Go API proxy failed: ${error.message}`);
+        if (res.headersSent) {
+            res.destroy(error);
+            return;
+        }
+        res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'CLM control-plane API is unavailable' }));
+    });
+    req.pipe(proxy);
+    return true;
+}
+
 // 1. SaaS Control Plane Admin Portal (Port 3000)
 const adminServer = http.createServer((req, res) => {
+    if (proxyGoApi(req, res)) return;
     if (handleMockAPI(req, res)) return;
     serveStatic(SAAS_DIR, req, res);
 });
 
 // 2. Gateway Portal & Local APIs (Port 8080)
 const gatewayServer = http.createServer((req, res) => {
+    if (proxyGoApi(req, res)) return;
     if (handleMockAPI(req, res)) return;
     serveStatic(GATEWAY_DIR, req, res);
 });
 
 if (require.main === module) {
-    adminServer.listen(3000, () => {
+    adminServer.listen(3000, '127.0.0.1', () => {
         console.log('\x1b[32m%s\x1b[0m', '=======================================================');
         console.log('\x1b[36m%s\x1b[0m', '  CLM SaaS Admin Portal is running!');
         console.log('\x1b[33m%s\x1b[0m', '  URL: http://localhost:3000');
         console.log('\x1b[32m%s\x1b[0m', '=======================================================');
     });
 
-    gatewayServer.listen(8080, () => {
+    gatewayServer.listen(8080, '127.0.0.1', () => {
         console.log('\x1b[32m%s\x1b[0m', '=======================================================');
         console.log('\x1b[36m%s\x1b[0m', '  CLM Satellite Gateway Portal is running!');
         console.log('\x1b[33m%s\x1b[0m', '  URL: http://localhost:8080');
@@ -2946,4 +3568,3 @@ if (require.main === module) {
 }
 
 module.exports = { handleMockAPI, adminServer, gatewayServer };
-
