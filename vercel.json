@@ -65,6 +65,5 @@
                      }
                  ],
     "name":  "clm",
-    "version":  2,
-    "public":  true
+    "version":  2
 }
