@@ -1,9 +1,4 @@
 {
-    "name":  "clm",
-    "version":  "3.4.0",
-    "description":  "Enterprise Contract \u0026 Certificate Lifecycle Management (CLM) Platform",
-    "private":  true,
-    "main":  "dev-server.js",
     "scripts":  {
                     "start":  "node dev-server.js",
                     "test":  "node scripts/verify_scenarios_a_to_h.js",
@@ -21,9 +16,16 @@
                     "demo:test":  "node scripts/run-demo-tests.js",
                     "demo:health":  "node scripts/health-check.js"
                 },
+    "description":  "Enterprise Contract \u0026 Certificate Lifecycle Management (CLM) Platform",
+    "version":  "3.4.0",
+    "author":  "M2P Engineering Team",
     "engines":  {
                     "node":  "\u003e=18.0.0"
                 },
+    "name":  "clm",
+    "private":  true,
+    "main":  "dev-server.js",
+    "license":  "UNLICENSED",
     "keywords":  [
                      "clm",
                      "contract-lifecycle-management",
@@ -31,7 +33,5 @@
                      "pki",
                      "enterprise-security",
                      "400-features"
-                 ],
-    "author":  "M2P Engineering Team",
-    "license":  "UNLICENSED"
+                 ]
 }

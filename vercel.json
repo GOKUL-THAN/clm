@@ -1,54 +1,70 @@
 {
-  "version": 2,
-  "name": "clm",
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/index.js"
-    },
-    {
-      "source": "/auth/(.*)",
-      "destination": "/api/index.js"
-    },
-    {
-      "source": "/health",
-      "destination": "/api/index.js"
-    },
-    {
-      "source": "/gateway",
-      "destination": "/gateway/index.html"
-    },
-    {
-      "source": "/gateway/(.*)",
-      "destination": "/gateway/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/$1"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "X-Frame-Options",
-          "value": "SAMEORIGIN"
-        },
-        {
-          "key": "X-XSS-Protection",
-          "value": "1; mode=block"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
-        }
-      ]
-    }
-  ]
+    "headers":  [
+                    {
+                        "headers":  [
+                                        {
+                                            "key":  "X-Content-Type-Options",
+                                            "value":  "nosniff"
+                                        },
+                                        {
+                                            "key":  "X-Frame-Options",
+                                            "value":  "SAMEORIGIN"
+                                        },
+                                        {
+                                            "key":  "X-XSS-Protection",
+                                            "value":  "1; mode=block"
+                                        },
+                                        {
+                                            "key":  "Referrer-Policy",
+                                            "value":  "strict-origin-when-cross-origin"
+                                        },
+                                        {
+                                            "key":  "Access-Control-Allow-Origin",
+                                            "value":  "*"
+                                        },
+                                        {
+                                            "key":  "Access-Control-Allow-Methods",
+                                            "value":  "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+                                        },
+                                        {
+                                            "key":  "Access-Control-Allow-Headers",
+                                            "value":  "Content-Type, Authorization"
+                                        }
+                                    ],
+                        "source":  "/(.*)"
+                    }
+                ],
+    "rewrites":  [
+                     {
+                         "destination":  "/api/index.js",
+                         "source":  "/api/v1/(.*)"
+                     },
+                     {
+                         "destination":  "/api/index.js",
+                         "source":  "/api/(.*)"
+                     },
+                     {
+                         "destination":  "/api/index.js",
+                         "source":  "/auth/(.*)"
+                     },
+                     {
+                         "destination":  "/api/index.js",
+                         "source":  "/health"
+                     },
+                     {
+                         "destination":  "/gateway/index.html",
+                         "source":  "/gateway"
+                     },
+                     {
+                         "destination":  "/gateway/$1",
+                         "source":  "/gateway/(.*)"
+                     },
+                     {
+                         "destination":  "/$1",
+                         "source":  "/(.*)"
+                     }
+                 ],
+    "name":  "clm",
+    "version":  2,
+    "public":  true
 }
-
