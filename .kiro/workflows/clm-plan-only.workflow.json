@@ -1,16 +1,25 @@
 {
-  "name": "CLM Plan-Only Mode",
-  "description": "Break down a CLM feature idea or task into a concrete implementation plan — no code changes made.",
+  "name": "CLM Plan-Only",
+  "description": "Read-only planning workflow for CLM: investigate the codebase and produce a structured implementation plan without making any code changes.",
   "inputs": {
     "idea": "prompt",
-    "component": "string"
+    "component": "string",
+    "workspace_root": "string"
   },
   "steps": [
     {
       "type": "step",
+      "id": "validate-component",
+      "timeout_ms": 5000,
+      "on_timeout": "fail",
+      "agent": "wf-component-validator",
+      "prompt": "You are the startup validator for CLM Plan-Only. Validate workspace_root and component before executing.\n\n1. If workspace_root is omitted or empty, set resolved_root to current working directory.\n2. Allowlist for component: [\"saas-control-plane\", \"satellite-gateway\", \"vsatellite\", \"shared\"]. Default to \"saas-control-plane\" if omitted.\n3. Expose {{resolved_root}} and {{component}} to downstream steps."
+    },
+    {
+      "type": "step",
       "id": "investigate",
       "agent": "wf-planner",
-      "prompt": "You are in PLAN-ONLY mode for the CLM platform. Do NOT make any code changes. Your job is to investigate and plan.\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\nTarget component: {{component}}\n\nIdea / task to plan:\n{{idea}}\n\nStep 1 — Investigate:\n- Read the relevant source files in d:\\cmd project\\M2P-Git\\CLM\\components\\{{component}}\\ to understand the current implementation\n- Read d:\\cmd project\\M2P-Git\\CLM\\README.md for the 26 lifecycle stages and architectural constraints\n- Identify which lifecycle stages this idea touches\n- Identify which files will need to change\n- Identify dependencies, risks, and unknowns\n\nStep 2 — Produce the plan:\nWrite a structured implementation plan to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\plan-output.md\n\nPlan structure:\n## Summary\nOne-paragraph description of what will be built and why.\n\n## CLM Lifecycle Stages Affected\nList the stages from the 26-stage lifecycle that this touches.\n\n## Architectural Impact\n- Multi-tenant isolation impact\n- Compliance impact (GDPR, PCI-DSS, SOC 2, HIPAA)\n- Audit trail / cryptographic integrity impact\n- API changes (backward-compatible?)\n- Schema / data model changes (migration needed?)\n\n## Implementation Tasks\nOrdered list. Each task:\n- [ ] Task N: <title>\n  - Files: <exact paths>\n  - Change: <what to do>\n  - Risk: <low/medium/high> — <reason>\n  - Verify: <how to confirm it works>\n\n## Open Questions\nList anything that needs a decision before implementation can start.\n\n## Estimated Complexity\n<S / M / L / XL> — with reasoning.\n\nRemember: NO code changes. Investigation and planning only."
+      "prompt": "You are planning an implementation for the CLM platform in READ-ONLY mode.\nDo NOT create, edit, or delete any source files.\n\nProject root: {{resolved_root}}\nTarget component: {{component}}\n\nIdea to plan:\n{{idea}}\n\nTasks:\n1. Read relevant source files in {{resolved_root}}/components/{{component}}/\n2. Check architectural constraints in {{resolved_root}}/README.md and {{resolved_root}}/.kiro/steering/clm-project-context.md\n3. Identify which of the 26 CLM stages are touched\n4. Produce a structured plan document\n\nWrite the output to: {{resolved_root}}/.agents/tasks/plan-output.md\n\nStructure:\n# Implementation Plan: <Title>\n\n## Summary\nOne-paragraph summary of what needs to be done and why.\n\n## Affected Files\n- Existing files to modify\n- New files to create\n\n## Ordered Task List\nNumbered tasks with estimated complexity (XS / S / M / L / XL).\nEach task should have a clear \"Done when\" condition.\n\n## Architectural Considerations\n- Multi-tenant isolation impact\n- Compliance / audit trail impact\n- Security / cryptographic impact\n\n## Open Questions\nList anything that must be clarified before implementation begins."
     }
   ]
 }

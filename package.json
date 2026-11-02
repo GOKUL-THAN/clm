@@ -1,23 +1,37 @@
-{
-  "name": "clm",
-  "version": "3.4.0",
-  "description": "Enterprise Contract & Certificate Lifecycle Management (CLM) Platform",
-  "private": true,
-  "main": "dev-server.js",
-  "scripts": {
-    "start": "node dev-server.js",
-    "test": "node scripts/verify_scenarios_a_to_h.js"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "keywords": [
-    "clm",
-    "contract-lifecycle-management",
-    "zero-trust",
-    "pki",
-    "enterprise-security"
-  ],
-  "author": "M2P Engineering Team",
-  "license": "UNLICENSED"
+﻿{
+    "name":  "clm",
+    "version":  "3.4.0",
+    "description":  "Enterprise Contract \u0026 Certificate Lifecycle Management (CLM) Platform",
+    "private":  true,
+    "main":  "dev-server.js",
+    "scripts":  {
+                    "start":  "node dev-server.js",
+                    "test":  "node scripts/verify_scenarios_a_to_h.js",
+                    "test:400":  "node scripts/test_400_features.js",
+                    "test:corporate":  "node scripts/test_corporate_modules.js",
+                    "test:lifecycle":  "node scripts/test_lifecycle_26_stages.js",
+                    "test:workflows":  "node scripts/workflow-engine.js test",
+                    "workflow:feature":  "node scripts/workflow-engine.js feature",
+                    "workflow:bugfix":  "node scripts/workflow-engine.js bugfix",
+                    "workflow:spec":  "node scripts/workflow-engine.js spec",
+                    "demo:setup":  "node scripts/setup-demo.js",
+                    "demo:start":  "node scripts/start-demo.js",
+                    "demo:stop":  "node scripts/stop-demo.js",
+                    "demo:reset":  "node scripts/reset-demo-data.js",
+                    "demo:test":  "node scripts/run-demo-tests.js",
+                    "demo:health":  "node scripts/health-check.js"
+                },
+    "engines":  {
+                    "node":  "\u003e=18.0.0"
+                },
+    "keywords":  [
+                     "clm",
+                     "contract-lifecycle-management",
+                     "zero-trust",
+                     "pki",
+                     "enterprise-security",
+                     "400-features"
+                 ],
+    "author":  "M2P Engineering Team",
+    "license":  "UNLICENSED"
 }

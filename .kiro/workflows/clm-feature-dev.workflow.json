@@ -3,14 +3,70 @@
   "description": "Full structured feature pipeline for the CLM platform: design → implement → review loop with a final validation gate.",
   "inputs": {
     "feature_request": "prompt",
-    "component": "string"
+    "component": "string",
+    "workspace_root": "string"
+  },
+  "audit_log": {
+    "path": "{{resolved_root}}/.agents/tasks/workflow-audit-log.json",
+    "description": "Cross-cutting audit logging concern. Not a separate agent step. Runs as pre/post hooks around every step. The audit log is append-only across pipeline runs in the same output directory.",
+    "format": "Top-level JSON array. Each element is one run entry appended as a separate JSON object. Prior run records are never overwritten or truncated.",
+    "append_only": true,
+    "flush_on_halt_or_pause": "Before any HALT or PAUSE, flush the partial audit log capturing all steps executed up to and including the failing or pausing step before the pipeline halts.",
+    "schema": {
+      "run_id": "UUID — unique identifier for this run",
+      "run_start": "ISO-8601 timestamp (UTC, accurate to the second, e.g. 2024-01-15T10:00:00Z)",
+      "run_end": "ISO-8601 timestamp (UTC, accurate to the second)",
+      "workspace_root": "string — the resolved absolute path of the workspace root used for this run",
+      "component": "string — the validated component value used for this run",
+      "feature_request": "string — the feature_request input value",
+      "steps": [
+        {
+          "step_id": "string — the step identifier",
+          "step_start": "ISO-8601 timestamp (UTC, accurate to the second)",
+          "step_end": "ISO-8601 timestamp (UTC, accurate to the second)",
+          "outcome": "success | paused | failed"
+        }
+      ],
+      "approval_file_events": [
+        {
+          "file": "string — path to the approval file written",
+          "written_at": "ISO-8601 timestamp (UTC, accurate to the second)",
+          "version_written": "integer — the version number written"
+        }
+      ],
+      "artifacts_written": [
+        "string — resolved absolute paths of all artifact files written during the run"
+      ],
+      "hash": "sha256:<hex> — SHA-256 integrity hash"
+    },
+    "secret_exclusion": "Any input whose name ends in '_secret', '_token', '_password', or '_key', or that is marked \"secret\": true in the workflow input definition, MUST be omitted from the log. Only feature_request, workspace_root, and component input values are recorded in the run entry.",
+    "hash_computation": "SHA-256 hash is computed over the JSON-serialized run entry with the \"hash\" field set to \"\" (empty string). The resulting digest is written into the \"hash\" field as \"sha256:<hex>\". This enables deterministic re-computation for integrity verification.",
+    "write_failure_handling": "If the workflow-audit-log.json file cannot be written due to a filesystem error, surface ERROR: Audit logging failed: <reason> and do NOT report the run as successfully completed.",
+    "record_artifact_paths": true,
+    "record_approval_file_events": true
   },
   "steps": [
     {
       "type": "step",
+      "id": "validate-component",
+      "timeout_ms": 5000,
+      "on_timeout": "fail",
+      "agent": "wf-component-validator",
+      "prompt": "You are the startup validator for the CLM Feature Development workflow. Perform two sequential checks — workspace root resolution first, then component validation — before any pipeline step executes. Both checks must pass; HALT immediately on any failure.\n\n## Step 1: Workspace Root Resolution\n\nInspect the `workspace_root` input and apply exactly one of the following four branches:\n\n**Branch A — `workspace_root` omitted or empty:**\nEmit the following WARNING to the workflow log (exact text required):\n  WARNING: workspace_root not provided; using current working directory as workspace root\nSet `resolved_root` to the current working directory. Proceed to Branch D normalization before continuing.\n\n**Branch B — `workspace_root` provided and valid (directory exists):**\nStrip all trailing path separators (`\\` and `/`) from the value to produce the normalized path. Verify the normalized path resolves to an existing directory. Set `resolved_root` to the normalized path. Proceed to Step 2.\n\n**Branch C — `workspace_root` provided but the path does not resolve to an existing directory:**\nEmit the following ERROR to the workflow log (exact text required, substituting the actual path):\n  ERROR: workspace_root does not resolve to existing directory: <path>\nWrite a partial audit log entry marking this run as failed. HALT immediately. Do not execute any further pipeline steps.\n\n**Branch D — `workspace_root` provided and contains one or more trailing path separators (`\\` or `/`):**\nStrip all trailing separators from the right of the value until none remain (e.g. `/foo/bar///` → `/foo/bar`, `C:\\project\\\\` → `C:\\project`). After normalization, verify the resulting path resolves to an existing directory. If it does, set `resolved_root` to the normalized value and proceed to Step 2. If it does not exist, apply Branch C using the normalized path.\n\nExpose `resolved_root` as a template variable available to all downstream steps. Every artifact path and stop-condition path in subsequent steps is constructed by joining `resolved_root` with a relative sub-path using the host OS path separator.\n\n## Step 2: Component Validation\n\nAllowlist (case-sensitive, no leading or trailing whitespace):\n  [\"saas-control-plane\", \"satellite-gateway\", \"vsatellite\", \"shared\"]\n\nInspect the `component` input and apply exactly one of the following three branches:\n\n**Branch A — `component` omitted or empty:**\nEmit the following WARNING to the workflow log (exact text required):\n  WARNING: component not specified; defaulting to saas-control-plane\nSet `component` to `saas-control-plane`. Proceed to the next pipeline step.\n\n**Branch B — `component` provided and its value exactly matches one of the four allowlisted values:**\nProceed to the next pipeline step without emitting any warning or error.\n\n**Branch C — `component` provided but its value does not exactly match any allowlisted value:**\nEmit the following ERROR to the workflow log (exact text required, substituting the actual invalid value):\n  ERROR: Invalid component '<value>'. Valid values: saas-control-plane, satellite-gateway, vsatellite, shared\nWrite a partial audit log entry marking this run as failed. HALT immediately. Do not produce any output artifacts or execute any further pipeline steps.\n\n## Audit Logging\n\nAs the first pipeline step, initialize the workflow audit log run entry in {{resolved_root}}/.agents/tasks/workflow-audit-log.json (configured under the top-level `audit_log` object). The audit log is a top-level JSON array; this run entry is appended as a new object — never overwrite prior run records.\n\nThe run entry must contain: run_id (UUID), run_start (ISO-8601), run_end (ISO-8601, set when the run completes or halts), workspace_root, component, feature_request, the ordered list of steps executed (each with step_id, step_start, step_end, and outcome as one of success/paused/failed), approval_file_events (each with file path, written_at, and version_written), artifacts_written (resolved absolute paths), and a SHA-256 integrity hash.\n\nSecret exclusion: Any input whose name ends in '_secret', '_token', '_password', or '_key', or that is marked \"secret\": true in the workflow input definition MUST be omitted. Only feature_request, workspace_root, and component are recorded.\n\nSHA-256 hash computation: Compute the hash over the JSON-serialized run entry with the \"hash\" field set to \"\" (empty string), then write the resulting digest into the \"hash\" field as \"sha256:<hex>\".\n\nBefore any HALT or PAUSE, flush the partial audit log with steps executed so far. If the audit log file cannot be written due to a filesystem error, surface ERROR: Audit logging failed: <reason> and do NOT report the run as successfully completed.\n\n## Completion\n\nIf both steps succeed, record the resolved `workspace_root` and `component` values in the audit log run entry. This step must complete within 5 seconds of invocation; if it exceeds that limit, emit a timeout error and HALT."
+    },
+    {
+      "type": "step",
+      "id": "preflight-scan",
+      "timeout_ms": 30000,
+      "on_timeout": "fail",
+      "agent": "wf-preflight-scanner",
+      "prompt": "Preflight scan step — prompt to be populated by tasks 3.2–3.5. PLACEHOLDER."
+    },
+    {
+      "type": "step",
       "id": "design",
       "agent": "wf-design",
-      "prompt": "You are designing a feature for the Enterprise CLM (Contract & Certificate Lifecycle Management) platform.\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\nComponents: saas-control-plane, satellite-gateway, vsatellite, shared\nTarget component: {{component}}\n\nArchitectural constraints (non-negotiable):\n- Multi-tenant isolation must be preserved in every change\n- Zero-egress AI — AI processing stays inside the customer VPC via satellite-gateway\n- Cryptographic integrity — contracts use PKI / X.509 digital signatures\n- Immutable audit trail — all state transitions must be audit-logged\n- Compliance: GDPR, PCI-DSS, SOC 2, HIPAA\n\nFeature request:\n{{feature_request}}\n\nYour deliverables:\n1. Read the relevant component source code to understand existing patterns before designing.\n2. Write a technical design document to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\n   Include: goal, affected components, API changes (backward-compatible unless justified), data model changes, security & tenant-isolation impact, compliance impact, and open questions.\n3. Identify which of the 26 CLM lifecycle stages this feature touches and note them explicitly."
+      "prompt": "You are designing a feature for the Enterprise CLM (Contract & Certificate Lifecycle Management) platform.\n\nProject root: {{resolved_root}}\nComponents: saas-control-plane, satellite-gateway, vsatellite, shared\nTarget component: {{component}}\n\nArchitectural constraints (non-negotiable):\n- Multi-tenant isolation must be preserved in every change\n- Zero-egress AI — AI processing stays inside the customer VPC via satellite-gateway\n- Cryptographic integrity — contracts use PKI / X.509 digital signatures\n- Immutable audit trail — all state transitions must be audit-logged\n- Compliance: GDPR, PCI-DSS, SOC 2, HIPAA\n\nFeature request:\n{{feature_request}}\n\nYour deliverables:\n1. Read the relevant component source code to understand existing patterns before designing.\n2. Write a technical design document to: {{resolved_root}}/.agents/tasks/feature-design.md\n   Include: goal, affected components, API changes (backward-compatible unless justified), data model changes, security & tenant-isolation impact, compliance impact, and open questions.\n3. Identify which of the 26 CLM lifecycle stages this feature touches and note them explicitly.\n4. After writing feature-design.md, append a ## Changelog section at the end of the document with a single initial entry in this exact format:\n\n   ## Changelog\n\n   ### Iteration 1 — <ISO-8601 timestamp accurate to the second, e.g. 2024-01-15T10:12:00Z> — agent:design\n\n   Initial design created.\n\nRules for the changelog:\n- The ## Changelog section must be appended after all other content (not inserted in the middle of the document)\n- The timestamp must be ISO-8601 accurate to the second in UTC, formatted as YYYY-MM-DDTHH:MM:SSZ\n- The agent identity in the heading must be exactly: agent:design\n- The body of the entry must be exactly: Initial design created.\n- If feature-design.md already contains a ## Changelog section (e.g. from a resumed run), do not add a second one — leave the existing section untouched"
     },
     {
       "type": "repeat",
@@ -19,23 +75,24 @@
       "onMaxIterations": "pause",
       "stopCondition": {
         "fileCheck": {
-          "path": "d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design-approved.json",
+          "path": "{{resolved_root}}/.agents/tasks/feature-design-approved.json",
           "jsonPath": "approved",
           "value": true
         }
       },
+      "_comment": "ApprovalFile schema: {\"approved\": bool, \"version\": int >= 1, \"last_written_by\": string (agent identity), \"last_written_at\": ISO-8601 string (accurate to the second)}",
       "steps": [
         {
           "type": "step",
           "id": "design-reviewer",
           "agent": "wf-design-reviewer",
-          "prompt": "Review the CLM feature design document at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\n\nFocus on:\n- Ambiguity or gaps in the design\n- Multi-tenant isolation risks\n- Compliance gaps (GDPR, PCI-DSS, SOC 2, HIPAA)\n- Cryptographic / audit trail integrity\n- Backward compatibility of API changes\n- Missing migration scripts for schema changes\n- Security-sensitive paths (auth, crypto, approval workflow, e-signature) that need extra scrutiny\n\nIf design passes all checks, write: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design-approved.json with {\"approved\": true}\nIf design needs revision, write: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design-approved.json with {\"approved\": false} and provide specific actionable feedback."
+          "prompt": "Review the CLM feature design document at: {{resolved_root}}/.agents/tasks/feature-design.md\n\nFocus on:\n- Ambiguity or gaps in the design\n- Multi-tenant isolation risks\n- Compliance gaps (GDPR, PCI-DSS, SOC 2, HIPAA)\n- Cryptographic / audit trail integrity\n- Backward compatibility of API changes\n- Missing migration scripts for schema changes\n- Security-sensitive paths (auth, crypto, approval workflow, e-signature) that need extra scrutiny\n\nIf design passes all checks, write: {{resolved_root}}/.agents/tasks/feature-design-approved.json with {\"approved\": true}\nIf design needs revision, write: {{resolved_root}}/.agents/tasks/feature-design-approved.json with {\"approved\": false} and provide specific actionable feedback."
         },
         {
           "type": "step",
           "id": "design-revise",
           "agent": "wf-design",
-          "prompt": "Read the design review feedback. If the design was approved (approved=true in d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design-approved.json), do nothing and exit immediately.\n\nIf not approved, revise the design document at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\nAddress every issue raised by the reviewer. Then reset the approval file to {\"approved\": false} so the reviewer re-checks in the next iteration."
+          "prompt": "Read the design review feedback. If the design was approved (approved=true in {{resolved_root}}/.agents/tasks/feature-design-approved.json), do nothing and exit immediately.\n\nIf not approved, revise the design document at: {{resolved_root}}/.agents/tasks/feature-design.md\nAddress every issue raised by the reviewer. Then reset the approval file to {\"approved\": false} so the reviewer re-checks in the next iteration."
         }
       ]
     },
@@ -43,7 +100,7 @@
       "type": "step",
       "id": "plan",
       "agent": "wf-planner",
-      "prompt": "The feature design has been approved. Read it at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\n\nProduce an ordered implementation plan as: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-plan.md\n\nBreak the work into discrete, testable tasks. Each task must specify:\n- What files to create or modify (exact paths)\n- What the change is\n- How to verify it (build step, test name, or observable behavior)\n\nOrder tasks so that foundational changes (schema, shared types) come before features that depend on them."
+      "prompt": "You are the CLM feature planner. Produce a structured implementation plan grouped by CLM lifecycle stage.\n\nProject root: {{resolved_root}}\nTarget component: {{component}}\n\n## Step 0: Guard — Verify Approved Design\n\nBefore doing anything else, check whether `{{resolved_root}}/.agents/tasks/feature-design-approved.json` exists and contains `\"approved\": true`.\n\nIf the file does not exist or `approved` is not `true`, emit the following ERROR and HALT immediately — produce NO plan artifact:\n  ERROR: Planning requires an approved design document. feature-design-approved.json not found or approved is false.\n\n## Step 1: Read the Approved Design\n\nRead the approved design document at: `{{resolved_root}}/.agents/tasks/feature-design.md`\n\n## Step 2: Load CLM Lifecycle Stages\n\nRead the 26 CLM lifecycle stage names from: `{{resolved_root}}/.kiro/steering/clm-project-context.md`\n\nThe stages are enumerated under the heading \"26 Contract Lifecycle Stages\". Extract each stage name and its number (1–26) for use in grouping below.\n\n## Step 3: Identify Touched Stages (Blast Radius)\n\nFor each of the 26 stages, determine whether the feature **touches** that stage. A stage is considered touched if the approved design document explicitly references that stage's:\n- Data models (structs, database tables, schemas)\n- APIs (endpoints, RPC methods, message types)\n- UI components (pages, forms, widgets)\n- Business rules (workflow logic, validation rules, policies)\n\nas being **read, written, created, or modified** by the feature.\n\nCollect the full list of touched stages with their stage numbers.\n\n## Step 4: Write the Blast-Radius Summary Table\n\nAt the very TOP of `{{resolved_root}}/.agents/tasks/feature-plan.md`, before any task content, write a blast-radius summary table:\n\n```\n## Blast-Radius Summary\n\n| Stage Name | Task Count | Impact Description |\n|---|---|---|\n| <stage name> | <n> | <≤20-word description of what this feature does to this stage> |\n```\n\nInclude one row for every touched stage. Do NOT include stages that are not touched. The Task Count column must be filled in after tasks are enumerated in Step 5 — go back and update the table with the final per-stage counts before writing the file.\n\nIf the feature touches NO named CLM stage (e.g., it is purely an infrastructure, tooling, or cross-cutting change with no stage-specific impact), write the following instead of the table:\n\n```\n## Blast-Radius Summary\n\nNo CLM stage impact identified. This feature does not read, write, create, or modify any data models, APIs, UI components, or business rules belonging to a named CLM lifecycle stage.\n```\n\n## Step 5: Enumerate and Group Tasks\n\nBreak the feature work into discrete, testable tasks. Every task MUST be placed under exactly one CLM stage section heading. No ungrouped tasks are permitted.\n\n**Stage section format:**\n```\n### Stage <N>: <Stage Name>\n\n- [ ] Task <N.M>: <task title>\n  - Files: <exact file paths to create or modify>\n  - Change: <what the change is>\n  - Verify: <build step, test name, or observable behavior>\n```\n\n**Grouping rules:**\n1. If a task touches exactly one CLM stage, place it under that stage's section.\n2. If a task touches two or more distinct CLM stages, place it under a `### Cross-Stage` section and list all affected stage names on that task entry:\n   ```\n   - [ ] Task X.Y: <title> [Stages: <Stage A>, <Stage B>]\n   ```\n3. If the feature touches NO named CLM stage, place all tasks under a single `### No CLM Stage Impact` section instead of any numbered stage section.\n\n**Ordering rule:** Within each section, order tasks so foundational changes (schema definitions, shared types, migration scripts) come before the features that depend on them.\n\n## Step 6: Existing Plan Requirements\n\nEach task entry must specify:\n- **Files**: exact paths relative to `{{resolved_root}}` for every file to create or modify\n- **Change**: a clear description of what the change is\n- **Verify**: how to confirm the task is complete (specific `make test` target, test function name, or observable behavior in a running system)\n\nFoundational tasks (database schema, shared types, migration scripts) must appear before tasks that depend on them, even if that means they appear in an earlier stage section than their direct functional purpose.\n\n## Step 7: Update Blast-Radius Task Counts\n\nAfter enumerating all tasks, go back to the blast-radius summary table and fill in the correct Task Count for each touched stage (count only the tasks in that stage's section, not cross-stage tasks). Update the table before writing the final file.\n\n## Output\n\nWrite the completed plan to: `{{resolved_root}}/.agents/tasks/feature-plan.md`\n\nThe file must follow this top-level structure (in order):\n1. `## Blast-Radius Summary` (table or no-stage statement)\n2. Stage sections (`### Stage N: Name` or `### No CLM Stage Impact`)\n3. `### Cross-Stage` section (only if any cross-stage tasks exist)"
     },
     {
       "type": "repeat",
@@ -52,23 +109,24 @@
       "onMaxIterations": "pause",
       "stopCondition": {
         "fileCheck": {
-          "path": "d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-impl-approved.json",
+          "path": "{{resolved_root}}/.agents/tasks/feature-impl-approved.json",
           "jsonPath": "approved",
           "value": true
         }
       },
+      "_comment": "ApprovalFile schema: {\"approved\": bool, \"version\": int >= 1, \"last_written_by\": string (agent identity), \"last_written_at\": ISO-8601 string (accurate to the second)}",
       "steps": [
         {
           "type": "step",
           "id": "implement",
           "agent": "wf-coder",
-          "prompt": "Implement the next uncompleted task from the plan at: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-plan.md\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\n\nRules:\n- Read existing code before editing — match the project's style, patterns, and libraries\n- Preserve multi-tenant isolation in every change\n- All state transitions must be audit-logged\n- Security-sensitive code (auth, crypto, tenant isolation, e-signature) must include inline comments explaining the security rationale\n- Run `make test` and `make lint` from d:\\cmd project\\M2P-Git\\CLM after each task; fix any failures before marking the task done\n- Mark completed tasks in the plan file with [x]\n- When ALL tasks in the plan are marked [x], write: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-impl-approved.json with {\"approved\": false, \"ready_for_review\": true}"
+          "prompt": "Implement the next uncompleted task from the plan at: {{resolved_root}}/.agents/tasks/feature-plan.md\n\nProject root: {{resolved_root}}\n\nRules:\n- Read existing code before editing — match the project's style, patterns, and libraries\n- Preserve multi-tenant isolation in every change\n- All state transitions must be audit-logged\n- Security-sensitive code (auth, crypto, tenant isolation, e-signature) must include inline comments explaining the security rationale\n- Run `make test` and `make lint` from {{resolved_root}} after each task; fix any failures before marking the task done\n- Mark completed tasks in the plan file with [x]\n- When ALL tasks in the plan are marked [x], write: {{resolved_root}}/.agents/tasks/feature-impl-approved.json with {\"approved\": false, \"ready_for_review\": true}\n\n## Property-Based Testing (PBT) Enforcement\n\nFor any new function or method you introduce, determine whether it qualifies for property-based testing. A function qualifies if its primary logic consists of one or more of the following operations:\n- Sorting\n- Filtering\n- Parsing\n- Serialization\n- Cryptographic transformation\n- State-machine transition\n- Data aggregation over a collection\n\nIf a new function qualifies, you MUST write at least one property-based test for it using a property-based testing library that automatically and pseudo-randomly generates test inputs from a defined input domain. A manually enumerated parameterized test does NOT satisfy this requirement — the test library must generate inputs automatically.\n\n### PBT Library Selection\n\nUse the property-based testing library appropriate for the project language:\n- Go: pgregory.net/rapid or github.com/leanovate/gopter\n- TypeScript/JS: fast-check\n- Python: hypothesis\n\n### Annotation Format\n\nEach property-based test must have an inline comment immediately before the test function in this exact format:\n\n// Property: <type> — <description>\n// Validates: <requirement reference>\n// Type: invariant | round-trip | idempotence | metamorphic | error condition\n\nThe <type> must be exactly one of: invariant, round-trip, idempotence, metamorphic, or error condition.\n\n### Minimum Iterations\n\n- For parsers and serializers: write a round-trip property test asserting that parse(format(x)) == x, configured to run with a minimum of 50 automatically generated inputs per test run.\n- For all other qualifying functions: configure the property test to run a minimum of 100 iterations per test run.\n\n### Substitution Rule\n\nIf a new function interacts ONLY with external services (AWS, database, Keycloak) and contains NONE of the qualifying operations listed above, you MAY substitute an integration test in place of a property-based test. The integration test must cover at least one successful execution path and at least one failure or error path, and must include an inline comment explaining why the property-based test was substituted."
         },
         {
           "type": "step",
           "id": "code-reviewer",
           "agent": "semantic_reviewer",
-          "prompt": "Review the implementation changes for the CLM feature.\n\nPlan: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-plan.md\nDesign: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md\n\nCheck the git diff in d:\\cmd project\\M2P-Git\\CLM against the plan and design.\n\nFocus on:\n- Correctness against the design spec\n- Multi-tenant isolation preserved\n- Audit logging present on all state transitions\n- No secrets or credentials hardcoded\n- Error handling and edge cases covered\n- Tests present for new logic\n\nIf implementation passes: write d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-impl-approved.json with {\"approved\": true}\nIf not: write {\"approved\": false} and list specific issues for the coder to fix."
+          "prompt": "Review the implementation changes for the CLM feature.\n\nPlan: {{resolved_root}}/.agents/tasks/feature-plan.md\nDesign: {{resolved_root}}/.agents/tasks/feature-design.md\n\nCheck the git diff in {{resolved_root}} against the plan and design.\n\nFocus on:\n- Correctness against the design spec\n- Multi-tenant isolation preserved\n- Audit logging present on all state transitions\n- No secrets or credentials hardcoded\n- Error handling and edge cases covered\n- Tests present for new logic\n\nIf implementation passes: write {{resolved_root}}/.agents/tasks/feature-impl-approved.json with {\"approved\": true}\nIf not: write {\"approved\": false} and list specific issues for the coder to fix."
         }
       ]
     },
@@ -76,7 +134,7 @@
       "type": "step",
       "id": "validate",
       "agent": "wf-coder",
-      "prompt": "Run the full validation gate for the CLM feature.\n\nProject root: d:\\cmd project\\M2P-Git\\CLM\n\n1. Run `make test` — all tests must pass\n2. Run `make lint` — no lint errors\n3. Confirm the feature-plan.md shows all tasks marked [x]\n4. Confirm the design doc at d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-design.md has no unresolved open questions\n5. Write a summary to: d:\\cmd project\\M2P-Git\\CLM\\.agents\\tasks\\feature-summary.md covering: what was built, files changed, tests added, compliance impact, and any follow-up items."
+      "prompt": "Run the full validation gate for the CLM feature.\n\nProject root: {{resolved_root}}\n\n1. Run `make test` — all tests must pass\n2. Run `make lint` — no lint errors\n3. Confirm the feature-plan.md shows all tasks marked [x]\n4. Confirm the design doc at {{resolved_root}}/.agents/tasks/feature-design.md has no unresolved open questions\n5. Write a summary to: {{resolved_root}}/.agents/tasks/feature-summary.md covering: what was built, files changed, tests added, compliance impact, and any follow-up items."
     }
   ]
 }

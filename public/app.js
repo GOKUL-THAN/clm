@@ -255,6 +255,8 @@ function navigate(page) {
         case 'contract-financials': loadContractFinancials(); break;
         case 'ai-contracts': loadAIContracts(); break;
         case 'clm-analytics': loadCLMAnalytics(); break;
+        case '400-features': load400FeaturesExplorer(); break;
+        case 'sdlc-workflows': loadSDLCWorkflows(); break;
     }
 }
 
@@ -5681,4 +5683,280 @@ function viewDepartmentContracts(deptCode) {
             filterContractsTable();
         }
     }, 150);
+}
+
+
+// ------------------------------------------------------------------------------
+// 400 ENTERPRISE CLM FEATURES EXPLORER & MODULE RUNNER
+// ------------------------------------------------------------------------------
+let cached400Features = [];
+let cached400Domains = [];
+let selectedFeatureForExec = null;
+
+function load400FeaturesExplorer() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="margin-bottom:0.25rem">Enterprise CLM — 400 Feature Requirements Catalog</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Catalog registration does not mean a feature is implemented. The available module check only validates its registry wrapper.</p>
+                </div>
+                <div style="display:flex;gap:0.5rem">
+                    <span id="feature400-status" class="badge" style="padding:0.4rem 0.8rem;font-size:0.8rem">Loading catalog status...</span>
+                </div>
+            </div>
+            <div style="display:flex;gap:1rem;margin-top:1rem">
+                <input type="text" id="feat400-search" placeholder="Search by ID, feature name, or domain..." style="flex:1;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.85rem" oninput="filter400FeaturesTable()">
+                <select id="feat400-domain-filter" style="padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.85rem;background:#fff" onchange="filter400FeaturesTable()">
+                    <option value="">All 20 Operational Domains</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="card">
+            <div id="feat400-table-container">
+                <p style="color:var(--muted);font-size:0.85rem">Loading 400 feature catalog...</p>
+            </div>
+        </div>
+    `;
+
+    Promise.all([
+        apiGet('/api/v1/domains'),
+        apiGet('/api/v1/features')
+    ]).then(([domRes, featRes]) => {
+        cached400Domains = domRes.domains || [];
+        cached400Features = featRes.features || [];
+        const status = document.getElementById('feature400-status');
+        if (status) {
+            const registered = cached400Features.filter(feature => feature.status === 'registered').length;
+            const verified = cached400Features.filter(feature => feature.implementationStatus === 'VERIFIED').length;
+            status.textContent = `${registered} registered · ${verified} feature-verified`;
+        }
+
+        const sel = document.getElementById('feat400-domain-filter');
+        if (sel) {
+            cached400Domains.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.id;
+                opt.textContent = `${d.name} (#${d.range})`;
+                sel.appendChild(opt);
+            });
+        }
+
+        render400FeaturesTable(cached400Features);
+    }).catch(e => {
+        document.getElementById('feat400-table-container').innerHTML = `<p style="color:var(--danger)">Failed to load features: ${esc(e.message)}</p>`;
+    });
+}
+
+function render400FeaturesTable(list) {
+    const container = document.getElementById('feat400-table-container');
+    if (!list || list.length === 0) {
+        container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">No matching features found.</p>';
+        return;
+    }
+
+    let rows = list.map(f => {
+        return `
+            <tr>
+                <td style="font-weight:700;color:var(--primary);width:60px">#${f.id}</td>
+                <td style="font-weight:600;width:130px"><span class="badge" style="background:#e0f2fe;color:#0369a1">${esc(f.code)}</span></td>
+                <td>
+                    <div style="font-weight:600">${esc(f.name)}</div>
+                    <div style="font-size:0.75rem;color:var(--muted)">Module: ${esc(f.folder || f.code)}</div>
+                </td>
+                <td><span style="font-size:0.8rem;color:#334155;font-weight:500">${esc(f.domain)}</span></td>
+                <td><span class="badge">${esc(f.implementationStatus || 'NOT_STARTED')}</span></td>
+                <td style="font-size:0.75rem;color:var(--muted)">No feature-level evidence</td>
+                <td>
+                    <button class="btn btn-primary" style="padding:0.25rem 0.6rem;font-size:0.75rem" onclick="openExecute400Modal(${f.id})">Run smoke check</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div style="font-size:0.8rem;color:var(--muted);margin-bottom:0.5rem">Showing ${list.length} of 400 features</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Req Code</th>
+                    <th>Feature Name & Module</th>
+                    <th>Operational Domain</th>
+                    <th>Implementation status</th>
+                    <th>Evidence</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    `;
+}
+
+function filter400FeaturesTable() {
+    const q = (document.getElementById('feat400-search').value || '').toLowerCase().trim();
+    const domainId = document.getElementById('feat400-domain-filter').value;
+
+    const filtered = cached400Features.filter(f => {
+        if (domainId && f.domainId !== domainId) return false;
+        if (q) {
+            const match = String(f.id).includes(q) ||
+                          (f.code || '').toLowerCase().includes(q) ||
+                          (f.name || '').toLowerCase().includes(q) ||
+                          (f.domain || '').toLowerCase().includes(q);
+            if (!match) return false;
+        }
+        return true;
+    });
+
+    render400FeaturesTable(filtered);
+}
+
+function openExecute400Modal(featureId) {
+    selectedFeatureForExec = cached400Features.find(f => f.id === featureId);
+    if (!selectedFeatureForExec) return;
+
+    showModal(`
+        <h3>Registry smoke check #${selectedFeatureForExec.id}: ${esc(selectedFeatureForExec.name)}</h3>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">This checks the registry wrapper only; it does not verify the feature's business capability or production readiness.</p>
+        
+        <div class="form-group">
+            <label>Tenant ID (Row-Level Security Context)</label>
+            <input type="text" id="exec-tenant-id" value="tenant-enterprise-uat" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+        </div>
+        <div class="form-group">
+            <label>Smoke-check payload (JSON)</label>
+            <input type="text" id="exec-payload" value='{"ping":true}' style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submit400FeatureExecution()">Run smoke check</button>
+        </div>
+        <div id="exec-result-area" style="display:none;margin-top:1rem">
+            <h4 style="font-size:0.85rem;margin-bottom:0.25rem">Registry smoke-check output (not feature verification):</h4>
+            <pre id="exec-result-json" style="background:#0f172a;color:#f8fafc;padding:0.75rem;border-radius:0.375rem;font-size:0.75rem;overflow-x:auto"></pre>
+        </div>
+    `);
+}
+
+function submit400FeatureExecution() {
+    if (!selectedFeatureForExec) return;
+    const tenantId = document.getElementById('exec-tenant-id').value || "tenant-enterprise-uat";
+    let payload = {};
+    try {
+        payload = JSON.parse(document.getElementById('exec-payload').value || '{}');
+    } catch (e) {
+        payload = { raw: document.getElementById('exec-payload').value };
+    }
+
+    apiPost(`/api/v1/features/${selectedFeatureForExec.id}/execute`, {
+        tenant_id: tenantId,
+        data: payload
+    }).then(res => {
+        document.getElementById('exec-result-area').style.display = 'block';
+        document.getElementById('exec-result-json').textContent = JSON.stringify(res, null, 2);
+    }).catch(err => {
+        alert("Execution error: " + err.message);
+    });
+}
+
+// ------------------------------------------------------------------------------
+// SDLC WORKFLOWS CONTROL CENTER
+// ------------------------------------------------------------------------------
+function loadSDLCWorkflows() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin-bottom:0.25rem">SDLC Workflows Control Center</h3>
+            <p style="color:var(--muted);font-size:0.85rem">Structured Feature Development, Structured Bug-Fix with reproduction test gate, and Fast Spec generator.</p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1rem;margin-bottom:1.5rem">
+            <div class="card">
+                <h4 style="color:var(--primary);margin-bottom:0.5rem">1. Structured Feature Development</h4>
+                <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">Pipeline: Design → Review Loop (3x) → Plan → Implement → Validation Gate.</p>
+                <input type="text" id="wf-feat-name" placeholder="Feature Name" style="width:100%;padding:0.45rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.8rem;margin-bottom:0.5rem" value="Automated Multi-Jurisdiction Stamp">
+                <button class="btn btn-primary" style="width:100%" onclick="executeWorkflowAPI('feature')">Execute Feature Dev</button>
+            </div>
+
+            <div class="card">
+                <h4 style="color:#d97706;margin-bottom:0.5rem">2. Structured Bug-Fix Workflow</h4>
+                <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">Pipeline: Investigate (Repro Test) → Diagnose Root Cause → Fix (PBT & Rollback) → Validation Gate.</p>
+                <input type="text" id="wf-bug-report" placeholder="Bug Report" style="width:100%;padding:0.45rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.8rem;margin-bottom:0.5rem" value="Cross-tenant isolation check on contract export">
+                <button class="btn" style="width:100%;background:#d97706;color:#fff" onclick="executeWorkflowAPI('bugfix')">Execute Bug-Fix</button>
+            </div>
+
+            <div class="card">
+                <h4 style="color:#7c3aed;margin-bottom:0.5rem">3. Fast Spec Workflow (SpecFast)</h4>
+                <p style="font-size:0.8rem;color:var(--muted);margin-bottom:1rem">Pipeline: Clarify Ambiguities → Auto-generate Requirements (FR/NFR) → Technical Design → Tasks.</p>
+                <input type="text" id="wf-spec-idea" placeholder="Idea Prompt" style="width:100%;padding:0.45rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.8rem;margin-bottom:0.5rem" value="Proactive AI renewal price escalation predictor">
+                <button class="btn" style="width:100%;background:#7c3aed;color:#fff" onclick="executeWorkflowAPI('spec')">Execute SpecFast</button>
+            </div>
+        </div>
+
+        <div class="card" id="wf-live-output" style="display:none;margin-bottom:1.5rem">
+            <h4>Live Workflow Execution Artifacts:</h4>
+            <pre id="wf-live-json" style="background:#0f172a;color:#f8fafc;padding:0.75rem;border-radius:0.375rem;font-size:0.75rem;overflow-x:auto"></pre>
+        </div>
+
+        <div class="card">
+            <h4>WORM Immutable Audit Trail (.agents/tasks/workflow-audit-log.json)</h4>
+            <p style="color:var(--muted);font-size:0.8rem;margin-bottom:0.75rem">Cryptographically signed SHA-256 records of all executed pipeline runs.</p>
+            <div id="wf-audit-table"><p style="color:var(--muted)">Loading audit trail...</p></div>
+        </div>
+    `;
+
+    loadWorkflowAuditLogs();
+}
+
+function executeWorkflowAPI(type) {
+    let payload = {};
+    if (type === 'feature') payload.name = document.getElementById('wf-feat-name').value;
+    if (type === 'bugfix') payload.report = document.getElementById('wf-bug-report').value;
+    if (type === 'spec') payload.idea = document.getElementById('wf-spec-idea').value;
+
+    apiPost(`/api/v1/workflows/${type}`, payload).then(res => {
+        document.getElementById('wf-live-output').style.display = 'block';
+        document.getElementById('wf-live-json').textContent = JSON.stringify(res, null, 2);
+        loadWorkflowAuditLogs();
+    }).catch(e => alert("Workflow failed: " + e.message));
+}
+
+function loadWorkflowAuditLogs() {
+    apiGet('/api/v1/workflows/audit-log').then(res => {
+        const logs = res.logs || [];
+        const container = document.getElementById('wf-audit-table');
+        if (logs.length === 0) {
+            container.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">No audit records yet.</p>';
+            return;
+        }
+
+        let rows = logs.slice().reverse().map(l => `
+            <tr>
+                <td style="font-size:0.75rem">${l.run_start}</td>
+                <td><span class="badge" style="background:#e0f2fe;color:#0369a1">${esc(l.workflow)}</span></td>
+                <td style="font-family:monospace;font-size:0.75rem">${esc((l.run_id || '').substring(0,8))}...</td>
+                <td style="font-size:0.75rem">${esc(l.feature_request || l.bug_report || l.idea || 'N/A')}</td>
+                <td style="font-family:monospace;font-size:0.75rem;color:#059669">${esc(l.hash)}</td>
+            </tr>
+        `).join('');
+
+        container.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Workflow</th>
+                        <th>Run ID</th>
+                        <th>Input Detail</th>
+                        <th>SHA-256 Integrity Hash</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }).catch(console.error);
 }

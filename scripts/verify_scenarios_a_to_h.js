@@ -323,7 +323,22 @@ async function runAllScenarios() {
         // reject_contract_audit_mutation() BEFORE UPDATE OR DELETE.
         // We verify the SQL trigger specification is present and active.
         const fs = require('fs');
-        const sqlContent = fs.readFileSync('components/saas-control-plane/deploy/migrations/006_contract_security_and_procurement_rls.sql', 'utf8');
+        const path = require('path');
+        const candidatePaths = [
+            path.join(__dirname, '../components/saas-control-plane/deploy/migrations/006_contract_security_and_procurement_rls.sql'),
+            path.join(process.cwd(), 'components/saas-control-plane/deploy/migrations/006_contract_security_and_procurement_rls.sql'),
+            path.join(process.cwd(), 'CLM/components/saas-control-plane/deploy/migrations/006_contract_security_and_procurement_rls.sql')
+        ];
+        let sqlContent = null;
+        for (const p of candidatePaths) {
+            if (fs.existsSync(p)) {
+                sqlContent = fs.readFileSync(p, 'utf8');
+                break;
+            }
+        }
+        if (!sqlContent) {
+            throw new Error("Unable to locate 006_contract_security_and_procurement_rls.sql in search paths: " + candidatePaths.join(", "));
+        }
         
         assert(sqlContent.includes("reject_contract_audit_mutation"), "Scenario H", "WORM Exception Trigger Function Declared");
         assert(sqlContent.includes("BEFORE UPDATE ON contract_audit_logs"), "Scenario H", "BEFORE UPDATE Trigger Guard Configured");

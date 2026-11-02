@@ -1,0 +1,362 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Add `workspace_root` input field to `clm-feature-dev.workflow.json` and replace all hardcoded absolute paths with `{{resolved_root}}` template variable": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553047305
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553058550
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553447993
+      }
+    ],
+    "1.2 Add ComponentValidator step `validate-component` at index 0 of the `steps` array with allowlist enforcement and exact log message format": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553049224
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553063931
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553448674
+      }
+    ],
+    "1.3 Implement WorkspaceRootResolver normalization logic in the `validate-component` prompt": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553049384
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553064201
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553449171
+      }
+    ],
+    "2. Checkpoint — Foundation complete": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553049551
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553457722
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553520336
+      }
+    ],
+    "3.1 Add `preflight-scan` step at index 1 of `steps` array and wire it into the workflow JSON": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553049664
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553525698
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793554443721
+      }
+    ],
+    "3.2 Implement git status check — uncommitted/staged/untracked file detection with severity classification": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553049775
+      }
+    ],
+    "3.3 Implement branch divergence detection and stale artifact glob detection": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553049882
+      }
+    ],
+    "3.4 Implement `preflight-acknowledged.json` bypass and large-workspace scoping": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553049976
+      }
+    ],
+    "3.5 Implement timeout enforcement and git command failure handling in the preflight prompt": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050111
+      }
+    ],
+    "4. Checkpoint — Pre-flight complete": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050205
+      }
+    ],
+    "5.1 Update both `repeat` step `stopCondition.fileCheck` paths to use `{{resolved_root}}` and document the versioned ApprovalFile schema": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050299
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553526157
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793554454380
+      }
+    ],
+    "5.2 Implement VersionedApprovalWrite logic in the design-reviewer and code-reviewer agent prompts": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050401
+      }
+    ],
+    "5.3 Add `onExhaustion.writeEscalation` to both repeat steps with filename format and append-with-separator behavior": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050501
+      }
+    ],
+    "6. Checkpoint — Versioned approval and escalation complete": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050599
+      }
+    ],
+    "7.1 Update planner agent prompt to read CLM stages and produce blast-radius summary table with stage-grouped task list": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050748
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553526771
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793554454545
+      }
+    ],
+    "7.2 Add Cross-Stage section logic and `[COMPLIANCE-REQUIRED]` injection for stages 11 and 12": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050831
+      }
+    ],
+    "7.3 Add planner guard: halt if approved design document is absent": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050912
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793554484838
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793554490695
+      }
+    ],
+    "8.1 Update coder agent prompt with PBT requirement, qualifying function definition, library selection, annotation format, and round-trip minimum": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553050997
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553527134
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793554464418
+      }
+    ],
+    "8.2 Update code-reviewer agent prompt with PBT blocking check": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051094
+      }
+    ],
+    "9.1 Implement open-question scan in the validator prompt": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051188
+      }
+    ],
+    "9.2 Implement migration script check in the validator prompt": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051318
+      }
+    ],
+    "9.3 Implement compliance doc check in the validator prompt": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051413
+      }
+    ],
+    "9.4 Implement consolidated validation result files: `feature-validation-passed.json` and `feature-validation-failed.json`": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051496
+      }
+    ],
+    "10. Checkpoint — Validation gate complete": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051586
+      }
+    ],
+    "11.1 Update design agent prompt to append `## Changelog` section on first creation": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051703
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553527393
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793554464536
+      }
+    ],
+    "11.2 Update design-revise agent prompt for per-execution changelog append with all edge cases": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051798
+      }
+    ],
+    "12.1 Update validator agent prompt to write `## Rollback` section in `feature-summary.md`": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553051883
+      }
+    ],
+    "13.1 Implement AuditLogger cross-cutting concern: append-only `workflow-audit-log.json` with full run entry schema": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553052007
+      },
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793554494932
+      }
+    ],
+    "13.2 Implement SHA-256 integrity hash computation over run entry": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553052094
+      }
+    ],
+    "13.3 Implement partial-run capture and filesystem error handling": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553052177
+      }
+    ],
+    "14. Final Checkpoint — All workflow changes complete": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553052267
+      }
+    ],
+    "15.1 Write property test `TestAllowlistedComponentAccepted` for ComponentValidator": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553052359
+      }
+    ],
+    "16.1 Write property test `TestApprovalVersionMonotonicity`": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553052445
+      }
+    ],
+    "18.1 Write integration test `TestStartupGateHaltsOnMissingWorkspaceRoot`": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553052540
+      }
+    ],
+    "18.2 Write integration test `TestStartupGateHaltsOnInvalidComponent`": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553052630
+      }
+    ],
+    "1. Foundation — Workspace-root portability in workflow JSON": [
+      {
+        "executionId": "da5eda2c-721f-40f3-99f3-714cd300c8de",
+        "chatSessionId": "sess_01004e98-7792-4cbc-bfaa-862e7ed24267",
+        "timestamp": 1793553449294
+      }
+    ]
+  }
+}

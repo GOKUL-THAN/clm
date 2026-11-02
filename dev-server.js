@@ -1,4 +1,4 @@
-// ==============================================================================
+﻿// ==============================================================================
 // CLM Unified Development Web Server
 // ==============================================================================
 // Serves both CLM web portals and provides lightweight mock APIs for instant
@@ -13,6 +13,21 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+
+let featureRegistry = null;
+try {
+    featureRegistry = require('./features/registry.js');
+} catch (e) {
+    console.error("Feature registry failed to load:", e.message);
+}
+
+let workflowEngine = null;
+try {
+    const WEngine = require('./scripts/workflow-engine.js');
+    workflowEngine = new WEngine(__dirname);
+} catch (e) {
+    console.error("Workflow engine failed to load:", e.message);
+}
 
 const SAAS_DIR = path.join(__dirname, 'components', 'saas-control-plane', 'web', 'admin-portal');
 const GATEWAY_DIR = path.join(__dirname, 'components', 'satellite-gateway', 'web', 'gateway-ui');
@@ -2089,7 +2104,7 @@ function handleMockAPI(req, res) {
                     "ignore", "override", "system", "disregard", "bypass", "jailbreak",
                     "dan", "unrestricted mode", "developer unrestricted mode", "developer mode",
                     "base64", "prompt injection", "system prompt", "forget rules",
-                    "ignorar", "ignorieren", "игнорировать", "忽略", "print previous",
+                    "ignorar", "ignorieren", "Ð¸Ð³Ð½Ð¾Ñ€Ð¸Ñ€Ð¾Ð²Ð°Ñ‚ÑŒ", "å¿½ç•¥", "print previous",
                     "repeat instructions", "what is your prompt"
                 ];
                 if (injectionPatterns.some(p => q.includes(p) || (b64Decoded && b64Decoded.includes(p)))) {
@@ -2321,6 +2336,376 @@ function handleMockAPI(req, res) {
         return true;
     }
 
+
+    // -----------------------------------------------------------------------
+    // MISSING ROUTES — Added for complete demo coverage
+    // -----------------------------------------------------------------------
+
+    // Users (tenant-scoped)
+    if (pathname === '/api/v1/users') {
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', c => body += c);
+            req.on('end', () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                const newUser = {
+                    id: 'user-' + Date.now(),
+                    name: input.name || 'New User',
+                    email: input.email || 'user@enterprise.internal',
+                    role: input.role || 'viewer',
+                    status: 'active',
+                    created_at: new Date().toISOString()
+                };
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(newUser));
+            });
+            return true;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            users: [
+                { id: "user-admin-01", name: "Super Admin", email: "admin@enterprise.internal", role: "super_admin", status: "active", department: "Executive Management", created_at: new Date().toISOString() },
+                { id: "user-legal-01", name: "Rachel Zane", email: "legal-lead@enterprise.internal", role: "legal_counsel", status: "active", department: "Legal & Regulatory", created_at: new Date().toISOString() },
+                { id: "user-proc-01", name: "Marcus Vance", email: "procurement@enterprise.internal", role: "procurement_manager", status: "active", department: "Procurement & Sourcing", created_at: new Date().toISOString() },
+                { id: "user-audit-01", name: "Sandra Wells", email: "auditor@enterprise.internal", role: "auditor", status: "active", department: "Compliance & Audit", created_at: new Date().toISOString() },
+                { id: "user-fin-01", name: "David Chen", email: "finance@enterprise.internal", role: "approver", status: "active", department: "Finance & Treasury", created_at: new Date().toISOString() }
+            ],
+            total: 5
+        }));
+        return true;
+    }
+
+    // Cloud Accounts (tenant-scoped)
+    if (pathname.startsWith('/api/v1/cloud-accounts')) {
+        if (req.method === 'POST' && pathname.endsWith('/validate')) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ valid: true, checks: [
+                { name: "IAM Role Accessible", passed: true },
+                { name: "STS Assume Role", passed: true },
+                { name: "Secrets Manager Access", passed: true },
+                { name: "ACM Permissions", passed: true }
+            ]}));
+            return true;
+        }
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', c => body += c);
+            req.on('end', () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                const acc = {
+                    id: 'ca-' + Date.now(),
+                    provider: input.provider || 'aws',
+                    name: input.name || 'New Cloud Account',
+                    aws_account_id: input.aws_account_id || '279078306945',
+                    region: input.region || 'ap-south-1',
+                    status: 'active',
+                    created_at: new Date().toISOString()
+                };
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(acc));
+            });
+            return true;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            accounts: [
+                { id: "ca-aws-01", provider: "aws", name: "Enterprise AWS Production (ap-south-1)", aws_account_id: "279078306945", region: "ap-south-1", status: "active", cert_count: 142, created_at: new Date().toISOString() },
+                { id: "ca-gcp-01", provider: "gcp", name: "Enterprise GCP Global", project_id: "enterprise-cloud-prd", region: "global", status: "active", cert_count: 38, created_at: new Date().toISOString() }
+            ],
+            total: 2
+        }));
+        return true;
+    }
+
+    // Satellites Deploy Jobs
+    if (pathname.startsWith('/api/v1/satellites/deploy')) {
+        const jobIdMatch = pathname.match(/\/api\/v1\/satellites\/deploy\/([^/?]+)/);
+        if (jobIdMatch) {
+            const jobId = jobIdMatch[1];
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                id: jobId, status: 'completed', type: 'deploy_gateway',
+                started_at: new Date(Date.now() - 300000).toISOString(),
+                completed_at: new Date(Date.now() - 240000).toISOString(),
+                logs: ["Terraform init: OK", "Terraform plan: 12 resources", "Terraform apply: completed", "Gateway registered successfully"]
+            }));
+            return true;
+        }
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', c => body += c);
+            req.on('end', () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                const job = {
+                    id: 'job-' + Date.now(),
+                    status: 'running', type: 'deploy_gateway',
+                    cloud: input.cloud || 'aws', region: input.region || 'ap-south-1',
+                    started_at: new Date().toISOString()
+                };
+                res.writeHead(202, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(job));
+            });
+            return true;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            jobs: [
+                { id: "job-001", status: "completed", type: "deploy_gateway", cloud: "aws", region: "ap-south-1", started_at: new Date(Date.now() - 86400000).toISOString(), completed_at: new Date(Date.now() - 86000000).toISOString() },
+                { id: "job-002", status: "completed", type: "upgrade_gateway", cloud: "aws", region: "ap-south-1", started_at: new Date(Date.now() - 43200000).toISOString(), completed_at: new Date(Date.now() - 43000000).toISOString() }
+            ],
+            total: 2
+        }));
+        return true;
+    }
+
+    // Individual satellite operations
+    if (pathname.match(/^\/api\/v1\/satellites\/[^/]+\/commands$/)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ commands: [
+            { id: "cmd-001", type: "scan_cidr", status: "completed", created_at: new Date(Date.now() - 3600000).toISOString() },
+            { id: "cmd-002", type: "health_check", status: "completed", created_at: new Date(Date.now() - 1800000).toISOString() }
+        ]}));
+        return true;
+    }
+
+    if (pathname.match(/^\/api\/v1\/satellites\/[^/]+\/upgrade$/) && req.method === 'POST') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: "ok", message: "Upgrade command dispatched" }));
+        return true;
+    }
+
+    if (pathname.match(/^\/api\/v1\/satellites\/[^/]+$/) && req.method === 'GET') {
+        const satId = pathname.split('/').pop();
+        const sat = mockSatellites.find(s => s.id === satId) || mockSatellites[0];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(sat));
+        return true;
+    }
+
+    // Approval approve/reject actions
+    if (pathname.match(/^\/api\/v1\/approvals\/[^/]+\/approve$/) && req.method === 'POST') {
+        const aprId = pathname.split('/')[4];
+        const apr = mockApprovals.find(a => a.id === aprId);
+        if (apr) apr.status = 'approved';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: "approved", id: aprId }));
+        return true;
+    }
+
+    if (pathname.match(/^\/api\/v1\/approvals\/[^/]+\/reject$/) && req.method === 'POST') {
+        const aprId = pathname.split('/')[4];
+        const apr = mockApprovals.find(a => a.id === aprId);
+        if (apr) apr.status = 'rejected';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: "rejected", id: aprId }));
+        return true;
+    }
+
+    // SSO tenant mappings
+    if (pathname.match(/^\/api\/v1\/tenants\/[^/]+\/sso\/mappings$/)) {
+        if (req.method === 'POST') {
+            let body = '';
+            req.on('data', c => body += c);
+            req.on('end', () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                const mapping = { id: 'map-' + Date.now(), ...input, created_at: new Date().toISOString() };
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(mapping));
+            });
+            return true;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ mappings: mockGroupMappings, total: mockGroupMappings.length }));
+        return true;
+    }
+
+    // Identity management write operations
+    if (pathname.startsWith('/api/v1/identity/') && req.method === 'POST') {
+        const sub = pathname.replace('/api/v1/identity/', '');
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            let input = {}; try { input = JSON.parse(body); } catch(e) {}
+            if (sub.match(/users\/[^/]+\/password/)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, message: "Password updated" }));
+            } else if (sub.match(/users\/[^/]+\/enabled/)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, enabled: input.enabled }));
+            } else if (sub.match(/users\/[^/]+\/role/)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, role: input.role }));
+            } else if (sub.match(/users\/[^/]+\/logout/)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } else if (sub.match(/users\/[^/]+\/unlock/)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } else if (sub === 'users') {
+                const newU = { id: 'usr-' + Date.now(), ...input, createdTimestamp: Date.now(), enabled: true };
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(newU));
+            } else if (sub === 'roles') {
+                const newR = { id: 'rol-' + Date.now(), ...input };
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(newR));
+            } else if (sub === 'groups') {
+                const newG = { id: 'grp-' + Date.now(), ...input, path: '/' + (input.name || 'NewGroup') };
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(newG));
+            } else if (sub.match(/groups\/[^/]+\/role/)) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } else if (sub === 'providers') {
+                const newP = { alias: 'provider-' + Date.now(), ...input };
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(newP));
+            } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            }
+        });
+        return true;
+    }
+
+    // Identity user GET by id + group members
+    if (pathname.startsWith('/api/v1/identity/') && req.method === 'GET') {
+        const sub = pathname.replace('/api/v1/identity/', '');
+        if (sub.match(/^users\/[^/]+$/)) {
+            const uid = sub.replace('users/', '');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ id: uid, username: "user@enterprise.internal", email: "user@enterprise.internal", firstName: "Demo", lastName: "User", enabled: true, emailVerified: true }));
+            return true;
+        }
+        if (sub.match(/^groups\/[^/]+\/members$/)) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ members: [
+                { id: "usr-01", username: "admin@enterprise.internal", email: "admin@enterprise.internal", firstName: "Super", lastName: "Admin" }
+            ]}));
+            return true;
+        }
+    }
+
+
+    // ---- MISSING ROUTES ADDED FOR COMPLETE DEMO ----
+
+    // Users list and create
+    if (pathname === "/api/v1/users") {
+        if (req.method === "POST") {
+            let body = ""; req.on("data", c => body += c);
+            req.on("end", () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                const u = { id: "user-" + Date.now(), name: input.name || "New User", email: input.email || "user@demo.internal", role: input.role || "viewer", status: "active", created_at: new Date().toISOString() };
+                res.writeHead(201, {"Content-Type":"application/json"}); res.end(JSON.stringify(u));
+            }); return true;
+        }
+        res.writeHead(200, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({ users: [
+            { id:"user-admin-01", name:"Super Admin", email:"admin@enterprise.internal", role:"super_admin", status:"active", department:"Executive", created_at: new Date().toISOString() },
+            { id:"user-legal-01", name:"Rachel Zane", email:"legal-lead@enterprise.internal", role:"legal_counsel", status:"active", department:"Legal", created_at: new Date().toISOString() },
+            { id:"user-proc-01", name:"Marcus Vance", email:"procurement@enterprise.internal", role:"procurement_manager", status:"active", department:"Procurement", created_at: new Date().toISOString() },
+            { id:"user-audit-01", name:"Sandra Wells", email:"auditor@enterprise.internal", role:"auditor", status:"active", department:"Compliance", created_at: new Date().toISOString() },
+            { id:"user-fin-01", name:"David Chen", email:"finance@enterprise.internal", role:"approver", status:"active", department:"Finance", created_at: new Date().toISOString() }
+        ], total: 5 }));
+        return true;
+    }
+
+    // Cloud Accounts
+    if (pathname.startsWith("/api/v1/cloud-accounts")) {
+        if (req.method === "POST" && pathname.endsWith("/validate")) {
+            res.writeHead(200, {"Content-Type":"application/json"});
+            res.end(JSON.stringify({ valid: true, checks: [
+                { name:"IAM Role Accessible", passed:true }, { name:"STS Assume Role", passed:true },
+                { name:"Secrets Manager Access", passed:true }, { name:"ACM Permissions", passed:true }
+            ]})); return true;
+        }
+        if (req.method === "POST") {
+            let body = ""; req.on("data", c => body += c);
+            req.on("end", () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                const acc = { id:"ca-" + Date.now(), provider: input.provider||"aws", name: input.name||"New Account", aws_account_id: input.aws_account_id||"279078306945", region: input.region||"ap-south-1", status:"active", cert_count:0, created_at: new Date().toISOString() };
+                res.writeHead(201, {"Content-Type":"application/json"}); res.end(JSON.stringify(acc));
+            }); return true;
+        }
+        res.writeHead(200, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({ accounts: [
+            { id:"ca-aws-01", provider:"aws", name:"Enterprise AWS Production (ap-south-1)", aws_account_id:"279078306945", region:"ap-south-1", status:"active", cert_count:142, created_at: new Date().toISOString() },
+            { id:"ca-gcp-01", provider:"gcp", name:"Enterprise GCP Global", project_id:"enterprise-cloud-prd", region:"global", status:"active", cert_count:38, created_at: new Date().toISOString() }
+        ], total: 2 }));
+        return true;
+    }
+
+    // Satellites Deploy Jobs
+    if (pathname.startsWith("/api/v1/satellites/deploy")) {
+        const jobMatch = pathname.match(/\/api\/v1\/satellites\/deploy\/([^/?]+)/);
+        if (jobMatch) {
+            res.writeHead(200, {"Content-Type":"application/json"});
+            res.end(JSON.stringify({ id: jobMatch[1], status:"completed", type:"deploy_gateway", started_at: new Date(Date.now()-300000).toISOString(), completed_at: new Date(Date.now()-240000).toISOString(), logs:["Init OK","Plan: 12 resources","Apply: completed","Gateway registered"] }));
+            return true;
+        }
+        if (req.method === "POST") {
+            let body = ""; req.on("data", c => body += c);
+            req.on("end", () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                const job = { id:"job-" + Date.now(), status:"running", type:"deploy_gateway", cloud: input.cloud||"aws", region: input.region||"ap-south-1", started_at: new Date().toISOString() };
+                res.writeHead(202, {"Content-Type":"application/json"}); res.end(JSON.stringify(job));
+            }); return true;
+        }
+        res.writeHead(200, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({ jobs: [
+            { id:"job-001", status:"completed", type:"deploy_gateway", cloud:"aws", region:"ap-south-1", started_at: new Date(Date.now()-86400000).toISOString(), completed_at: new Date(Date.now()-86000000).toISOString() },
+            { id:"job-002", status:"completed", type:"upgrade_gateway", cloud:"aws", region:"ap-south-1", started_at: new Date(Date.now()-43200000).toISOString(), completed_at: new Date(Date.now()-43000000).toISOString() }
+        ], total: 2 }));
+        return true;
+    }
+
+    // Satellite individual commands and upgrade
+    if (pathname.match(/\/api\/v1\/satellites\/[^/]+\/commands/)) {
+        res.writeHead(200, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({ commands: [
+            { id:"cmd-001", type:"scan_cidr", status:"completed", created_at: new Date(Date.now()-3600000).toISOString() },
+            { id:"cmd-002", type:"health_check", status:"completed", created_at: new Date(Date.now()-1800000).toISOString() }
+        ]})); return true;
+    }
+    if (pathname.match(/\/api\/v1\/satellites\/[^/]+\/upgrade/) && req.method === "POST") {
+        res.writeHead(200, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({ status:"ok", message:"Upgrade command dispatched" })); return true;
+    }
+    if (pathname.match(/\/api\/v1\/satellites\/([^/]+)$/) && req.method === "GET") {
+        const satId = pathname.split("/").pop();
+        const sat = mockSatellites.find(s => s.id === satId) || { ...mockSatellites[0], id: satId };
+        res.writeHead(200, {"Content-Type":"application/json"}); res.end(JSON.stringify(sat)); return true;
+    }
+
+    // Approval actions
+    if (pathname.match(/\/api\/v1\/approvals\/([^/]+)\/approve/) && req.method === "POST") {
+        const aid = pathname.split("/")[4];
+        const a = mockApprovals.find(x => x.id === aid); if (a) a.status = "approved";
+        res.writeHead(200, {"Content-Type":"application/json"}); res.end(JSON.stringify({ status:"approved", id:aid })); return true;
+    }
+    if (pathname.match(/\/api\/v1\/approvals\/([^/]+)\/reject/) && req.method === "POST") {
+        const aid = pathname.split("/")[4];
+        const a = mockApprovals.find(x => x.id === aid); if (a) a.status = "rejected";
+        res.writeHead(200, {"Content-Type":"application/json"}); res.end(JSON.stringify({ status:"rejected", id:aid })); return true;
+    }
+
+    // Tenant SSO mappings
+    if (pathname.match(/\/api\/v1\/tenants\/[^/]+\/sso\/mappings/)) {
+        if (req.method === "POST") {
+            let body = ""; req.on("data", c => body += c);
+            req.on("end", () => {
+                let input = {}; try { input = JSON.parse(body); } catch(e) {}
+                const m = { id:"map-" + Date.now(), ...input, created_at: new Date().toISOString() };
+                res.writeHead(201, {"Content-Type":"application/json"}); res.end(JSON.stringify(m));
+            }); return true;
+        }
+        res.writeHead(200, {"Content-Type":"application/json"});
+        res.end(JSON.stringify({ mappings: mockGroupMappings, total: mockGroupMappings.length })); return true;
+    }
+
+    // ---- END MISSING ROUTES ----
+
+
     // Keycloak Identity Management Mock Endpoints
     if (pathname.startsWith('/api/v1/identity/')) {
         const sub = pathname.replace('/api/v1/identity/', '');
@@ -2395,6 +2780,140 @@ function handleMockAPI(req, res) {
         }
     }
 
+    // --------------------------------------------------------------------------
+    // 400 CLM ENTERPRISE FEATURES & SDLC WORKFLOWS API
+    // --------------------------------------------------------------------------
+    if (pathname === '/api/v1/features' && req.method === 'GET') {
+        if (!featureRegistry) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: "Feature registry unavailable" }));
+            return true;
+        }
+        const domainId = parsed.query?.domain;
+        const q = (parsed.query?.q || '').toLowerCase().trim();
+        let list = domainId ? featureRegistry.getByDomain(domainId) : featureRegistry.getAll();
+        if (q) {
+            list = list.filter(f => f.name.toLowerCase().includes(q) || String(f.id).includes(q) || f.domain.toLowerCase().includes(q));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ total: list.length, features: list }));
+        return true;
+    }
+
+    if (pathname === '/api/v1/domains' && req.method === 'GET') {
+        const domains = [
+            { id: "domain-01-core-contract-repository", name: "Core Contract Repository & Lifecycle", range: "1-47", count: 47 },
+            { id: "domain-02-specialized-agreements", name: "Specialized Agreement Portfolio", range: "48-63", count: 16 },
+            { id: "domain-03-legal-operations-financial-terms", name: "Legal Operations & Financial Terms", range: "64-83", count: 20 },
+            { id: "domain-04-document-intelligence-infrastructure", name: "Document Intelligence & System Integration", range: "84-100", count: 17 },
+            { id: "domain-05-advanced-enterprise-clm-capabilities", name: "Advanced Enterprise CLM Capabilities", range: "101-120", count: 20 },
+            { id: "domain-06-section-a-contract-intake-request-management", name: "Section A: Contract Intake & Request Management", range: "121-138", count: 18 },
+            { id: "domain-07-section-b-advanced-contract-authoring", name: "Section B: Advanced Contract Authoring", range: "139-154", count: 16 },
+            { id: "domain-08-section-c-advanced-negotiation-management", name: "Section C: Advanced Negotiation Management", range: "155-168", count: 14 },
+            { id: "domain-09-section-d-advanced-legal-operations", name: "Section D: Advanced Legal Operations", range: "169-182", count: 14 },
+            { id: "domain-10-section-e-corporate-procurement-management", name: "Section E: Corporate Procurement Management", range: "183-201", count: 19 },
+            { id: "domain-11-section-f-financial-commercial-management", name: "Section F: Financial & Commercial Management", range: "202-220", count: 19 },
+            { id: "domain-12-section-g-advanced-obligation-performance-management", name: "Section G: Advanced Obligation & Performance Management", range: "221-239", count: 19 },
+            { id: "domain-13-section-h-advanced-risk-compliance", name: "Section H: Advanced Risk & Compliance", range: "240-259", count: 20 },
+            { id: "domain-14-section-i-advanced-contract-intelligence-ai", name: "Section I: Advanced Contract Intelligence & AI", range: "260-284", count: 25 },
+            { id: "domain-15-section-j-corporate-governance-enterprise-administration", name: "Section J: Corporate Governance & Enterprise Administration", range: "285-300", count: 16 },
+            { id: "domain-16-section-k-digital-signature-certificate-management", name: "Section K: Digital Signature & Certificate Management", range: "301-320", count: 20 },
+            { id: "domain-17-section-l-advanced-repository-document-intelligence", name: "Section L: Advanced Repository & Document Intelligence", range: "321-340", count: 20 },
+            { id: "domain-18-section-m-enterprise-integration-automation", name: "Section M: Enterprise Integration & Automation", range: "341-360", count: 20 },
+            { id: "domain-19-section-n-advanced-enterprise-reporting", name: "Section N: Advanced Enterprise Reporting", range: "361-375", count: 15 },
+            { id: "domain-20-section-o-enterprise-security-technical-administration", name: "Section O: Enterprise Security & Technical Administration", range: "376-400", count: 25 }
+        ];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ total: domains.length, domains }));
+        return true;
+    }
+
+    const featMatch = pathname.match(/^\/api\/v1\/features\/(\d+)$/);
+    if (featMatch && req.method === 'GET') {
+        const id = parseInt(featMatch[1], 10);
+        const feat = featureRegistry?.getAll().find(feature => feature.id === id);
+        if (!feat) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: `Feature ${id} not found` }));
+            return true;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(feat));
+        return true;
+    }
+
+    const featExecMatch = pathname.match(/^\/api\/v1\/features\/(\d+)\/execute$/);
+    if (featExecMatch && req.method === 'POST') {
+        const id = parseInt(featExecMatch[1], 10);
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const payload = body ? JSON.parse(body) : {};
+                const tenantId = req.headers['x-tenant-id'] || payload.tenant_id || "tenant-enterprise-uat";
+                payload.tenant_id = tenantId;
+                const result = featureRegistry.execute(id, payload);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(result));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return true;
+    }
+
+    const wfMatch = pathname.match(/^\/api\/v1\/workflows\/(feature|bugfix|spec)$/);
+    if (wfMatch && req.method === 'POST') {
+        const type = wfMatch[1];
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const payload = body ? JSON.parse(body) : {};
+                let result = null;
+                if (!workflowEngine) {
+                    throw new Error("WorkflowEngine not initialized");
+                }
+                if (type === 'feature') {
+                    result = workflowEngine.runFeatureDev({
+                        name: payload.name || "Dynamic Multitenant Clause Assembly",
+                        component: payload.component || "saas-control-plane",
+                        clmStage: payload.stage || 3
+                    });
+                } else if (type === 'bugfix') {
+                    result = workflowEngine.runBugFix({
+                        report: payload.report || "Tenant boundary check failure on contract export",
+                        component: payload.component || "saas-control-plane",
+                        clmStage: payload.stage || 11
+                    });
+                } else if (type === 'spec') {
+                    result = workflowEngine.runSpecFast({
+                        idea: payload.idea || "Autonomous cross-border regulatory compliance auditor",
+                        component: payload.component || "saas-control-plane"
+                    });
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(result));
+            } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return true;
+    }
+
+    if (pathname === '/api/v1/workflows/audit-log' && req.method === 'GET') {
+        const auditFile = path.join(__dirname, '.agents', 'tasks', 'workflow-audit-log.json');
+        let logs = [];
+        if (fs.existsSync(auditFile)) {
+            try { logs = JSON.parse(fs.readFileSync(auditFile, 'utf8')); } catch(e) {}
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ total: logs.length, logs }));
+        return true;
+    }
+
     return false;
 }
 
@@ -2427,3 +2946,4 @@ if (require.main === module) {
 }
 
 module.exports = { handleMockAPI, adminServer, gatewayServer };
+
