@@ -29,6 +29,42 @@ try {
     console.error("Workflow engine failed to load:", e.message);
 }
 
+
+
+let playbookEngine = null;
+let comparisonEngine = null;
+let obligationRadar = null;
+let clickwrapEngine = null;
+let riskHeatmapEngine = null;
+let counterpartyPortalEngine = null;
+let sourcingConverterEngine = null;
+let terminationRunbookEngine = null;
+try {
+    playbookEngine = require('./services/playbook-engine');
+    comparisonEngine = require('./services/contract-comparison');
+    obligationRadar = require('./services/obligation-radar');
+    clickwrapEngine = require('./services/clickwrap-engine');
+    riskHeatmapEngine = require('./services/risk-heatmap');
+    counterpartyPortalEngine = require('./services/counterparty-portal');
+    sourcingConverterEngine = require('./services/sourcing-converter');
+    terminationRunbookEngine = require('./services/termination-runbook');
+} catch (e) {
+    console.error("Advanced CLM engines failed to load:", e.message);
+}
+
+let documentEngine = null;
+let aiEngine = null;
+let pkiService = null;
+let integrationService = null;
+try {
+    documentEngine = require('./services/document-engine');
+    aiEngine = require('./services/ai-intelligence');
+    pkiService = require('./services/pki-signatures');
+    integrationService = require('./services/integrations');
+} catch (e) {
+    console.error("Enterprise services failed to load:", e.message);
+}
+
 const SAAS_DIR = path.join(__dirname, 'components', 'saas-control-plane', 'web', 'admin-portal');
 const GATEWAY_DIR = path.join(__dirname, 'components', 'satellite-gateway', 'web', 'gateway-ui');
 const USE_GO_API = process.env.CLM_DEMO_API === 'go';
@@ -707,32 +743,30 @@ let mockRedlines = [
 ];
 
 let mockSignatures = [
-    {
-        id: "sig-01",
-        contract_id: "cnt-003",
-        signer_name: "Gokul (Internal Legal Counsel)",
-        signer_email: "legal@enterprise.internal",
-        signer_role: "General Counsel",
-        signing_order: 1,
-        status: "signed",
-        auth_method: "email_otp",
-        ip_address: "10.125.4.68",
-        signed_at: new Date(Date.now() - 2 * 3600000).toISOString(),
-        digital_signature_hash: "9f83a45c6b8d2e1f4a7c0b9e8d7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a"
-    },
-    {
-        id: "sig-02",
-        contract_id: "cnt-003",
-        signer_name: "Dr. Elena Rostova",
-        signer_email: "elena@quantex-ai.org",
-        signer_role: "Executive Director",
-        signing_order: 2,
-        status: "sent",
-        auth_method: "pki_certificate",
-        ip_address: "",
-        signed_at: null,
-        digital_signature_hash: ""
-    }
+    { id:"sig-001", contract_id:"cnt-001", signer_name:"Gokul (General Counsel)", signer_email:"legal@enterprise.internal", signer_role:"General Counsel", signing_order:1, status:"signed", auth_method:"email_otp", ip_address:"10.125.4.68", signed_at:new Date(Date.now()-30*86400000).toISOString(), digital_signature_hash:"sha256-a1b2c3d4e5f6" },
+    { id:"sig-002", contract_id:"cnt-001", signer_name:"Sarah Mitchell (CFO)", signer_email:"cfo@apex-fintech.com", signer_role:"Chief Financial Officer", signing_order:2, status:"signed", auth_method:"pki_certificate", ip_address:"203.45.67.89", signed_at:new Date(Date.now()-28*86400000).toISOString(), digital_signature_hash:"sha256-b2c3d4e5f6g7" },
+    { id:"sig-003", contract_id:"cnt-003", signer_name:"Gokul (Internal Legal Counsel)", signer_email:"legal@enterprise.internal", signer_role:"General Counsel", signing_order:1, status:"signed", auth_method:"email_otp", ip_address:"10.125.4.68", signed_at:new Date(Date.now()-2*3600000).toISOString(), digital_signature_hash:"sha256-9f83a45c6b8d" },
+    { id:"sig-004", contract_id:"cnt-003", signer_name:"Dr. Elena Rostova", signer_email:"elena@quantex-ai.org", signer_role:"Executive Director", signing_order:2, status:"sent", auth_method:"pki_certificate", ip_address:"", signed_at:null, digital_signature_hash:"" },
+    { id:"sig-005", contract_id:"cnt-hr-01", signer_name:"Marcus Vance (CEO)", signer_email:"ceo@enterprise.internal", signer_role:"Chief Executive Officer", signing_order:1, status:"signed", auth_method:"pki_certificate", ip_address:"10.125.4.10", signed_at:new Date(Date.now()-15*86400000).toISOString(), digital_signature_hash:"sha256-c3d4e5f6g7h8" },
+    { id:"sig-006", contract_id:"cnt-hr-01", signer_name:"Dr. Jason Vance (CTO)", signer_email:"jason.vance@enterprise.internal", signer_role:"Chief Technology Officer", signing_order:2, status:"signed", auth_method:"email_otp", ip_address:"10.125.4.20", signed_at:new Date(Date.now()-14*86400000).toISOString(), digital_signature_hash:"sha256-d4e5f6g7h8i9" },
+    { id:"sig-007", contract_id:"cnt-fin-01", signer_name:"David Chen (Treasurer)", signer_email:"finance@enterprise.internal", signer_role:"VP Treasury Operations", signing_order:1, status:"signed", auth_method:"pki_certificate", ip_address:"10.125.4.30", signed_at:new Date(Date.now()-20*86400000).toISOString(), digital_signature_hash:"sha256-e5f6g7h8i9j0" },
+    { id:"sig-008", contract_id:"cnt-fin-01", signer_name:"Pierre Dubois (BNP Paribas)", signer_email:"pierre.dubois@bnpparibas.com", signer_role:"Director Securities Services", signing_order:2, status:"signed", auth_method:"pki_certificate", ip_address:"194.51.23.45", signed_at:new Date(Date.now()-19*86400000).toISOString(), digital_signature_hash:"sha256-f6g7h8i9j0k1" },
+    { id:"sig-009", contract_id:"cnt-sales-01", signer_name:"Rachel Zane (VP Sales)", signer_email:"sales@enterprise.internal", signer_role:"VP Commercial Operations", signing_order:1, status:"signed", auth_method:"email_otp", ip_address:"10.125.4.40", signed_at:new Date(Date.now()-25*86400000).toISOString(), digital_signature_hash:"sha256-g7h8i9j0k1l2" },
+    { id:"sig-010", contract_id:"cnt-sales-01", signer_name:"James Park (Citigroup)", signer_email:"james.park@citi.com", signer_role:"Managing Director", signing_order:2, status:"signed", auth_method:"pki_certificate", ip_address:"199.38.72.16", signed_at:new Date(Date.now()-24*86400000).toISOString(), digital_signature_hash:"sha256-h8i9j0k1l2m3" },
+    { id:"sig-011", contract_id:"cnt-sec-01", signer_name:"Sandra Wells (CISO)", signer_email:"security@enterprise.internal", signer_role:"Chief Information Security Officer", signing_order:1, status:"signed", auth_method:"pki_certificate", ip_address:"10.125.4.50", signed_at:new Date(Date.now()-18*86400000).toISOString(), digital_signature_hash:"sha256-i9j0k1l2m3n4" },
+    { id:"sig-012", contract_id:"cnt-sec-01", signer_name:"CrowdStrike Legal", signer_email:"legal@crowdstrike.com", signer_role:"General Counsel CrowdStrike", signing_order:2, status:"signed", auth_method:"email_otp", ip_address:"104.18.45.92", signed_at:new Date(Date.now()-17*86400000).toISOString(), digital_signature_hash:"sha256-j0k1l2m3n4o5" },
+    { id:"sig-013", contract_id:"cnt-ops-01", signer_name:"Marcus Vance (COO)", signer_email:"ops@enterprise.internal", signer_role:"Chief Operating Officer", signing_order:1, status:"signed", auth_method:"pki_certificate", ip_address:"10.125.4.60", signed_at:new Date(Date.now()-22*86400000).toISOString(), digital_signature_hash:"sha256-k1l2m3n4o5p6" },
+    { id:"sig-014", contract_id:"cnt-ops-01", signer_name:"Equinix Legal", signer_email:"legal@equinix.com", signer_role:"VP Legal Equinix", signing_order:2, status:"signed", auth_method:"pki_certificate", ip_address:"50.23.145.78", signed_at:new Date(Date.now()-21*86400000).toISOString(), digital_signature_hash:"sha256-l2m3n4o5p6q7" },
+    { id:"sig-015", contract_id:"cnt-exec-01", signer_name:"Marcus Vance (CEO)", signer_email:"ceo@enterprise.internal", signer_role:"Chief Executive Officer", signing_order:1, status:"sent", auth_method:"pki_certificate", ip_address:"", signed_at:null, digital_signature_hash:"" },
+    { id:"sig-016", contract_id:"cnt-exec-01", signer_name:"Lord William Pemberton", signer_email:"wp@globalsovereigntech.uk", signer_role:"Chairman Sovereign Holdings", signing_order:2, status:"pending", auth_method:"pki_certificate", ip_address:"", signed_at:null, digital_signature_hash:"" },
+    { id:"sig-017", contract_id:"cnt-mfg-01", signer_name:"Marcus Vance (CEO)", signer_email:"ceo@enterprise.internal", signer_role:"Chief Executive Officer", signing_order:1, status:"signed", auth_method:"pki_certificate", ip_address:"10.125.4.10", signed_at:new Date(Date.now()-40*86400000).toISOString(), digital_signature_hash:"sha256-m3n4o5p6q7r8" },
+    { id:"sig-018", contract_id:"cnt-mfg-01", signer_name:"TSMC Legal Affairs", signer_email:"legal@tsmc.com", signer_role:"VP Legal TSMC", signing_order:2, status:"signed", auth_method:"pki_certificate", ip_address:"203.66.45.12", signed_at:new Date(Date.now()-38*86400000).toISOString(), digital_signature_hash:"sha256-n4o5p6q7r8s9" },
+    { id:"sig-019", contract_id:"cnt-fac-01", signer_name:"David Chen (CFO)", signer_email:"finance@enterprise.internal", signer_role:"Chief Financial Officer", signing_order:1, status:"signed", auth_method:"pki_certificate", ip_address:"10.125.4.30", signed_at:new Date(Date.now()-35*86400000).toISOString(), digital_signature_hash:"sha256-o5p6q7r8s9t0" },
+    { id:"sig-020", contract_id:"cnt-fac-01", signer_name:"Digital Realty Legal", signer_email:"legal@digitalrealty.com", signer_role:"VP Real Estate Legal", signing_order:2, status:"signed", auth_method:"pki_certificate", ip_address:"208.67.45.12", signed_at:new Date(Date.now()-34*86400000).toISOString(), digital_signature_hash:"sha256-p6q7r8s9t0u1" },
+    { id:"sig-021", contract_id:"cnt-comp-01", signer_name:"Sandra Wells (Compliance)", signer_email:"compliance@enterprise.internal", signer_role:"Chief Compliance Officer", signing_order:1, status:"signed", auth_method:"pki_certificate", ip_address:"10.125.4.50", signed_at:new Date(Date.now()-12*86400000).toISOString(), digital_signature_hash:"sha256-q7r8s9t0u1v2" },
+    { id:"sig-022", contract_id:"cnt-comp-01", signer_name:"PwC Audit Lead", signer_email:"audit.lead@pwc.com", signer_role:"Partner PwC LLP", signing_order:2, status:"signed", auth_method:"pki_certificate", ip_address:"155.12.78.34", signed_at:new Date(Date.now()-11*86400000).toISOString(), digital_signature_hash:"sha256-r8s9t0u1v2w3" },
+    { id:"sig-023", contract_id:"cnt-adm-01", signer_name:"Marcus Vance (CEO)", signer_email:"ceo@enterprise.internal", signer_role:"Chief Executive Officer", signing_order:1, status:"signed", auth_method:"pki_certificate", ip_address:"10.125.4.10", signed_at:new Date(Date.now()-45*86400000).toISOString(), digital_signature_hash:"sha256-s9t0u1v2w3x4" },
+    { id:"sig-024", contract_id:"cnt-adm-01", signer_name:"Corporate Secretary", signer_email:"corp.sec@enterprise.internal", signer_role:"Corporate Secretary", signing_order:2, status:"signed", auth_method:"email_otp", ip_address:"10.125.4.70", signed_at:new Date(Date.now()-44*86400000).toISOString(), digital_signature_hash:"sha256-t0u1v2w3x4y5" },
 ];
 
 let mockObligations = [
@@ -988,6 +1022,292 @@ function handleMockAPI(req, res) {
     res.setHeader('X-RateLimit-Limit', '300');
     res.setHeader('X-RateLimit-Remaining', Math.max(0, 300 - clientRecord.count));
     res.setHeader('X-RateLimit-Reset', Math.ceil(clientRecord.resetTime / 1000));
+
+    
+    // --- Enterprise Legal Playbook APIs ---
+    if (pathname === '/api/v1/playbook/clauses' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ playbook: playbookEngine.getPlaybook() }));
+        return true;
+    }
+
+    if (pathname === '/api/v1/playbook/apply-fallback' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            try {
+                const result = playbookEngine.applyFallback(input.contract_text || "", input.clause_key, input.tier);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(result));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return true;
+    }
+
+    // --- Side-by-Side Semantic Contract Comparison API ---
+    if (pathname === '/api/v1/contract-comparison/compare' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const comparison = comparisonEngine.compare(
+                input.contract_a || "Standard Agreement",
+                input.contract_b || "Revised Agreement",
+                input.title_a || "Baseline Version 1.0",
+                input.title_b || "Counterparty Version 2.0"
+            );
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(comparison));
+        });
+        return true;
+    }
+
+    // --- Obligation Expiration & Renewal Radar APIs ---
+    if (pathname === '/api/v1/obligations/radar' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(obligationRadar.generateRadar(mockContracts)));
+        return true;
+    }
+
+    if (pathname === '/api/v1/obligations/calculate-penalty' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const penaltyResult = obligationRadar.calculateSLAPenalty(
+                input.contract_value || 120000,
+                input.target_uptime || 99.9,
+                input.actual_uptime || 98.5
+            );
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(penaltyResult));
+        });
+        return true;
+    }
+
+    // --- Self-Service Clickwrap APIs ---
+    if (pathname === '/api/v1/clickwrap/generate' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const campaign = clickwrapEngine.createClickwrap(
+                input.title || "Standard Mutual NDA",
+                input.type || "NDA",
+                input.terms || "Standard Confidentiality Terms",
+                input.tenant_id || "default-tenant"
+            );
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(campaign));
+        });
+        return true;
+    }
+
+    if (pathname === '/api/v1/clickwrap/accept' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            try {
+                const acceptResult = clickwrapEngine.accept(input.token, input.counterparty || {});
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(acceptResult));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return true;
+    }
+
+    if (pathname.startsWith('/api/v1/clickwrap/verify/') && req.method === 'GET') {
+        const certId = pathname.split('/')[4];
+        const verifyResult = clickwrapEngine.verifyCertificate(certId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(verifyResult));
+        return true;
+    }
+
+    // --- Visual Contract Risk Heatmap APIs ---
+    if (pathname === '/api/v1/risk-heatmap/matrix' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(riskHeatmapEngine.generateHeatmapMatrix(mockContracts)));
+        return true;
+    }
+
+    if (pathname === '/api/v1/risk-heatmap/evaluate' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const evalResult = riskHeatmapEngine.evaluateContractRisk(input);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(evalResult));
+        });
+        return true;
+    }
+
+    // --- External Counterparty Negotiation Workspace APIs ---
+    if (pathname === '/api/v1/counterparty-portal/create-token' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const tokenResult = counterpartyPortalEngine.generateNegotiationToken(input);
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(tokenResult));
+        });
+        return true;
+    }
+
+    if (pathname === '/api/v1/counterparty-portal/session' && req.method === 'GET') {
+        const token = parsedUrl.query.token;
+        const valResult = counterpartyPortalEngine.validateToken(token);
+        res.writeHead(valResult.valid ? 200 : 401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(valResult));
+        return true;
+    }
+
+    if (pathname === '/api/v1/counterparty-portal/submit-redline' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            try {
+                const subResult = counterpartyPortalEngine.submitCounterpartyRedline(input.token, input.redline_text, input.comments);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(subResult));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return true;
+    }
+
+    // --- Sourcing-to-Contract (S2C) / RFP-to-Agreement APIs ---
+    if (pathname === '/api/v1/sourcing/convert-rfp' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            try {
+                const s2cResult = sourcingConverterEngine.convertSourcingAwardToContract(input);
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(s2cResult));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return true;
+    }
+
+    // --- Contract Termination & Survival Runbook APIs ---
+    if (pathname === '/api/v1/contracts/terminate-runbook' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            try {
+                const termResult = terminationRunbookEngine.executeTerminationRunbook(input);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(termResult));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return true;
+    }
+
+    // Enterprise Document Engine APIs
+    if (pathname === '/api/v1/document-engine/assemble' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            try {
+                const resDoc = documentEngine.assemble(input.template || "Standard Agreement", input.variables || {}, input.clauses || []);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(resDoc));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return true;
+    }
+
+    if (pathname === '/api/v1/document-engine/diff' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const diffRes = documentEngine.computeRedlineDiff(input.original || "", input.revised || "");
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(diffRes));
+        });
+        return true;
+    }
+
+    // Enterprise PKI & Signature APIs
+    if (pathname === '/api/v1/pki/sign' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const sigRes = pkiService.signDigest(input.digest || pkiService.hashDocument("Sample"), input.email || "counsel@enterprise.com");
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(sigRes));
+        });
+        return true;
+    }
+
+    if (pathname === '/api/v1/pki/verify' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const verRes = pkiService.verifySignature(input.digest, input.signature, input.publicKey);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(verRes));
+        });
+        return true;
+    }
+
+    // Enterprise AI Risk Scoring API
+    if (pathname === '/api/v1/ai-engine/evaluate-risk' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            let input = {};
+            try { input = JSON.parse(body); } catch(e) {}
+            const riskRes = aiEngine.evaluateRisk(input);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(riskRes));
+        });
+        return true;
+    }
+
 
     if (clientRecord.count > 300 && !req.headers['x-test-bypass-ratelimit']) {
         res.writeHead(429, { 
@@ -2106,7 +2426,7 @@ function handleMockAPI(req, res) {
                     "ignore", "override", "system", "disregard", "bypass", "jailbreak",
                     "dan", "unrestricted mode", "developer unrestricted mode", "developer mode",
                     "base64", "prompt injection", "system prompt", "forget rules",
-                    "ignorar", "ignorieren", "Ð¸Ð³Ð½Ð¾Ñ€Ð¸Ñ€Ð¾Ð²Ð°Ñ‚ÑŒ", "å¿½ç•¥", "print previous",
+                    "ignorar", "ignorieren", "ÃÂ¸ÃÂ³ÃÂ½ÃÂ¾Ã‘â‚¬ÃÂ¸Ã‘â‚¬ÃÂ¾ÃÂ²ÃÂ°Ã‘â€šÃ‘Å’", "Ã¥Â¿Â½Ã§â€¢Â¥", "print previous",
                     "repeat instructions", "what is your prompt"
                 ];
                 if (injectionPatterns.some(p => q.includes(p) || (b64Decoded && b64Decoded.includes(p)))) {
@@ -2340,7 +2660,7 @@ function handleMockAPI(req, res) {
 
 
     // -----------------------------------------------------------------------
-    // MISSING ROUTES — Added for complete demo coverage
+    // MISSING ROUTES â€” Added for complete demo coverage
     // -----------------------------------------------------------------------
 
     // Users (tenant-scoped)
@@ -2591,10 +2911,10 @@ function handleMockAPI(req, res) {
 
 
     // -----------------------------------------------------------------------
-    // MISSING PARAMETRIC ROUTES — FIX FOR MENU FAILURES
+    // MISSING PARAMETRIC ROUTES â€” FIX FOR MENU FAILURES
     // -----------------------------------------------------------------------
 
-    // Tenant by ID (GET /api/v1/tenants/:id) — used by loadSSO, loadOrgTenants
+    // Tenant by ID (GET /api/v1/tenants/:id) â€” used by loadSSO, loadOrgTenants
     if (pathname.match(/^\/api\/v1\/tenants\/[^/]+$/) && req.method === 'GET') {
         const tenantId = pathname.split('/').pop();
         const tenant = mockTenants.find(t => t.id === tenantId || t.slug === tenantId)
@@ -2604,7 +2924,7 @@ function handleMockAPI(req, res) {
         return true;
     }
 
-    // Tenant me — used as fallback when no tenant ID in JWT
+    // Tenant me â€” used as fallback when no tenant ID in JWT
     if (pathname === '/api/v1/tenants/me') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(mockTenants[0]));
@@ -2631,7 +2951,7 @@ function handleMockAPI(req, res) {
             res.end(JSON.stringify({
                 question: question,
                 answer: 'Based on the contract terms, ' + (question.toLowerCase().includes('payment') ? 'invoices are payable within Net 30 days of receipt via wire transfer in USD.' : question.toLowerCase().includes('terminat') ? 'either party may terminate with 30 days written notice. Immediate termination is permitted for material breach.' : question.toLowerCase().includes('renew') ? 'the contract renews automatically for successive 12-month terms unless either party provides 60-day written notice of non-renewal.' : 'the contract provisions apply as stated in the relevant sections. Please review the specific clauses for detailed terms.'),
-                citations: [{ section: '§4.2 Payment Terms', page: 3 }, { section: '§12.1 Termination', page: 8 }],
+                citations: [{ section: 'Â§4.2 Payment Terms', page: 3 }, { section: 'Â§12.1 Termination', page: 8 }],
                 confidence: 0.92,
                 generated_at: new Date().toISOString()
             }));
