@@ -44,6 +44,7 @@ Statuses are deliberately precise — "Done" alone hides important differences b
 | **Ephemeral** | Works, but backing store is not durable (lost on container/VM recreation) |
 | **UI-only** | Portal screen exists; data is held in browser `localStorage` with no backend API |
 | **Code Ready** | Implemented but not exercised against a live target |
+| **Not assessed** | The feature's implementation or business behavior has not been independently evaluated |
 | **Planned** | Not implemented |
 
 ### Authentication & Identity
@@ -292,6 +293,17 @@ Implemented as documented: the nav has exactly these entries, with Organization/
 | Deploy Jobs | super_admin, admin, tenant_admin | Real-time deployment progress |
 | Activity Log | all | Audit trail |
 | **Identity Management** | super_admin, admin | Unified identity hub (see sub-tabs below) |
+| **400 Enterprise Features** | Admin Portal | Catalog search and domain filter with registry-wrapper smoke checks; see the verification boundary below |
+
+### 400 Enterprise Features — Verification Boundary
+
+The feature page is a catalog and registry smoke-check interface, not a feature-readiness dashboard. The catalog contains 400 registrations in `features/registry.js`; registration, a module file, or a passing wrapper check does not establish that the corresponding business capability is implemented.
+
+The current check loads a feature module, runs its input validation, and invokes the shared domain simulation. A `registry-smoke` pass confirms only that this wrapper path ran. It does **not** verify the feature's business behavior, tenant isolation, external integrations, security, performance, acceptance criteria, or production readiness. The tenant ID is test context, not an authenticated tenant boundary.
+
+All catalog entries currently report implementation as `NOT_ASSESSED`, verification as `NOT_VERIFIED`, and evidence as `NONE`. The execution digest is generated in memory; it is not persisted or hash-chained evidence. The UI's evidence column accordingly reports that feature-level evidence is unavailable.
+
+Run `npm run test:400` from the repository root to check the 400 registry wrappers. A result of `400/400` means **400 registry smoke checks passed**, not 400 business capabilities verified. The catalog routes are provided by the Node mock/demo server; they are not implemented by the Go database-backed control-plane API, and this test is not a live UAT or production verification.
 
 ### Organization & Tenants Sub-Tabs
 
@@ -765,7 +777,6 @@ runtime; do not document or commit their credentials.
 - **TLS/mTLS transport is Code Ready, not live-verified.** Production configuration fails closed unless HTTPS, gateway client-CA verification, and secure leased transport limits are configured. The checked-in Compose profile remains isolated test mode over HTTP, and no live CA chain or handshake was exercised for Task 3.
 - **Runtime secrets are externally supplied.** Compose and YAML files contain only environment or secret-file references; operators must populate the ignored `deploy/.env` or runtime secret files before startup.
 - **Tests exist but coverage is thin.** Repository integration tests and focused config tests exist; broader handler, router, and service coverage is still needed.
-- **This tree is not under version control** — `git rev-parse` reports no repository. Code changes are therefore unrecoverable without manual backups, and dead code cannot be safely deleted. Putting it in git is a prerequisite for most cleanup work.
 - **Control-plane audit is Code Ready, not transaction-atomic.** Protected JWT mutations append immutable tenant-scoped events and make write failures visible, but a domain write can commit before a failed audit append. Gateway communication routes and public authentication events are outside this middleware, and external tamper-evident export remains future work.
 - **Nullable-column scan risk.** Only `tenant_repo.go` and `satellite_repo.go` guard nullable columns (`COALESCE`/`sql.Null*`). `user_repo.go`, `cert_repo.go`, `approval_repo.go`, and `purchase_repo.go` do not — the same class of bug that made tenant fetch return 404 may still be latent there.
 - **Single instance, no HA, no scheduled backups.** PostgreSQL runs in a container on one Lightsail host.
