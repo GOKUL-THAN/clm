@@ -303,8 +303,9 @@ func NewRouter(deps *Dependencies) *gin.Engine {
 			enterprise.PATCH("/incidents/:id/resolve", entHandler.ResolveIncident)
 			enterprise.GET("/risks", entHandler.ListRisks)
 			enterprise.POST("/risks", entHandler.LogRisk)
+			enterprise.GET("/risks/posture", entHandler.GetRiskPosture)
 			enterprise.GET("/integrations", entHandler.ListIntegrations)
-			enterprise.POST("/integrations", entHandler.CreateIntegration)
+			enterprise.POST("/integrations", entHandler.RegisterIntegration)
 			enterprise.GET("/departments", entHandler.ListDepartments)
 			enterprise.POST("/departments", entHandler.CreateDepartment)
 		}

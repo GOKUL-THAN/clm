@@ -15,6 +15,7 @@ import (
 	"github.com/m2p/clm/internal/api/rest"
 	"github.com/m2p/clm/internal/saas/approval"
 	"github.com/m2p/clm/internal/saas/cloudaccounts"
+	"github.com/m2p/clm/internal/saas/contract"
 	"github.com/m2p/clm/internal/saas/deploy"
 	"github.com/m2p/clm/internal/saas/identity"
 	"github.com/m2p/clm/internal/saas/onboarding"
@@ -72,6 +73,11 @@ func main() {
 	ssoService := sso.NewService(userRepo, tenantRepo, cfg.JWT, logger)
 	auditService := auditservice.NewService(auditRepo)
 	approvalEngine := approval.NewEngine(approvalRepo, logger)
+	contractService, err := contract.NewPostgresService(db.DB, logger)
+	if err != nil {
+		logger.Warn("postgres contract service fallback to memory", zap.Error(err))
+		contractService = contract.NewService(logger)
+	}
 	onboardingService := onboarding.NewService(tenantRepo, userRepo, satRepo, logger)
 	var cloudAccountService *cloudaccounts.Service
 	if cfg.CloudAccounts.MasterKey != "" {
@@ -127,6 +133,7 @@ func main() {
 		AuditService:        auditService,
 		IdentityService:     identityService,
 		ApprovalEngine:      approvalEngine,
+		ContractService:     contractService,
 		OnboardingService:   onboardingService,
 		SatelliteRepo:       satRepo,
 		Config:              cfg,

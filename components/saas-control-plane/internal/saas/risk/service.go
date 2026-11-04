@@ -7,6 +7,8 @@ package risk
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -62,12 +64,74 @@ type CertInput struct {
 // RiskController evaluates enterprise cryptographic exposure.
 type RiskController struct {
 	mu     sync.RWMutex
+	risks  map[uuid.UUID][]*CryptographicRiskItem
 	logger *zap.Logger
 }
 
 // NewRiskController creates a new risk controller.
 func NewRiskController(logger *zap.Logger) *RiskController {
-	return &RiskController{logger: logger}
+	return &RiskController{
+		risks:  make(map[uuid.UUID][]*CryptographicRiskItem),
+		logger: logger,
+	}
+}
+
+// ListRisks returns manually recorded risks for a tenant.
+func (c *RiskController) ListRisks(tenantID uuid.UUID) []*CryptographicRiskItem {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	items := c.risks[tenantID]
+	result := make([]*CryptographicRiskItem, len(items))
+	for i, item := range items {
+		copy := *item
+		result[i] = &copy
+	}
+	return result
+}
+
+// LogRisk records a tenant-scoped risk item.
+func (c *RiskController) LogRisk(tenantID uuid.UUID, item *CryptographicRiskItem) (*CryptographicRiskItem, error) {
+	if tenantID == uuid.Nil || item == nil || !validRiskCategory(item.Category) ||
+		!validRiskSeverity(item.Severity) || item.Score < 1 || item.Score > 100 ||
+		strings.TrimSpace(item.Affected) == "" || strings.TrimSpace(item.Description) == "" {
+		return nil, errors.New("invalid risk item")
+	}
+
+	record := *item
+	record.ID = uuid.NewString()
+	record.Affected = strings.TrimSpace(record.Affected)
+	record.Description = strings.TrimSpace(record.Description)
+	record.Remediation = strings.TrimSpace(record.Remediation)
+
+	c.mu.Lock()
+	c.risks[tenantID] = append(c.risks[tenantID], &record)
+	c.mu.Unlock()
+
+	c.logger.Info("risk item recorded",
+		zap.String("tenant_id", tenantID.String()),
+		zap.String("risk_id", record.ID),
+		zap.String("severity", record.Severity),
+	)
+	return &record, nil
+}
+
+func validRiskCategory(category RiskCategory) bool {
+	switch category {
+	case RiskPQCQuantumExposed, RiskSingleCAPointOfFail, RiskWildcardBlastRadius, RiskImminentExpiry, RiskWeakCipherOrKey:
+		return true
+	default:
+		return false
+	}
+}
+
+func validRiskSeverity(severity string) bool {
+	switch severity {
+	case "CRITICAL", "HIGH", "MEDIUM", "LOW":
+		return true
+	default:
+		return false
+	}
 }
 
 // EvaluateRisk analyzes a tenant's certificate fleet and produces an executive risk report.

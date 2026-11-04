@@ -1,8 +1,8 @@
 /**
  * Master Registry for all 400 CLM Enterprise Features
  */
-const fs = require('fs');
 const path = require('path');
+const domainEngine = require('../services/domain-engine');
 
 const masterFeatures = [
   {
@@ -4017,7 +4017,11 @@ class FeatureRegistry {
         return this.features.map(feature => ({
             ...feature,
             status: "registered",
-            implementationStatus: "NOT_STARTED"
+            implementationStatus: "NOT_ASSESSED",
+            verificationProfileStatus: "NOT_CONFIGURED",
+            verificationStatus: "NOT_VERIFIED",
+            evidenceStatus: "NONE",
+            lastExecutionAt: null
         }));
     }
 
@@ -4040,18 +4044,21 @@ class FeatureRegistry {
     }
 
     execute(id, context = {}) {
-        const feature = this.getById(id);
-        if (!feature) {
+        const meta = this.features.find(f => f.id === Number(id));
+        if (!meta) {
             throw new Error(`Feature with ID ${id} not found in CLM registry.`);
         }
-        const result = feature.execute(context);
-        return {
-            ...result,
-            verification: {
-                level: "registry-smoke",
-                businessCapabilityVerified: false
+        if (typeof context.tenant_id !== 'string' || context.tenant_id.trim() === '') {
+            throw new Error(`[${meta.code}] A tenant_id is required for registry smoke checks.`);
+        }
+        const mod = this.getById(id);
+        if (mod && typeof mod.validate === 'function') {
+            const val = mod.validate(context);
+            if (!val.valid) {
+                throw new Error(`[${meta.code}] Validation error: ${val.error}`);
             }
-        };
+        }
+        return domainEngine.execute(meta, context);
     }
 }
 

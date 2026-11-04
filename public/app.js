@@ -255,6 +255,14 @@ function navigate(page) {
         case 'contract-financials': loadContractFinancials(); break;
         case 'ai-contracts': loadAIContracts(); break;
         case 'clm-analytics': loadCLMAnalytics(); break;
+        case 'clause-playbook': loadClausePlaybook(); break;
+        case 'contract-compare': loadContractCompare(); break;
+        case 'expiration-radar': loadExpirationRadar(); break;
+        case 'clickwrap-portal': loadClickwrapPortal(); break;
+        case 'risk-heatmap': loadRiskHeatmap(); break;
+        case 'counterparty-portal': loadCounterpartyPortal(); break;
+        case 'sourcing-converter': loadSourcingConverter(); break;
+        case 'termination-runbook': loadTerminationRunbook(); break;
         case '400-features': load400FeaturesExplorer(); break;
         case 'sdlc-workflows': loadSDLCWorkflows(); break;
     }
@@ -5700,7 +5708,7 @@ function load400FeaturesExplorer() {
             <div style="display:flex;justify-content:space-between;align-items:center">
                 <div>
                     <h3 style="margin-bottom:0.25rem">Enterprise CLM — 400 Feature Requirements Catalog</h3>
-                    <p style="color:var(--muted);font-size:0.85rem">Catalog registration does not mean a feature is implemented. The available module check only validates its registry wrapper.</p>
+                    <p style="color:var(--muted);font-size:0.85rem">The catalog contains 400 registrations across 20 domains. Registry smoke checks do not prove implementation, business functionality, persisted evidence, or production readiness.</p>
                 </div>
                 <div style="display:flex;gap:0.5rem">
                     <span id="feature400-status" class="badge" style="padding:0.4rem 0.8rem;font-size:0.8rem">Loading catalog status...</span>
@@ -5730,8 +5738,8 @@ function load400FeaturesExplorer() {
         const status = document.getElementById('feature400-status');
         if (status) {
             const registered = cached400Features.filter(feature => feature.status === 'registered').length;
-            const verified = cached400Features.filter(feature => feature.implementationStatus === 'VERIFIED').length;
-            status.textContent = `${registered} registered · ${verified} feature-verified`;
+            const unassessed = cached400Features.filter(feature => feature.implementationStatus === 'NOT_ASSESSED').length;
+            status.textContent = `${registered} registered · ${unassessed} not assessed for implementation`;
         }
 
         const sel = document.getElementById('feat400-domain-filter');
@@ -5767,7 +5775,7 @@ function render400FeaturesTable(list) {
                     <div style="font-size:0.75rem;color:var(--muted)">Module: ${esc(f.folder || f.code)}</div>
                 </td>
                 <td><span style="font-size:0.8rem;color:#334155;font-weight:500">${esc(f.domain)}</span></td>
-                <td><span class="badge">${esc(f.implementationStatus || 'NOT_STARTED')}</span></td>
+                <td><span class="badge">${esc(f.implementationStatus || 'NOT_ASSESSED')}</span></td>
                 <td style="font-size:0.75rem;color:var(--muted)">No feature-level evidence</td>
                 <td>
                     <button class="btn btn-primary" style="padding:0.25rem 0.6rem;font-size:0.75rem" onclick="openExecute400Modal(${f.id})">Run smoke check</button>
@@ -5823,20 +5831,17 @@ function openExecute400Modal(featureId) {
         <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">This checks the registry wrapper only; it does not verify the feature's business capability or production readiness.</p>
         
         <div class="form-group">
-            <label>Tenant ID (Row-Level Security Context)</label>
-            <input type="text" id="exec-tenant-id" value="tenant-enterprise-uat" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
-        </div>
-        <div class="form-group">
-            <label>Smoke-check payload (JSON)</label>
-            <input type="text" id="exec-payload" value='{"ping":true}' style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+            <label for="exec-tenant-id">Test tenant ID</label>
+            <input type="text" id="exec-tenant-id" value="tenant-enterprise-uat" required style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+            <small style="color:var(--muted)">Included as test context only; this mock registry check does not verify tenant isolation.</small>
         </div>
 
         <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
             <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="submit400FeatureExecution()">Run smoke check</button>
+            <button class="btn btn-primary" onclick="submit400FeatureExecution()">Run Registry Check</button>
         </div>
         <div id="exec-result-area" style="display:none;margin-top:1rem">
-            <h4 style="font-size:0.85rem;margin-bottom:0.25rem">Registry smoke-check output (not feature verification):</h4>
+            <h4 style="font-size:0.85rem;margin-bottom:0.25rem">Registry smoke-check output (not business verification):</h4>
             <pre id="exec-result-json" style="background:#0f172a;color:#f8fafc;padding:0.75rem;border-radius:0.375rem;font-size:0.75rem;overflow-x:auto"></pre>
         </div>
     `);
@@ -5844,17 +5849,15 @@ function openExecute400Modal(featureId) {
 
 function submit400FeatureExecution() {
     if (!selectedFeatureForExec) return;
-    const tenantId = document.getElementById('exec-tenant-id').value || "tenant-enterprise-uat";
-    let payload = {};
-    try {
-        payload = JSON.parse(document.getElementById('exec-payload').value || '{}');
-    } catch (e) {
-        payload = { raw: document.getElementById('exec-payload').value };
+    const tenantId = document.getElementById('exec-tenant-id').value.trim();
+    if (!tenantId) {
+        alert('Enter a test tenant ID.');
+        return;
     }
 
     apiPost(`/api/v1/features/${selectedFeatureForExec.id}/execute`, {
         tenant_id: tenantId,
-        data: payload
+        data: { ping: true }
     }).then(res => {
         document.getElementById('exec-result-area').style.display = 'block';
         document.getElementById('exec-result-json').textContent = JSON.stringify(res, null, 2);
@@ -5959,4 +5962,1001 @@ function loadWorkflowAuditLogs() {
             </table>
         `;
     }).catch(console.error);
+}
+
+
+// ==============================================================================
+// 1. LEGAL CLAUSE PLAYBOOK & FALLBACK HIERARCHY
+// ==============================================================================
+let cachedPlaybook = [];
+
+function loadClausePlaybook() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="margin-bottom:0.25rem">📘 Enterprise Legal Clause Playbook & Fallback Hierarchy</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Patterned after Icertis & Sirion. Defines preferred clauses, multi-tier fallback concessions, and negotiation guidance.</p>
+                </div>
+                <div>
+                    <button class="btn btn-primary" onclick="openTestFallbackModal()">Test Fallback Substitution</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div id="playbook-container"><p style="color:var(--muted)">Loading legal playbook clauses...</p></div>
+        </div>
+    `;
+
+    apiGet('/api/v1/playbook/clauses').then(res => {
+        cachedPlaybook = res.playbook || [];
+        renderPlaybookCards(cachedPlaybook);
+    }).catch(e => {
+        document.getElementById('playbook-container').innerHTML = `<p style="color:var(--danger)">Failed to load playbook: ${esc(e.message)}</p>`;
+    });
+}
+
+function renderPlaybookCards(list) {
+    const container = document.getElementById('playbook-container');
+    if (!list || list.length === 0) {
+        container.innerHTML = '<p style="color:var(--muted)">No playbook clauses found.</p>';
+        return;
+    }
+
+    container.innerHTML = list.map(c => `
+        <div style="border:1px solid var(--border);border-radius:0.5rem;padding:1rem;margin-bottom:1rem;background:#f8fafc">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div>
+                    <h4 style="font-size:1rem;margin-bottom:0.25rem">${esc(c.title)}</h4>
+                    <span class="badge" style="background:#e0f2fe;color:#0369a1">${esc(c.category)}</span>
+                </div>
+                <div style="font-size:0.75rem;color:var(--muted);text-align:right">
+                    <strong>Walk-Away:</strong> ${esc(c.walk_away_position)}
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;margin-top:1rem">
+                <!-- Standard -->
+                <div style="background:#fff;border-left:4px solid var(--success);padding:0.75rem;border-radius:0.375rem;font-size:0.8rem">
+                    <div style="font-weight:700;color:var(--success);margin-bottom:0.25rem">🟢 Preferred (Standard)</div>
+                    <div style="color:var(--muted);margin-bottom:0.5rem">Risk: ${c.tiers.standard.riskScore} · Approval: ${c.tiers.standard.approvalRequired}</div>
+                    <p style="font-style:italic">${esc(c.tiers.standard.text)}</p>
+                </div>
+
+                <!-- Fallback 1 -->
+                <div style="background:#fff;border-left:4px solid var(--warning);padding:0.75rem;border-radius:0.375rem;font-size:0.8rem">
+                    <div style="font-weight:700;color:var(--warning);margin-bottom:0.25rem">🟡 Fallback 1 (Concession)</div>
+                    <div style="color:var(--muted);margin-bottom:0.5rem">Risk: ${c.tiers.fallback_1.riskScore} · Approval: ${c.tiers.fallback_1.approvalRequired}</div>
+                    <p style="font-style:italic">${esc(c.tiers.fallback_1.text)}</p>
+                    <div style="font-size:0.75rem;color:#b45309;margin-top:0.5rem"><strong>Guidance:</strong> ${esc(c.tiers.fallback_1.guidance)}</div>
+                </div>
+
+                <!-- Fallback 2 -->
+                <div style="background:#fff;border-left:4px solid var(--danger);padding:0.75rem;border-radius:0.375rem;font-size:0.8rem">
+                    <div style="font-weight:700;color:var(--danger);margin-bottom:0.25rem">🔴 Fallback 2 (High Concession)</div>
+                    <div style="color:var(--muted);margin-bottom:0.5rem">Risk: ${c.tiers.fallback_2.riskScore} · Approval: ${c.tiers.fallback_2.approvalRequired}</div>
+                    <p style="font-style:italic">${esc(c.tiers.fallback_2.text)}</p>
+                    <div style="font-size:0.75rem;color:#b91c1c;margin-top:0.5rem"><strong>Guidance:</strong> ${esc(c.tiers.fallback_2.guidance)}</div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openTestFallbackModal() {
+    showModal(`
+        <h3>Test Fallback Substitution & Risk Delta</h3>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Select a clause and fallback tier to calculate the risk score delta and generate an updated contract digest.</p>
+        <div class="form-group">
+            <label>Select Clause</label>
+            <select id="modal-fb-clause" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+                ${cachedPlaybook.map(c => `<option value="${c.key}">${esc(c.title)}</option>`).join('')}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Select Concession Tier</label>
+            <select id="modal-fb-tier" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+                <option value="fallback_1">Fallback 1 (L2 Legal Approval)</option>
+                <option value="fallback_2">Fallback 2 (L3 CFO / General Counsel Approval)</option>
+            </select>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitApplyFallback()">Apply Fallback</button>
+        </div>
+        <div id="fb-result-area" style="display:none;margin-top:1rem;background:#0f172a;color:#f8fafc;padding:0.75rem;border-radius:0.375rem;font-size:0.8rem">
+            <pre id="fb-result-json" style="margin:0"></pre>
+        </div>
+    `);
+}
+
+function submitApplyFallback() {
+    const clauseKey = document.getElementById('modal-fb-clause').value;
+    const tier = document.getElementById('modal-fb-tier').value;
+    apiPost('/api/v1/playbook/apply-fallback', {
+        contract_text: "Standard Enterprise Master Services Agreement 2026.",
+        clause_key: clauseKey,
+        tier: tier
+    }).then(res => {
+        document.getElementById('fb-result-area').style.display = 'block';
+        document.getElementById('fb-result-json').textContent = JSON.stringify(res, null, 2);
+    }).catch(e => alert(e.message));
+}
+
+// ==============================================================================
+// 2. SIDE-BY-SIDE CONTRACT COMPARISON & SEMANTIC DIFF
+// ==============================================================================
+function loadContractCompare() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin-bottom:0.25rem">⚖️ Side-by-Side Contract Comparison & Semantic Diff</h3>
+            <p style="color:var(--muted);font-size:0.85rem">Patterned after Ironclad and Sirion. Compares Baseline vs Revised counterparty drafts, calculates similarity percentages, and flags risk deltas.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+                <div>
+                    <label style="font-weight:600;font-size:0.85rem">Contract A (Baseline Version 1.0)</label>
+                    <textarea id="cmp-doc-a" style="width:100%;height:160px;margin-top:0.25rem;padding:0.5rem;font-size:0.8rem;border:1px solid var(--border);border-radius:0.375rem">CONFIDENTIAL MASTER SERVICES AGREEMENT.
+Section 1. Confidentiality: Each party shall protect confidential information for 3 years using reasonable care.
+Section 2. Limitation of Liability: Aggregate liability shall not exceed fees paid in the preceding 12 months.
+Section 3. Termination: Either party may terminate for convenience upon sixty (60) days notice.
+Section 4. Payment Terms: Invoices are payable within Net 30 days via wire transfer.</textarea>
+                </div>
+                <div>
+                    <label style="font-weight:600;font-size:0.85rem">Contract B (Counterparty Redline Version 2.0)</label>
+                    <textarea id="cmp-doc-b" style="width:100%;height:160px;margin-top:0.25rem;padding:0.5rem;font-size:0.8rem;border:1px solid var(--border);border-radius:0.375rem">MASTER SERVICES AGREEMENT (VENDOR REVISED).
+Section 1. Confidentiality: Recipient shall hold information for 1 year. Trade secrets expire upon contract termination.
+Section 2. Limitation of Liability: Customer liability is capped at $50,000; Provider liability is unlimited for all direct and indirect damages.
+Section 3. Termination: Provider may terminate on 10 days notice; Customer cannot terminate before 24 months.
+Section 4. Payment Terms: Invoices are payable within Net 60 days.</textarea>
+                </div>
+            </div>
+            <div style="text-align:right;margin-top:1rem">
+                <button class="btn btn-primary" onclick="runContractComparison()">Run Semantic Comparison</button>
+            </div>
+        </div>
+
+        <div id="cmp-result-card" class="card" style="display:none">
+            <div id="cmp-result-container"></div>
+        </div>
+    `;
+}
+
+function runContractComparison() {
+    const textA = document.getElementById('cmp-doc-a').value;
+    const textB = document.getElementById('cmp-doc-b').value;
+
+    apiPost('/api/v1/contract-comparison/compare', {
+        contract_a: textA,
+        contract_b: textB,
+        title_a: "Baseline Draft v1.0",
+        title_b: "Vendor Redline v2.0"
+    }).then(res => {
+        const card = document.getElementById('cmp-result-card');
+        card.style.display = 'block';
+        const container = document.getElementById('cmp-result-container');
+
+        const simBadgeColor = res.similarity.score >= 0.85 ? 'var(--success)' : res.similarity.score >= 0.6 ? '#f59e0b' : 'var(--danger)';
+        const riskColor = res.risk_variance.risk_delta > 0 ? 'var(--danger)' : 'var(--success)';
+
+        container.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0.75rem">
+                <div>
+                    <h4 style="margin:0">Comparison Report: ${esc(res.comparison_id)}</h4>
+                    <span style="font-size:0.8rem;color:var(--muted)">Calculated at: ${esc(res.metadata.compared_at)}</span>
+                </div>
+                <div style="display:flex;gap:1rem">
+                    <div style="text-align:center">
+                        <div style="font-size:1.25rem;font-weight:700;color:${simBadgeColor}">${esc(res.similarity.percentage)}</div>
+                        <div style="font-size:0.7rem;color:var(--muted)">Similarity Score</div>
+                    </div>
+                    <div style="text-align:center">
+                        <div style="font-size:1.25rem;font-weight:700;color:${riskColor}">${res.risk_variance.risk_delta > 0 ? '+' : ''}${res.risk_variance.risk_delta}</div>
+                        <div style="font-size:0.7rem;color:var(--muted)">Risk Delta (${esc(res.risk_variance.risk_trajectory)})</div>
+                    </div>
+                </div>
+            </div>
+
+            <h5 style="margin-bottom:0.5rem">Clause Deviation & Risk Assessment:</h5>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Clause Type</th>
+                        <th>Baseline (A)</th>
+                        <th>Revised (B)</th>
+                        <th>Deviation Status</th>
+                        <th>Attention Level</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${res.clause_deviations.map(cd => `
+                        <tr>
+                            <td style="font-weight:600">${esc(cd.clause)}</td>
+                            <td>${cd.in_baseline ? '✓ Present' : '— Missing'}</td>
+                            <td>${cd.in_revised ? '✓ Present' : '— Removed'}</td>
+                            <td><span class="badge" style="background:#f1f5f9">${esc(cd.status)}</span></td>
+                            <td><span class="badge" style="background:${cd.variance_degree.includes('CRITICAL') || cd.variance_degree.includes('HIGH') ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534'}">${esc(cd.variance_degree)}</span></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }).catch(e => alert('Comparison failed: ' + e.message));
+}
+
+// ==============================================================================
+// 3. OBLIGATION RADAR & SLA PENALTY CALCULATOR
+// ==============================================================================
+function loadExpirationRadar() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <h3 style="margin-bottom:0.25rem">⏰ Post-Execution Renewal Radar & SLA Penalty Calculator</h3>
+            <p style="color:var(--muted);font-size:0.85rem">Patterned after Sirion. Monitors contract milestones, auto-renewal opt-out cutoffs, and calculates SLA availability penalties.</p>
+        </div>
+
+        <div class="stats" id="radar-metric-bar">
+            <div class="card stat"><div class="value" id="r-urgent" style="color:var(--danger)">...</div><div class="label">Urgent (< 30 Days)</div></div>
+            <div class="card stat"><div class="value" id="r-60d" style="color:#f59e0b">...</div><div class="label">Renewal Window (31-60d)</div></div>
+            <div class="card stat"><div class="value" id="r-90d" style="color:var(--primary)">...</div><div class="label">Early Warning (61-90d)</div></div>
+            <div class="card stat"><div class="value" id="r-cutoffs" style="color:#7c3aed">...</div><div class="label">Auto-Renewal Cutoffs</div></div>
+        </div>
+
+        <div id="radar-cutoff-alert" style="display:none;margin-bottom:1rem;background:#fef2f2;border-left:4px solid var(--danger);padding:0.75rem 1rem;border-radius:0.375rem;font-size:0.85rem"></div>
+
+        <div class="card" style="margin-bottom:1rem">
+            <h4 style="margin-bottom:0.5rem">Contractual SLA Downtime Penalty Calculator</h4>
+            <p style="color:var(--muted);font-size:0.8rem;margin-bottom:1rem">Calculates contractual fee credit rebates when vendor availability drops below contracted SLA thresholds.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem">
+                <div>
+                    <label style="font-size:0.8rem;font-weight:600">Annual Contract Value ($)</label>
+                    <input type="number" id="sla-val" value="120000" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;font-weight:600">Target Uptime (%)</label>
+                    <input type="number" step="0.1" id="sla-target" value="99.9" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;font-weight:600">Actual Recorded Uptime (%)</label>
+                    <input type="number" step="0.1" id="sla-actual" value="98.4" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem">
+                </div>
+            </div>
+            <div style="text-align:right;margin-top:1rem">
+                <button class="btn btn-primary" onclick="calculateSLAPenaltyUI()">Calculate Penalty Rebate</button>
+            </div>
+            <div id="sla-calc-result" style="display:none;margin-top:1rem;background:#f8fafc;border:1px solid var(--border);border-radius:0.375rem;padding:0.75rem;font-size:0.85rem"></div>
+        </div>
+    `;
+
+    apiGet('/api/v1/obligations/radar').then(res => {
+        document.getElementById('r-urgent').textContent = res.counts.urgent_30_days;
+        document.getElementById('r-60d').textContent = res.counts.renewal_window_60_days;
+        document.getElementById('r-90d').textContent = res.counts.early_warning_90_days;
+        document.getElementById('r-cutoffs').textContent = res.counts.auto_renewal_cutoffs;
+
+        if (res.counts.auto_renewal_cutoffs > 0) {
+            const alertBox = document.getElementById('radar-cutoff-alert');
+            alertBox.style.display = 'block';
+            alertBox.innerHTML = `<strong>⚠️ AUTO-RENEWAL CUTOFF ALERT:</strong> ${res.counts.auto_renewal_cutoffs} agreement(s) have impending auto-renewal opt-out notice deadlines. Review notice periods to prevent unintended commitment extensions.`;
+        }
+    }).catch(e => console.error(e));
+}
+
+function calculateSLAPenaltyUI() {
+    const val = parseFloat(document.getElementById('sla-val').value);
+    const target = parseFloat(document.getElementById('sla-target').value);
+    const actual = parseFloat(document.getElementById('sla-actual').value);
+
+    apiPost('/api/v1/obligations/calculate-penalty', {
+        contract_value: val,
+        target_uptime: target,
+        actual_uptime: actual
+    }).then(res => {
+        const box = document.getElementById('sla-calc-result');
+        box.style.display = 'block';
+        box.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <strong>Breach Severity:</strong> <span class="badge" style="background:#fee2e2;color:#991b1b">${esc(res.breach_severity)}</span>
+                    <span style="margin-left:0.5rem">Deficit: ${res.uptime_deficit}%</span>
+                </div>
+                <div>
+                    <strong style="color:var(--danger);font-size:1.1rem">Calculated Fee Credit Rebate: $${res.calculated_penalty_rebate.toLocaleString()}</strong> (${res.credit_rebate_percentage} of monthly base)
+                </div>
+            </div>
+            <div style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem">
+                ERP Adjustment Code: <code>${esc(res.erp_adjustment_code)}</code> · Right to terminate for cause: ${res.right_to_terminate_for_cause ? '<span style="color:var(--danger);font-weight:700">YES (Material Breach)</span>' : 'No'}
+            </div>
+        `;
+    }).catch(e => alert(e.message));
+}
+
+// ==============================================================================
+// 4. SELF-SERVICE CLICKWRAP & CERTIFICATE ISSUANCE
+// ==============================================================================
+function loadClickwrapPortal() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="margin-bottom:0.25rem">✍️ Self-Service Clickwrap & Public Agreement Portal</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Patterned after Ironclad Clickwrap & DocuSign. Generates self-service campaigns with audit-logged acceptance and Certificates of Completion.</p>
+                </div>
+                <div>
+                    <button class="btn btn-primary" onclick="openSimulateClickwrapModal()">Simulate Counterparty Acceptance</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:1rem">
+            <h4 style="margin-bottom:0.5rem">Active Standard Clickwrap Agreements</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Campaign Token</th>
+                        <th>Agreement Title</th>
+                        <th>Type</th>
+                        <th>Enforceability Standard</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>CLICK-NDA-STANDARD-2026</code></td>
+                        <td><strong>Standard Enterprise Mutual NDA</strong></td>
+                        <td><span class="badge" style="background:#e0f2fe;color:#0369a1">NDA</span></td>
+                        <td>ESIGN Act & UETA Compliant</td>
+                        <td><span class="badge" style="background:#dcfce7;color:#15803d">ACTIVE</span></td>
+                        <td><button class="btn btn-primary" style="padding:0.2rem 0.5rem;font-size:0.75rem" onclick="openSimulateClickwrapModal('CLICK-NDA-STANDARD-2026')">Sign</button></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="clickwrap-cert-card" class="card" style="display:none">
+            <h4 style="margin-bottom:0.5rem">Official Certificate of Completion:</h4>
+            <div id="clickwrap-cert-view" style="background:#f8fafc;border:2px solid var(--primary);border-radius:0.5rem;padding:1rem;font-size:0.85rem"></div>
+        </div>
+    `;
+}
+
+function openSimulateClickwrapModal(token = "CLICK-NDA-STANDARD-2026") {
+    showModal(`
+        <h3>Self-Service Agreement Acceptance</h3>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Review and execute agreement via clickwrap with digital audit evidence capture.</p>
+        <div class="form-group">
+            <label>Campaign Token</label>
+            <input type="text" id="cw-token" value="${esc(token)}" readonly style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem;background:#f1f5f9">
+        </div>
+        <div class="form-group">
+            <label>Signatory Full Name</label>
+            <input type="text" id="cw-name" value="Jane Doe, VP Procurement" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem">
+        </div>
+        <div class="form-group">
+            <label>Corporate Email</label>
+            <input type="email" id="cw-email" value="jane.doe@counterparty.com" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem">
+        </div>
+        <div class="form-group">
+            <label>Organization / Legal Entity</label>
+            <input type="text" id="cw-company" value="Global Innovations LLC" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem">
+        </div>
+        <div style="margin:1rem 0">
+            <label style="font-size:0.8rem;display:flex;align-items:center;gap:0.5rem">
+                <input type="checkbox" id="cw-agree" checked> I agree to be legally bound by this agreement under ESIGN Act & UETA.
+            </label>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitClickwrapAcceptance()">Execute Clickwrap</button>
+        </div>
+    `);
+}
+
+function submitClickwrapAcceptance() {
+    if (!document.getElementById('cw-agree').checked) {
+        alert("You must check the agreement box to execute.");
+        return;
+    }
+
+    const token = document.getElementById('cw-token').value;
+    const name = document.getElementById('cw-name').value;
+    const email = document.getElementById('cw-email').value;
+    const company = document.getElementById('cw-company').value;
+
+    apiPost('/api/v1/clickwrap/accept', {
+        token: token,
+        counterparty: {
+            signer_name: name,
+            signer_email: email,
+            company_name: company,
+            ip_address: "198.51.100." + Math.floor(Math.random() * 200 + 10),
+            user_agent: navigator.userAgent
+        }
+    }).then(res => {
+        closeModal();
+        const certCard = document.getElementById('clickwrap-cert-card');
+        certCard.style.display = 'block';
+        const certView = document.getElementById('clickwrap-cert-view');
+        const c = res.certificate;
+
+        certView.innerHTML = `
+            <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:0.5rem;margin-bottom:0.5rem">
+                <div>
+                    <h4 style="margin:0;color:var(--primary)">CERTIFICATE OF COMPLETION</h4>
+                    <span style="font-size:0.75rem;color:var(--muted)">Certificate ID: <strong>${esc(c.certificate_id)}</strong></span>
+                </div>
+                <div>
+                    <span class="badge" style="background:#dcfce7;color:#15803d">LEGALLY BINDING</span>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                <div><strong>Agreement:</strong> ${esc(c.agreement_title)}</div>
+                <div><strong>Executed At:</strong> ${esc(c.accepted_at)}</div>
+                <div><strong>Signatory:</strong> ${esc(c.signer.name)} (${esc(c.signer.email)})</div>
+                <div><strong>Organization:</strong> ${esc(c.signer.company)}</div>
+                <div><strong>Signer IP:</strong> <code>${esc(c.signer.ip_address)}</code></div>
+                <div><strong>Enforceability:</strong> ${esc(c.legal_enforceability)}</div>
+            </div>
+            <div style="margin-top:0.75rem;background:#0f172a;color:#f8fafc;padding:0.5rem;border-radius:0.25rem;font-size:0.75rem">
+                <strong>SHA-256 Tamper-Evident Certificate Hash:</strong> <code>${esc(c.certificate_hash)}</code>
+            </div>
+        `;
+    }).catch(e => alert(e.message));
+}
+
+
+// ==============================================================================
+// 1. VISUAL CONTRACT RISK HEATMAP & GOVERNANCE COCKPIT (Evisort / Icertis)
+// ==============================================================================
+
+function loadRiskHeatmap() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="margin-bottom:0.25rem">📊 Visual Contract Risk Heatmap & Governance Cockpit</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Portfolio risk matrix across 5 core vectors: Liability, IP/Indemnity, Privacy/GDPR, Financial Spend, and Operational Termination.</p>
+                </div>
+                <button class="btn btn-primary" onclick="openEvaluateRiskModal()">➕ Evaluate Contract Risk</button>
+            </div>
+        </div>
+
+        <div id="risk-heatmap-stats" class="stats" style="grid-template-columns:repeat(4,1fr);margin-bottom:1rem">
+            <div class="card stat"><div class="label">Compliance Index</div><div class="value" id="rh-compliance">--</div></div>
+            <div class="card stat"><div class="label">Portfolio Value</div><div class="value" id="rh-val">--</div></div>
+            <div class="card stat"><div class="label">High / Critical Risk</div><div class="value" id="rh-high-risk" style="color:var(--danger)">--</div></div>
+            <div class="card stat"><div class="label">Low / Moderate Risk</div><div class="value" id="rh-low-risk" style="color:var(--success)">--</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:1rem">
+            <h4 style="margin-bottom:0.75rem">Departmental Risk Matrix & Vector Distribution</h4>
+            <div class="table-container">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Department</th>
+                            <th>Active Contracts</th>
+                            <th>Total Exposure</th>
+                            <th>Average Risk</th>
+                            <th>Risk Tier</th>
+                            <th>Liability (25%)</th>
+                            <th>IP & Indemnity (25%)</th>
+                            <th>Privacy / Reg (20%)</th>
+                            <th>Financial (15%)</th>
+                            <th>Operational (15%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="risk-dept-tbody">
+                        <tr><td colspan="10" style="text-align:center;color:var(--muted)">Loading risk matrix...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h4 style="margin-bottom:0.75rem">Top High-Exposure Contract Outliers</h4>
+            <div id="risk-outliers-container">
+                <p style="color:var(--muted)">Scanning portfolio outliers...</p>
+            </div>
+        </div>
+    `;
+
+    apiGet('/api/v1/risk-heatmap/matrix').then(res => {
+        const p = res.portfolio_summary;
+        document.getElementById('rh-compliance').textContent = p.governance_compliance_index + "%";
+        document.getElementById('rh-val').textContent = "$" + (p.total_portfolio_value / 1000).toFixed(0) + "k";
+        document.getElementById('rh-high-risk').textContent = (p.distribution.critical + p.distribution.high);
+        document.getElementById('rh-low-risk').textContent = (p.distribution.medium + p.distribution.low);
+
+        const tbody = document.getElementById('risk-dept-tbody');
+        tbody.innerHTML = res.department_matrix.map(d => {
+            let badgeBg = '#dcfce7', badgeColor = '#15803d';
+            if (d.risk_tier === 'CRITICAL' || d.risk_tier === 'HIGH') {
+                badgeBg = '#fee2e2'; badgeColor = '#b91c1c';
+            } else if (d.risk_tier === 'MEDIUM') {
+                badgeBg = '#fef3c7'; badgeColor = '#b45309';
+            }
+            return `
+                <tr>
+                    <td><strong>${esc(d.department)}</strong></td>
+                    <td>${d.contract_count}</td>
+                    <td>$${d.total_value.toLocaleString()}</td>
+                    <td><strong>${d.average_risk_score} / 100</strong></td>
+                    <td><span class="badge" style="background:${badgeBg};color:${badgeColor}">${esc(d.risk_tier)}</span></td>
+                    <td>${d.vector_averages.liability_exposure}</td>
+                    <td>${d.vector_averages.ip_indemnification}</td>
+                    <td>${d.vector_averages.data_privacy_compliance}</td>
+                    <td>${d.vector_averages.financial_commitments}</td>
+                    <td>${d.vector_averages.operational_termination}</td>
+                </tr>
+            `;
+        }).join('');
+
+        const outContainer = document.getElementById('risk-outliers-container');
+        if (!res.top_risk_outliers || res.top_risk_outliers.length === 0) {
+            outContainer.innerHTML = '<p style="color:var(--success)">No high-exposure outliers detected. Portfolio conforms to enterprise risk standards.</p>';
+        } else {
+            outContainer.innerHTML = res.top_risk_outliers.map(o => `
+                <div style="border-left:4px solid var(--danger);background:#fef2f2;padding:0.75rem;border-radius:0.375rem;margin-bottom:0.75rem">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                            <strong>${esc(o.title)}</strong> (${esc(o.contract_number)}) - <em>${esc(o.department)}</em>
+                        </div>
+                        <span class="badge" style="background:#fee2e2;color:#b91c1c;font-weight:700">Risk Score: ${o.composite_risk_score} (${o.risk_tier})</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.5rem;font-size:0.75rem;margin-top:0.5rem;color:#7f1d1d">
+                        <div>Liability: ${o.vectors.liability_exposure}</div>
+                        <div>IP/Indemnity: ${o.vectors.ip_indemnification}</div>
+                        <div>Privacy: ${o.vectors.data_privacy_compliance}</div>
+                        <div>Financial: ${o.vectors.financial_commitments}</div>
+                        <div>Operational: ${o.vectors.operational_termination}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }).catch(e => {
+        document.getElementById('risk-dept-tbody').innerHTML = `<tr><td colspan="10" style="color:var(--danger)">Error: ${esc(e.message)}</td></tr>`;
+    });
+}
+
+function openEvaluateRiskModal() {
+    showModal(`
+        <h3>Evaluate Contract Risk Profile</h3>
+        <div class="form-group">
+            <label>Contract Title</label>
+            <input type="text" id="er-title" class="form-control" value="Global Infrastructure Expansion SOW">
+        </div>
+        <div class="form-group">
+            <label>Department</label>
+            <select id="er-dept" class="form-control">
+                <option value="Engineering">Engineering</option>
+                <option value="Procurement">Procurement</option>
+                <option value="Sales">Sales</option>
+                <option value="Legal">Legal</option>
+                <option value="HR">HR</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Contract Value ($ USD)</label>
+            <input type="number" id="er-value" class="form-control" value="750000">
+        </div>
+        <div class="form-group">
+            <label>Contract Draft Excerpt</label>
+            <textarea id="er-content" class="form-control" rows="4">Vendor demands unlimited liability for data outages. Liquidated damages shall apply. Non-refundable prepayments.</textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitContractRiskEval()">Calculate Multidimensional Risk</button>
+        </div>
+    `);
+}
+
+function submitContractRiskEval() {
+    const title = document.getElementById('er-title').value;
+    const department = document.getElementById('er-dept').value;
+    const contract_value = parseFloat(document.getElementById('er-value').value) || 0;
+    const content = document.getElementById('er-content').value;
+
+    apiPost('/api/v1/risk-heatmap/evaluate', {
+        title, department, contract_value, content
+    }).then(res => {
+        closeModal();
+        alert(`Evaluation Complete:
+Composite Risk Score: ${res.composite_risk_score}/100 (${res.risk_tier})
+Liability Exposure: ${res.vectors.liability_exposure}
+IP / Indemnity: ${res.vectors.ip_indemnification}
+Privacy / Compliance: ${res.vectors.data_privacy_compliance}
+Financial Spend: ${res.vectors.financial_commitments}
+Operational Exit: ${res.vectors.operational_termination}`);
+        loadRiskHeatmap();
+    }).catch(e => alert(e.message));
+}
+
+// ==============================================================================
+// 2. EXTERNAL COUNTERPARTY NEGOTIATION WORKSPACE (Ironclad / Agiloft)
+// ==============================================================================
+
+let generatedPortalTokens = [];
+
+function loadCounterpartyPortal() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="margin-bottom:0.25rem">🌐 External Counterparty Negotiation Workspace</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Zero-trust, tokenized negotiation links for external vendors and customers. Cryptographically signed access without enterprise seat licenses.</p>
+                </div>
+                <button class="btn btn-primary" onclick="openCreatePortalTokenModal()">➕ Generate Guest Negotiation Token</button>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:1rem">
+            <h4 style="margin-bottom:0.75rem">Active External Negotiation Links</h4>
+            <div class="table-container">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Token ID</th>
+                            <th>Contract ID</th>
+                            <th>Counterparty Email</th>
+                            <th>Organization</th>
+                            <th>Expires</th>
+                            <th>Permissions</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="portal-tokens-tbody">
+                        <tr><td colspan="8" style="text-align:center;color:var(--muted)">No external tokens active. Click Generate to invite a counterparty.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="portal-simulator-card" class="card" style="display:none;background:#f8fafc;border:2px dashed var(--primary)">
+            <h4 style="margin-bottom:0.5rem;color:var(--primary)">External Guest Portal Simulation (Vendor Perspective)</h4>
+            <div id="portal-simulator-content"></div>
+        </div>
+    `;
+
+    renderPortalTokensTable();
+}
+
+function renderPortalTokensTable() {
+    const tbody = document.getElementById('portal-tokens-tbody');
+    if (!tbody) return;
+    if (generatedPortalTokens.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">No external tokens active. Click Generate to invite a counterparty.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = generatedPortalTokens.map(t => `
+        <tr>
+            <td><code>${esc(t.token_id)}</code></td>
+            <td><strong>${esc(t.contract_id)}</strong></td>
+            <td>${esc(t.counterparty_email)}</td>
+            <td>${esc(t.counterparty_org)}</td>
+            <td>${esc(t.expires_at.split('T')[0])}</td>
+            <td><span class="badge" style="background:#e0f2fe;color:#0369a1">${t.permissions.join(', ')}</span></td>
+            <td><span class="badge" style="background:#dcfce7;color:#15803d">${esc(t.status)}</span></td>
+            <td>
+                <button class="btn btn-sm btn-outline" onclick="simulateGuestPortal('${esc(t.token)}')">Simulate Guest Review</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openCreatePortalTokenModal() {
+    showModal(`
+        <h3>Issue External Counterparty Negotiation Token</h3>
+        <div class="form-group">
+            <label>Contract ID / Ref</label>
+            <input type="text" id="pt-contract" class="form-control" value="CNT-2026-MSA-08">
+        </div>
+        <div class="form-group">
+            <label>Counterparty Legal Contact Email</label>
+            <input type="email" id="pt-email" class="form-control" value="legal@partner-tech.com">
+        </div>
+        <div class="form-group">
+            <label>Counterparty Organization</label>
+            <input type="text" id="pt-org" class="form-control" value="Partner Tech Global Corp">
+        </div>
+        <div class="form-group">
+            <label>Link Expiration</label>
+            <select id="pt-expiry" class="form-control">
+                <option value="7">7 Days</option>
+                <option value="14" selected>14 Days (Standard)</option>
+                <option value="30">30 Days</option>
+            </select>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitCreatePortalToken()">Issue Secure Token</button>
+        </div>
+    `);
+}
+
+function submitCreatePortalToken() {
+    const contract_id = document.getElementById('pt-contract').value;
+    const counterparty_email = document.getElementById('pt-email').value;
+    const counterparty_org = document.getElementById('pt-org').value;
+    const expiry_days = parseInt(document.getElementById('pt-expiry').value) || 14;
+
+    apiPost('/api/v1/counterparty-portal/create-token', {
+        contract_id, counterparty_email, counterparty_org, expiry_days,
+        initial_draft: "1. Fees: Customer shall pay within 30 days. 2. Liability: Capped at 12 months fees. 3. Governing Law: State of New York."
+    }).then(res => {
+        closeModal();
+        generatedPortalTokens.push(res);
+        renderPortalTokensTable();
+        alert(`Secure Counterparty Negotiation Link Generated:
+URL: ${res.portal_url}
+Token Digest Signed with HMAC-SHA256.`);
+    }).catch(e => alert(e.message));
+}
+
+function simulateGuestPortal(token) {
+    apiGet('/api/v1/counterparty-portal/session?token=' + encodeURIComponent(token)).then(res => {
+        const card = document.getElementById('portal-simulator-card');
+        const content = document.getElementById('portal-simulator-content');
+        card.style.display = 'block';
+
+        const s = res.session;
+        content.innerHTML = `
+            <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:0.5rem;margin-bottom:0.5rem">
+                <div>
+                    <strong>Guest Identity:</strong> ${esc(s.counterparty_email)} (${esc(s.counterparty_org)})<br>
+                    <span style="font-size:0.75rem;color:var(--muted)">Negotiation Round: <strong>Round ${s.current_round}</strong> · Access expires: ${s.expires_at}</span>
+                </div>
+                <div>
+                    <span class="badge" style="background:#dcfce7;color:#15803d">HMAC-SHA256 AUTHENTICATED</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Active Contract Draft</label>
+                <textarea id="sim-redline-text" class="form-control" rows="4">${esc(s.current_draft)}</textarea>
+            </div>
+            <div class="form-group">
+                <label>Counterparty Commentary / Redline Rationale</label>
+                <input type="text" id="sim-comment" class="form-control" value="Proposed revising payment terms to Net 45 and adding mutual consequential damages waiver.">
+            </div>
+            <button class="btn btn-primary" onclick="submitGuestRedline('${esc(token)}')">Submit Counterparty Redline</button>
+        `;
+    }).catch(e => alert(e.message));
+}
+
+function submitGuestRedline(token) {
+    const redline_text = document.getElementById('sim-redline-text').value;
+    const comments = document.getElementById('sim-comment').value;
+
+    apiPost('/api/v1/counterparty-portal/submit-redline', {
+        token, redline_text, comments
+    }).then(res => {
+        alert(`Redline Submitted Successfully!
+Round: ${res.round}
+Draft Digest Hash: ${res.draft_digest}`);
+        simulateGuestPortal(token);
+    }).catch(e => alert(e.message));
+}
+
+// ==============================================================================
+// 3. SOURCING-TO-CONTRACT (S2C) CONVERTER (SAP Ariba / Coupa)
+// ==============================================================================
+
+function loadSourcingConverter() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="margin-bottom:0.25rem">🛒 Sourcing-to-Contract (S2C) / RFP-to-Agreement Converter</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Seamlessly converts winning procurement bids, RFP rate-cards, and milestones into binding MSAs and SOWs with line-item pricing tables.</p>
+                </div>
+                <button class="btn btn-primary" onclick="openConvertRfpModal()">⚡ Convert RFP Bid to Agreement</button>
+            </div>
+        </div>
+
+        <div id="s2c-result-card" class="card" style="display:none">
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:0.5rem;margin-bottom:1rem">
+                <div>
+                    <h4 id="s2c-title" style="margin:0;color:var(--primary)">Statement of Work</h4>
+                    <span id="s2c-meta" style="font-size:0.8rem;color:var(--muted)"></span>
+                </div>
+                <span class="badge" style="background:#e0f2fe;color:#0369a1" id="s2c-status">DRAFT</span>
+            </div>
+            <div id="s2c-content-view" style="background:#0f172a;color:#f8fafc;padding:1rem;border-radius:0.375rem;font-family:monospace;white-space:pre-wrap;max-height:350px;overflow-y:auto"></div>
+            <div style="margin-top:1rem;padding:0.75rem;background:#f1f5f9;border-radius:0.375rem;font-size:0.8rem">
+                <strong>Cryptographic Sourcing Provenance Chain:</strong>
+                <div id="s2c-provenance" style="font-family:monospace;color:#334155;margin-top:0.25rem"></div>
+            </div>
+        </div>
+    `;
+}
+
+function openConvertRfpModal() {
+    showModal(`
+        <h3>Convert Awarded Sourcing RFP into Binding Contract</h3>
+        <div class="form-group">
+            <label>RFP Reference ID</label>
+            <input type="text" id="s2c-rfp-id" class="form-control" value="RFP-2026-CLOUD-INFRA">
+        </div>
+        <div class="form-group">
+            <label>Awarded Supplier Name</label>
+            <input type="text" id="s2c-supplier" class="form-control" value="Apex Cloud Solutions LLC">
+        </div>
+        <div class="form-group">
+            <label>Agreement Type</label>
+            <select id="s2c-type" class="form-control">
+                <option value="STATEMENT_OF_WORK" selected>Statement of Work (SOW)</option>
+                <option value="MASTER_SERVICES_AGREEMENT">Master Services Agreement (MSA)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Payment Terms</label>
+            <input type="text" id="s2c-terms" class="form-control" value="Net 30 Days (3-Way Matching Enforced)">
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitConvertRfp()">Generate Binding Agreement</button>
+        </div>
+    `);
+}
+
+function submitConvertRfp() {
+    const rfp_id = document.getElementById('s2c-rfp-id').value;
+    const supplier_name = document.getElementById('s2c-supplier').value;
+    const agreement_type = document.getElementById('s2c-type').value;
+    const payment_terms = document.getElementById('s2c-terms').value;
+
+    apiPost('/api/v1/sourcing/convert-rfp', {
+        rfp_id, supplier_name, agreement_type, payment_terms,
+        line_items: [
+            { item_id: "ITEM-01", description: "Multi-Cloud Kubernetes Architecture Build", quantity: 1, unit_price: 180000, unit: "fixed_scope" },
+            { item_id: "ITEM-02", description: "Zero-Trust Mesh & IAM Integration", quantity: 160, unit_price: 275, unit: "hour" },
+            { item_id: "ITEM-03", description: "24/7 Managed SRE Support Services (Annual)", quantity: 12, unit_price: 6500, unit: "month" }
+        ],
+        milestones: [
+            { milestone_id: "M-01", title: "Architecture Design Review & Signoff", target_date: "2026-12-01", percentage: 25, amount: 75500 },
+            { milestone_id: "M-02", title: "Cluster Deployment & Workload Migration", target_date: "2027-02-15", percentage: 50, amount: 151000 },
+            { milestone_id: "M-03", title: "Production Go-Live & Handover", target_date: "2027-04-30", percentage: 25, amount: 75500 }
+        ]
+    }).then(res => {
+        closeModal();
+        const card = document.getElementById('s2c-result-card');
+        card.style.display = 'block';
+        document.getElementById('s2c-title').textContent = res.title;
+        document.getElementById('s2c-meta').textContent = `Contract: ${res.contract_number} · Supplier: ${res.supplier.name} · Value: $${res.financials.total_value.toLocaleString()} USD`;
+        document.getElementById('s2c-content-view').textContent = res.generated_content;
+        document.getElementById('s2c-provenance').innerHTML = `
+            RFP Source Digest: <code>${res.rfp_source_digest}</code><br>
+            Contract Content Digest: <code>${res.contract_digest}</code><br>
+            Engine: ${res.provenance_chain.transition_engine} (${res.provenance_chain.timestamp})
+        `;
+    }).catch(e => alert(e.message));
+}
+
+// ==============================================================================
+// 4. CONTRACT TERMINATION & SURVIVAL RUNBOOK (Icertis / Sirion)
+// ==============================================================================
+
+function loadTerminationRunbook() {
+    const el = document.getElementById('content-area');
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="margin-bottom:0.25rem">🛑 Contract Termination, Clause Survival & Archival Runbook</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Legal workflow governing Termination for Convenience vs Cause, surviving clause obligations, data destruction certificates, and archival seals.</p>
+                </div>
+                <button class="btn btn-danger" onclick="openExecuteTerminationModal()">⚠️ Execute Contract Termination</button>
+            </div>
+        </div>
+
+        <div id="term-result-card" class="card" style="display:none">
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:0.5rem;margin-bottom:1rem">
+                <div>
+                    <h4 id="term-contract-num" style="margin:0;color:var(--danger)">CNT-2026-TERM</h4>
+                    <span id="term-reason" style="font-size:0.8rem;color:var(--muted)"></span>
+                </div>
+                <span class="badge" style="background:#fee2e2;color:#b91c1c" id="term-status">TERMINATED</span>
+            </div>
+
+            <div style="margin-bottom:1rem">
+                <h5 style="margin-bottom:0.5rem">Post-Termination Surviving Clauses (Legally Enforceable)</h5>
+                <div id="term-survivals-container"></div>
+            </div>
+
+            <div style="border-top:1px solid var(--border);padding-top:1rem;margin-bottom:1rem">
+                <h5 style="margin-bottom:0.5rem">NIST SP 800-88 Certificate of Data Destruction</h5>
+                <div id="term-cert-view" style="background:#f8fafc;padding:0.75rem;border-radius:0.375rem;font-size:0.8rem"></div>
+            </div>
+
+            <div style="background:#0f172a;color:#f8fafc;padding:0.75rem;border-radius:0.375rem;font-size:0.75rem">
+                <strong>Immutable Archival SHA-256 Seal:</strong> <code id="term-archival-seal"></code>
+            </div>
+        </div>
+    `;
+}
+
+function openExecuteTerminationModal() {
+    showModal(`
+        <h3>Execute Contract Termination Runbook</h3>
+        <div class="form-group">
+            <label>Contract Number</label>
+            <input type="text" id="tr-number" class="form-control" value="CNT-2024-VENDOR-088">
+        </div>
+        <div class="form-group">
+            <label>Termination Type</label>
+            <select id="tr-type" class="form-control">
+                <option value="TERMINATION_FOR_CONVENIENCE" selected>Termination for Convenience</option>
+                <option value="TERMINATION_FOR_CAUSE">Termination for Cause (Material Breach)</option>
+                <option value="MUTUAL_TERMINATION">Mutual Agreement Termination</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Notice Period Served (Days)</label>
+            <input type="number" id="tr-notice" class="form-control" value="35">
+        </div>
+        <div class="form-group">
+            <label>Contractual Required Notice (Days)</label>
+            <input type="number" id="tr-req-notice" class="form-control" value="30">
+        </div>
+        <div class="form-group">
+            <label>Termination Reason</label>
+            <input type="text" id="tr-reason" class="form-control" value="Strategic vendor consolidation and internal technology transition.">
+        </div>
+        <div class="form-group">
+            <label>Contract Clauses Excerpt for Survival Audit</label>
+            <textarea id="tr-text" class="form-control" rows="3">1. Confidentiality obligations survive for 5 years. 2. Pre-existing Intellectual Property remains solely with enterprise. 3. Indemnification shall survive post-termination. 4. Books and records audit rights retained.</textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-danger" onclick="submitExecuteTermination()">Execute Termination Protocol</button>
+        </div>
+    `);
+}
+
+function submitExecuteTermination() {
+    const contract_number = document.getElementById('tr-number').value;
+    const termination_type = document.getElementById('tr-type').value;
+    const notice_served_days = parseInt(document.getElementById('tr-notice').value) || 30;
+    const required_notice_days = parseInt(document.getElementById('tr-req-notice').value) || 30;
+    const reason = document.getElementById('tr-reason').value;
+    const contract_text = document.getElementById('tr-text').value;
+
+    apiPost('/api/v1/contracts/terminate-runbook', {
+        contract_number, termination_type, notice_served_days, required_notice_days, reason, contract_text
+    }).then(res => {
+        closeModal();
+        const card = document.getElementById('term-result-card');
+        card.style.display = 'block';
+        document.getElementById('term-contract-num').textContent = `${res.contract_number} (${res.termination_type})`;
+        document.getElementById('term-reason').textContent = `Reason: ${res.termination_reason} · Effective: ${res.effective_termination_date} · Notice Compliant: ${res.notice_governance.compliant ? 'YES' : 'NO'}`;
+        document.getElementById('term-status').textContent = res.termination_status;
+
+        const survContainer = document.getElementById('term-survivals-container');
+        survContainer.innerHTML = res.surviving_obligations.map(s => `
+            <div style="background:#fff;border-left:4px solid #0284c7;padding:0.5rem 0.75rem;margin-bottom:0.5rem;font-size:0.8rem;border:1px solid var(--border)">
+                <strong>${esc(s.name)}</strong>: <span style="color:#0369a1">${esc(s.survival_duration)}</span>
+                <div style="color:var(--muted);font-size:0.75rem">${esc(s.enforcement_governance)}</div>
+            </div>
+        `).join('');
+
+        const cert = res.data_destruction_certificate;
+        document.getElementById('term-cert-view').innerHTML = `
+            <strong>Certificate ID:</strong> ${esc(cert.certificate_id)} · <strong>Status:</strong> ${esc(cert.data_destruction_status)}<br>
+            <strong>Standard:</strong> ${esc(cert.destruction_protocol)}<br>
+            <strong>PII Purged:</strong> ${cert.pii_data_purged ? 'YES' : 'NO'} · <strong>Certified By:</strong> ${esc(cert.certified_by_dpo)} (${esc(cert.certified_at)})
+        `;
+
+        document.getElementById('term-archival-seal').textContent = res.archival_seal_hash;
+    }).catch(e => alert(e.message));
 }

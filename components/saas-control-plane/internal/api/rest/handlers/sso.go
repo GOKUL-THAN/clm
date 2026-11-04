@@ -9,16 +9,66 @@ import (
 	"github.com/google/uuid"
 	"github.com/m2p/clm/internal/api/rest/middleware"
 	"github.com/m2p/clm/internal/saas/sso"
+	"go.uber.org/zap"
 )
 
 // SSOHandler handles all SSO authentication endpoints.
 type SSOHandler struct {
-	ssoService *sso.Service
+	ssoService  *sso.Service
+	groupMapper *sso.GroupMapper
 }
 
 // NewSSOHandler creates a new SSO handler.
 func NewSSOHandler(ssoService *sso.Service) *SSOHandler {
-	return &SSOHandler{ssoService: ssoService}
+	return &SSOHandler{
+		ssoService:  ssoService,
+		groupMapper: sso.NewGroupMapper(zap.NewNop()),
+	}
+}
+
+func (h *SSOHandler) ListGroupMappings(c *gin.Context) {
+	tenantID, ok := h.mappingTenantID(c)
+	if !ok {
+		return
+	}
+	mappings := h.groupMapper.ListMappings(tenantID)
+	c.JSON(http.StatusOK, gin.H{"mappings": mappings, "count": len(mappings)})
+}
+
+func (h *SSOHandler) CreateGroupMapping(c *gin.Context) {
+	tenantID, ok := h.mappingTenantID(c)
+	if !ok {
+		return
+	}
+
+	var mapping sso.GroupRoleMapping
+	if err := c.ShouldBindJSON(&mapping); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload: " + err.Error()})
+		return
+	}
+	created, err := h.groupMapper.AddMapping(c.Request.Context(), tenantID, &mapping)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"mapping": created})
+}
+
+func (h *SSOHandler) DeleteGroupMapping(c *gin.Context) {
+	tenantID, ok := h.mappingTenantID(c)
+	if !ok {
+		return
+	}
+	mappingID, err := uuid.Parse(c.Param("mapping_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mapping ID"})
+		return
+	}
+	if err := h.groupMapper.DeleteMapping(tenantID, mappingID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "group mapping deleted"})
 }
 
 // ListProviders returns available SSO methods for the login page.
@@ -363,6 +413,18 @@ func (h *SSOHandler) DeleteSSO(c *gin.Context) {
 }
 
 // --- Helpers ---
+
+func (h *SSOHandler) mappingTenantID(c *gin.Context) (uuid.UUID, bool) {
+	tenantID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant ID"})
+		return uuid.Nil, false
+	}
+	if !middleware.RequireTenantAccess(c, tenantID) {
+		return uuid.Nil, false
+	}
+	return tenantID, true
+}
 
 func (h *SSOHandler) parseTenantID(c *gin.Context) (uuid.UUID, error) {
 	tenantIDStr := c.Query("tenant_id")

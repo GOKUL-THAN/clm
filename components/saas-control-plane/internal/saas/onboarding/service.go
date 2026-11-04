@@ -304,7 +304,7 @@ func (s *Service) Bootstrap(ctx context.Context, input *OnboardingInput) (*Onboa
 		ID:        satID,
 		TenantID:  tenantID,
 		Name:      satName,
-		Status:    models.SatellitePending,
+		Status:    models.SatelliteRegistering,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}

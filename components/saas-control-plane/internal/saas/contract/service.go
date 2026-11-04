@@ -235,7 +235,7 @@ func (s *serviceImpl) seedBaselineData() {
 	}
 
 	// Templates
-	tpl1ID := uuid.MustParse("t0000001-0000-0000-0000-000000000001")
+	tpl1ID := uuid.MustParse("f0000001-0000-0000-0000-000000000001")
 	s.templates[tpl1ID] = &models.ContractTemplate{
 		ID:          tpl1ID,
 		TenantID:    defaultTenant,
@@ -857,4 +857,3 @@ func (s *serviceImpl) computeHash(input string) string {
 	h := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(h[:])
 }
-

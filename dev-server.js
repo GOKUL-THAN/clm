@@ -3618,8 +3618,8 @@ function handleMockAPI(req, res) {
         req.on('end', () => {
             try {
                 const payload = body ? JSON.parse(body) : {};
-                const tenantId = req.headers['x-tenant-id'] || payload.tenant_id || "tenant-enterprise-uat";
-                payload.tenant_id = tenantId;
+                const tenantId = req.headers['x-tenant-id'] || payload.tenant_id;
+                if (tenantId !== undefined) payload.tenant_id = tenantId;
                 const result = featureRegistry.execute(id, payload);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify(result));

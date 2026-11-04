@@ -1,5 +1,6 @@
 const { EventEmitter } = require('events');
-const { handleMockAPI } = require('d:/cmd project/M2P-Git/CLM/dev-server.js');
+const path = require('path');
+const { handleMockAPI } = require(path.join(__dirname, '../dev-server.js'));
 
 function invokeAPI(method, urlPath, bodyObj = null) {
     return new Promise((resolve) => {

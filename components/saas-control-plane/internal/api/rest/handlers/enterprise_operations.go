@@ -42,8 +42,8 @@ func NewEnterpriseOperationsHandler(
 // --- ITSM & Incident Handlers ---
 
 func (h *EnterpriseOperationsHandler) ListIncidents(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -53,8 +53,8 @@ func (h *EnterpriseOperationsHandler) ListIncidents(c *gin.Context) {
 }
 
 func (h *EnterpriseOperationsHandler) RaiseIncident(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -98,8 +98,8 @@ func (h *EnterpriseOperationsHandler) ResolveIncident(c *gin.Context) {
 }
 
 func (h *EnterpriseOperationsHandler) ListServiceRequests(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -109,8 +109,8 @@ func (h *EnterpriseOperationsHandler) ListServiceRequests(c *gin.Context) {
 }
 
 func (h *EnterpriseOperationsHandler) SubmitServiceRequest(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -132,9 +132,41 @@ func (h *EnterpriseOperationsHandler) SubmitServiceRequest(c *gin.Context) {
 
 // --- Cryptographic Risk Register Handlers ---
 
-func (h *EnterpriseOperationsHandler) GetRiskPosture(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
+func (h *EnterpriseOperationsHandler) ListRisks(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
+		return
+	}
+
+	risks := h.riskCtrl.ListRisks(tenantID)
+	c.JSON(http.StatusOK, gin.H{"risks": risks, "count": len(risks)})
+}
+
+func (h *EnterpriseOperationsHandler) LogRisk(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
+		return
+	}
+
+	var item risk.CryptographicRiskItem
+	if err := c.ShouldBindJSON(&item); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload: " + err.Error()})
+		return
+	}
+
+	recorded, err := h.riskCtrl.LogRisk(tenantID, &item)
 	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"risk": recorded})
+}
+
+func (h *EnterpriseOperationsHandler) GetRiskPosture(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -153,8 +185,8 @@ func (h *EnterpriseOperationsHandler) GetRiskPosture(c *gin.Context) {
 // --- Enterprise Integrations & Webhook Handlers ---
 
 func (h *EnterpriseOperationsHandler) ListIntegrations(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -164,8 +196,8 @@ func (h *EnterpriseOperationsHandler) ListIntegrations(c *gin.Context) {
 }
 
 func (h *EnterpriseOperationsHandler) RegisterIntegration(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -186,8 +218,8 @@ func (h *EnterpriseOperationsHandler) RegisterIntegration(c *gin.Context) {
 }
 
 func (h *EnterpriseOperationsHandler) DeleteIntegration(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -210,8 +242,8 @@ func (h *EnterpriseOperationsHandler) DeleteIntegration(c *gin.Context) {
 // --- Departments & Cost Centers Handlers ---
 
 func (h *EnterpriseOperationsHandler) ListDepartments(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
@@ -221,8 +253,8 @@ func (h *EnterpriseOperationsHandler) ListDepartments(c *gin.Context) {
 }
 
 func (h *EnterpriseOperationsHandler) CreateDepartment(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
 		return
 	}
