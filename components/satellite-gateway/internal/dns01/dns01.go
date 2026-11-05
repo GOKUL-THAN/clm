@@ -34,10 +34,10 @@ type Adapter struct {
 }
 
 var adapters = []Adapter{
-	{Name: ProviderRoute53, Live: true, CredentialMode: "AWS workload identity or aws-profile:// reference", Notes: "live through the AWS Route 53 API"},
+	{Name: ProviderRoute53, Live: true, CredentialMode: "AWS workload identity or aws-profile:// reference", Notes: "live through the AWS Route 53 API"}, // #nosec G101 -- descriptive credential mode, not a credential.
 	{Name: ProviderAzure, Live: false, CredentialMode: "managed identity or external credential reference", Notes: "planned; Azure DNS API adapter is not implemented"},
 	{Name: ProviderGCP, Live: false, CredentialMode: "workload identity or external credential reference", Notes: "planned; Cloud DNS API adapter is not implemented"},
-	{Name: ProviderRFC2136, Live: true, CredentialMode: "file-ref:// reference to an nsupdate TSIG key", Notes: "live through the local nsupdate command"},
+	{Name: ProviderRFC2136, Live: true, CredentialMode: "file-ref:// reference to an nsupdate TSIG key", Notes: "live through the local nsupdate command"}, // #nosec G101 -- describes a secret reference scheme, not a secret.
 	{Name: ProviderOCI, Live: false, CredentialMode: "instance principal or external credential reference", Notes: "planned; OCI DNS API adapter is not implemented"},
 }
 

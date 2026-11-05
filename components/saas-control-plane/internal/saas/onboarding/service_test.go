@@ -3,7 +3,6 @@ package onboarding
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/m2p/clm/pkg/models"
@@ -31,7 +30,7 @@ func (m *mockTenantRepo) GetBySlug(ctx context.Context, slug string) (*models.Te
 	return m.tenants[slug], nil
 }
 func (m *mockTenantRepo) List(ctx context.Context) ([]*models.Tenant, error) { return nil, nil }
-func (m *mockTenantRepo) Update(ctx context.Context, t *models.Tenant) error  { return nil }
+func (m *mockTenantRepo) Update(ctx context.Context, t *models.Tenant) error { return nil }
 func (m *mockTenantRepo) CountDependents(ctx context.Context, id uuid.UUID) (map[string]int, error) {
 	return nil, nil
 }
@@ -69,7 +68,7 @@ func (m *mockUserRepo) DeleteForTenant(ctx context.Context, tenantID, id uuid.UU
 	return nil
 }
 
-// mockSatRepo implements core.SatelliteRepository in-memory for testing.
+// mockSatRepo provides satellite creation for onboarding tests.
 type mockSatRepo struct {
 	sats []*models.Satellite
 }
@@ -102,7 +101,6 @@ func (m *mockSatRepo) SetCredentialForTenant(ctx context.Context, tenantID, sate
 func (m *mockSatRepo) RevokeCredentialForTenant(ctx context.Context, tenantID, satelliteID uuid.UUID) error {
 	return nil
 }
-
 func TestOnboardingPreflightAndBootstrap(t *testing.T) {
 	tRepo := &mockTenantRepo{tenants: make(map[string]*models.Tenant)}
 	uRepo := &mockUserRepo{users: make([]*models.User, 0)}

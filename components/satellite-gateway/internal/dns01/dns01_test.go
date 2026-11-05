@@ -3,6 +3,7 @@ package dns01
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -194,11 +195,12 @@ func TestCredentialFileRequiresReference(t *testing.T) {
 	if _, err := credentialFile("raw-tsig-secret"); err == nil {
 		t.Fatal("credentialFile accepted raw key material")
 	}
-	path, err := credentialFile("file-ref:///etc/clm/dns/acme.key")
+	expectedPath := filepath.Join(t.TempDir(), "acme.key")
+	path, err := credentialFile("file-ref://" + expectedPath)
 	if err != nil {
 		t.Fatalf("credentialFile() error = %v", err)
 	}
-	if path != "/etc/clm/dns/acme.key" {
+	if path != expectedPath {
 		t.Fatalf("credentialFile() = %q", path)
 	}
 }

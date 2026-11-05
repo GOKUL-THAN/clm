@@ -11,12 +11,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"github.com/m2p/clm/pkg/models"
 	"go.uber.org/zap"
 )
@@ -47,6 +47,7 @@ type Config struct {
 	Environment        string
 	MaxResultBytes     int
 	NetworkRetries     int
+	FilePolicy         *securefs.Policy
 }
 
 func New(cfg *Config, logger *zap.Logger) (*Connector, error) {
@@ -63,7 +64,7 @@ func New(cfg *Config, logger *zap.Logger) (*Connector, error) {
 	}
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.TLSServerName, InsecureSkipVerify: cfg.InsecureSkipVerify} // #nosec G402 -- production validation rejects it; retained for explicit tests only.
 	if cfg.TLSCA != "" {
-		pem, readErr := os.ReadFile(cfg.TLSCA)
+		pem, readErr := readTLSMaterial(cfg, cfg.TLSCA, securefs.CABundle)
 		if readErr != nil {
 			return nil, fmt.Errorf("reading SaaS CA bundle: %w", readErr)
 		}
@@ -77,7 +78,15 @@ func New(cfg *Config, logger *zap.Logger) (*Connector, error) {
 		if cfg.TLSCert == "" || cfg.TLSKey == "" {
 			return nil, errors.New("both client TLS certificate and key are required")
 		}
-		cert, loadErr := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		certPEM, readErr := readTLSMaterial(cfg, cfg.TLSCert, securefs.Certificate)
+		if readErr != nil {
+			return nil, fmt.Errorf("reading gateway client certificate: %w", readErr)
+		}
+		keyPEM, readErr := readTLSMaterial(cfg, cfg.TLSKey, securefs.PrivateKey)
+		if readErr != nil {
+			return nil, fmt.Errorf("reading gateway client private key: %w", readErr)
+		}
+		cert, loadErr := tls.X509KeyPair(certPEM, keyPEM)
 		if loadErr != nil {
 			return nil, fmt.Errorf("loading gateway client certificate: %w", loadErr)
 		}
@@ -103,6 +112,13 @@ func New(cfg *Config, logger *zap.Logger) (*Connector, error) {
 		maxResultBytes = 256 << 10
 	}
 	return &Connector{satelliteID: cfg.SatelliteID, saasURL: endpoint.String(), token: cfg.Token, client: &http.Client{Transport: transport, Timeout: 30 * time.Second}, logger: logger, networkRetries: retries, maxResultBytes: maxResultBytes}, nil
+}
+
+func readTLSMaterial(cfg *Config, path string, material securefs.Material) ([]byte, error) {
+	if cfg.FilePolicy == nil {
+		return nil, errors.New("file storage policy is required for TLS material")
+	}
+	return cfg.FilePolicy.ReadFile(path, "", material)
 }
 
 func (c *Connector) Connect(ctx context.Context) error {

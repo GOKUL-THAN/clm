@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -41,8 +42,11 @@ func (c *ServerConfig) Validate() error {
 	return nil
 }
 
-// Validate rejects unsafe production satellite configuration.
+// Validate rejects unsafe satellite configuration.
 func (c *SatelliteConfig) Validate() error {
+	if err := validateFileStorage(c.FileStorage, c.State.Dir); err != nil {
+		return err
+	}
 	if !isProduction(c.Env) {
 		return nil
 	}
@@ -112,6 +116,69 @@ func (c *SatelliteConfig) Validate() error {
 		}
 	}
 	return nil
+}
+
+func validateFileStorage(cfg FileStorageConfig, stateDir string) error {
+	if len(cfg.AllowedRoots) == 0 && len(cfg.TenantRoots) == 0 {
+		return fmt.Errorf("file_storage is default-deny: configure allowed_roots or tenant_roots")
+	}
+	for _, root := range cfg.AllowedRoots {
+		if err := validateApprovedRoot(root); err != nil {
+			return err
+		}
+	}
+	for tenant, roots := range cfg.TenantRoots {
+		if strings.TrimSpace(tenant) == "" || tenant == "*" {
+			return fmt.Errorf("file_storage.tenant_roots requires explicit tenant identifiers")
+		}
+		if len(roots) == 0 {
+			return fmt.Errorf("file_storage.tenant_roots.%s must contain at least one root", tenant)
+		}
+		for _, root := range roots {
+			if err := validateApprovedRoot(root); err != nil {
+				return fmt.Errorf("file_storage.tenant_roots.%s: %w", tenant, err)
+			}
+		}
+	}
+	if strings.TrimSpace(stateDir) != "" && !pathWithinRoots(stateDir, cfg.AllowedRoots) {
+		return fmt.Errorf("state.dir must be inside an explicitly approved file_storage.allowed_roots directory")
+	}
+	return nil
+}
+
+func validateApprovedRoot(root string) error {
+	root = strings.TrimSpace(root)
+	if root == "" || strings.ContainsRune(root, '\x00') || !filepath.IsAbs(root) {
+		return fmt.Errorf("approved file roots must be non-empty absolute paths without null bytes")
+	}
+	if strings.Contains(root, "%2e") || strings.Contains(root, "%2E") ||
+		strings.Contains(root, "%2f") || strings.Contains(root, "%2F") ||
+		strings.Contains(root, "%5c") || strings.Contains(root, "%5C") ||
+		strings.Contains(root, "%00") {
+		return fmt.Errorf("approved file root %q contains encoded path characters", root)
+	}
+	for _, component := range strings.FieldsFunc(root, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		if component == ".." {
+			return fmt.Errorf("approved file root %q contains path traversal", root)
+		}
+	}
+	return nil
+}
+
+func pathWithinRoots(path string, roots []string) bool {
+	if !filepath.IsAbs(path) {
+		return false
+	}
+	path = filepath.Clean(path)
+	for _, root := range roots {
+		relative, err := filepath.Rel(filepath.Clean(root), path)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveAndValidate(target any, env *string, validate func() error) error {
@@ -185,6 +252,7 @@ func resolveValue(value reflect.Value, missing map[string]struct{}) error {
 			if strings.TrimSpace(path) == "" {
 				return fmt.Errorf("empty secret-file path")
 			}
+			// #nosec G304 -- secret-file paths are explicitly configured locally.
 			contents, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("reading secret file %q: %w", path, err)

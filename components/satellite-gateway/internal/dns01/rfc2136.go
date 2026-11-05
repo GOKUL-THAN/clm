@@ -70,6 +70,7 @@ func (p *RFC2136Provider) Cleanup(ctx context.Context, record Record) error {
 }
 
 func (p *RFC2136Provider) runNSUpdate(ctx context.Context, script string) error {
+	// #nosec G204 -- executable is fixed and the validated key path is passed as one argument; no shell is used.
 	command := exec.CommandContext(ctx, "nsupdate", "-k", p.keyPath)
 	command.Stdin = strings.NewReader(script)
 	var output bytes.Buffer

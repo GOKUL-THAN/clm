@@ -13,7 +13,7 @@ import (
 
 // Scheduler periodically checks for certificates nearing expiry and queues renewal commands.
 type Scheduler struct {
-	certRepo  core.CertificateRepository
+	certRepo  core.CertificateSystemRepository
 	satRepo   core.SatelliteRepository
 	interval  time.Duration
 	threshold int // days before expiry to trigger renewal
@@ -22,7 +22,7 @@ type Scheduler struct {
 
 // NewScheduler creates a new renewal scheduler.
 func NewScheduler(
-	certRepo core.CertificateRepository,
+	certRepo core.CertificateSystemRepository,
 	satRepo core.SatelliteRepository,
 	interval time.Duration,
 	thresholdDays int,
@@ -81,8 +81,7 @@ func (s *Scheduler) checkAndRenew(ctx context.Context) {
 		PageSize:   500,
 	}
 
-	// uuid.Nil is the repository's trusted internal cross-tenant scope.
-	certs, total, err := s.certRepo.List(ctx, uuid.Nil, filter)
+	certs, total, err := s.certRepo.ListAllTenants(ctx, filter)
 	if err != nil {
 		s.logger.Error("failed to query expiring certificates", zap.Error(err))
 		return

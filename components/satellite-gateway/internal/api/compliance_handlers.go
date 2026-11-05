@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/m2p/clm/internal/satellite/audit"
-	"go.uber.org/zap"
 )
 
 // handleCorporateComplianceReport runs a deep audit of the inventory against PCI-DSS and SOC2.
@@ -17,7 +16,7 @@ func (s *Server) handleCorporateComplianceReport(w http.ResponseWriter, r *http.
 		s.complianceController = audit.NewComplianceController(s.logger)
 	}
 
-	certs := s.inventory.ListCertificates()
+	certs := s.inventory.ListCerts()
 	records := make([]audit.CertAuditRecord, 0, len(certs))
 	for _, c := range certs {
 		records = append(records, audit.CertAuditRecord{
@@ -28,7 +27,7 @@ func (s *Server) handleCorporateComplianceReport(w http.ResponseWriter, r *http.
 			NotBefore:    c.NotBefore,
 			NotAfter:     c.NotAfter,
 			Issuer:       c.Issuer,
-			IsSelfSigned: c.IsSelfSigned,
+			IsSelfSigned: c.SelfSigned,
 			Environment:  c.Environment,
 		})
 	}
@@ -47,7 +46,7 @@ func (s *Server) handleCorporateComplianceCSV(w http.ResponseWriter, r *http.Req
 		s.complianceController = audit.NewComplianceController(s.logger)
 	}
 
-	certs := s.inventory.ListCertificates()
+	certs := s.inventory.ListCerts()
 	records := make([]audit.CertAuditRecord, 0, len(certs))
 	for _, c := range certs {
 		records = append(records, audit.CertAuditRecord{
@@ -58,7 +57,7 @@ func (s *Server) handleCorporateComplianceCSV(w http.ResponseWriter, r *http.Req
 			NotBefore:    c.NotBefore,
 			NotAfter:     c.NotAfter,
 			Issuer:       c.Issuer,
-			IsSelfSigned: c.IsSelfSigned,
+			IsSelfSigned: c.SelfSigned,
 			Environment:  c.Environment,
 		})
 	}
@@ -90,10 +89,10 @@ func (s *Server) handleAuditBundle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1. Get recent audit events
-	events := s.audit.Recent(5000)
+	events, _ := s.audit.Search(audit.Query{Limit: 5000})
 
 	// 2. Get current compliance summary
-	certs := s.inventory.ListCertificates()
+	certs := s.inventory.ListCerts()
 	records := make([]audit.CertAuditRecord, 0, len(certs))
 	for _, c := range certs {
 		records = append(records, audit.CertAuditRecord{
@@ -104,7 +103,7 @@ func (s *Server) handleAuditBundle(w http.ResponseWriter, r *http.Request) {
 			NotBefore:    c.NotBefore,
 			NotAfter:     c.NotAfter,
 			Issuer:       c.Issuer,
-			IsSelfSigned: c.IsSelfSigned,
+			IsSelfSigned: c.SelfSigned,
 			Environment:  c.Environment,
 		})
 	}
@@ -117,14 +116,14 @@ func (s *Server) handleAuditBundle(w http.ResponseWriter, r *http.Request) {
 	bundleSeal := hex.EncodeToString(bundleHasher.Sum(nil))
 
 	bundle := map[string]any{
-		"gateway_id":       s.satelliteID,
-		"gateway_name":     s.satelliteName,
-		"exported_at":      time.Now(),
-		"auditor":          callerName(r),
-		"compliance":       summary,
-		"audit_trail":      events,
+		"gateway_id":        s.satelliteID,
+		"gateway_name":      s.satelliteName,
+		"exported_at":       time.Now(),
+		"auditor":           callerName(r),
+		"compliance":        summary,
+		"audit_trail":       events,
 		"audit_event_count": len(events),
-		"bundle_seal":      bundleSeal,
+		"bundle_seal":       bundleSeal,
 		"assertions": map[string]string{
 			"ARC-001": "Customer private keys reside exclusively within gateway boundary and are never exported",
 			"ARC-004": "Segregation of duties enforced; requesters cannot approve high-risk certificates",

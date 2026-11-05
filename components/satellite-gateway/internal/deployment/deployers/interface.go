@@ -50,6 +50,10 @@ type DeployTarget struct {
 	KeyPath   string `json:"key_path,omitempty"`
 	Service   string `json:"service,omitempty"`
 	ReloadCmd string `json:"reload_cmd,omitempty"`
+	// TenantID and AllowReplace are assigned by the authenticated API boundary.
+	// JSON callers cannot set either privilege-bearing value.
+	TenantID     string `json:"-"`
+	AllowReplace bool   `json:"-"`
 	// Data-specific
 	ConfigFile   string `json:"config_file,omitempty"`
 	ReloadMethod string `json:"reload_method,omitempty"`

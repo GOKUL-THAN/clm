@@ -17,13 +17,24 @@ var ErrNotFound = errors.New("not found")
 // CertificateRepository defines data access for certificates.
 type CertificateRepository interface {
 	Create(ctx context.Context, cert *models.Certificate) error
-	GetByID(ctx context.Context, id uuid.UUID) (*models.Certificate, error)
+	GetByID(ctx context.Context, tenantID, id uuid.UUID) (*models.Certificate, error)
 	GetByIDForTenant(ctx context.Context, tenantID, id uuid.UUID) (*models.Certificate, error)
 	GetByDomain(ctx context.Context, tenantID uuid.UUID, domain string) ([]*models.Certificate, error)
 	List(ctx context.Context, tenantID uuid.UUID, filter *CertFilter) ([]*models.Certificate, int, error)
 	Update(ctx context.Context, cert *models.Certificate) error
-	Delete(ctx context.Context, id uuid.UUID) error
+	Delete(ctx context.Context, tenantID, id uuid.UUID) error
 	CountByTenant(ctx context.Context, tenantID uuid.UUID) (int, error)
+}
+
+// CertificateTenantScanner exposes all-tenant inventory scans to trusted services.
+type CertificateTenantScanner interface {
+	ListAllTenants(ctx context.Context, filter *CertFilter) ([]*models.Certificate, int, error)
+}
+
+// CertificateSystemRepository combines tenant-scoped operations with trusted scans.
+type CertificateSystemRepository interface {
+	CertificateRepository
+	CertificateTenantScanner
 }
 
 // CertFilter allows filtering certificate queries.
@@ -68,7 +79,7 @@ type UserRepository interface {
 // ApprovalRepository defines data access for approval requests.
 type ApprovalRepository interface {
 	Create(ctx context.Context, req *models.ApprovalRequest) error
-	GetByID(ctx context.Context, id uuid.UUID) (*models.ApprovalRequest, error)
+	GetByID(ctx context.Context, tenantID, id uuid.UUID) (*models.ApprovalRequest, error)
 	ListPending(ctx context.Context, tenantID uuid.UUID) ([]*models.ApprovalRequest, error)
 	Update(ctx context.Context, req *models.ApprovalRequest) error
 	GetRules(ctx context.Context, tenantID uuid.UUID) ([]*models.ApprovalRule, error)

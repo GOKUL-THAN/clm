@@ -96,8 +96,9 @@ func (s *Server) handleDeployCertificate(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		CertID string                  `json:"cert_id"`
-		Target *deployers.DeployTarget `json:"target"`
+		CertID          string                  `json:"cert_id"`
+		Target          *deployers.DeployTarget `json:"target"`
+		ReplaceExisting bool                    `json:"replace_existing,omitempty"`
 		// Retained only to reject legacy callers explicitly; key material must be
 		// resolved from cert_id inside this gateway.
 		CertPEM  string `json:"cert_pem"`
@@ -164,6 +165,26 @@ func (s *Server) handleDeployCertificate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	req.Target.Category = spec.Category
+	claims := callerClaims(r)
+	tenantID := strings.TrimSpace(claims.TenantID)
+	fileTarget := false
+	switch strings.ToLower(req.Target.Type) {
+	case "linux", "postgresql":
+		fileTarget = true
+		if tenantID == "" && !isGlobalAdmin(role) {
+			writeErr(w, http.StatusForbidden, "file deployments require an authenticated tenant_id claim")
+			return
+		}
+	}
+	if req.ReplaceExisting && !fileTarget {
+		writeErr(w, http.StatusBadRequest, "replace_existing applies only to local file deployments")
+		return
+	}
+	if req.ReplaceExisting && !canManageFleet(role) {
+		writeErr(w, http.StatusForbidden, "replacing existing certificate files requires an admin, tenant_admin, or cert_manager role")
+		return
+	}
+	req.Target.AllowReplace = req.ReplaceExisting && canManageFleet(role)
 
 	// Resolve credentials only inside the gateway. The response strips the
 	// resolved map before serialization.
@@ -198,12 +219,21 @@ func (s *Server) handleDeployCertificate(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusNotFound, "certificate not found")
 		return
 	}
+	effectiveTenantID := tenantID
+	if isGlobalAdmin(role) {
+		effectiveTenantID = cert.TenantID
+	}
+	if cert.TenantID != effectiveTenantID {
+		writeErr(w, http.StatusForbidden, "certificate is not owned by the authenticated tenant")
+		return
+	}
+	req.Target.TenantID = effectiveTenantID
 	if cert.ChainPEM == "" || cert.SecretRef == "" {
 		writeErr(w, http.StatusBadRequest,
 			"that certificate has no gateway-local key material and cannot be deployed")
 		return
 	}
-	keyPEM, err := readKeyFile(cert.SecretRef)
+	keyPEM, err := s.readKeyFile(cert.SecretRef, effectiveTenantID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError,
 			"reading the stored private key failed: "+err.Error())
@@ -217,6 +247,11 @@ func (s *Server) handleDeployCertificate(w http.ResponseWriter, r *http.Request)
 	}
 
 	started := time.Now().UTC()
+	if req.Target.AllowReplace {
+		s.recordAudit(r, "deployment.replace_authorized", "deployment", req.CertID,
+			firstDeployHost(req.Target), audit.ResultSuccess,
+			"existing-file replacement authorized for tenant "+effectiveTenantID)
+	}
 	attemptID := uuid.NewString()
 	attempt := &DeploymentRecord{
 		ID:            attemptID,

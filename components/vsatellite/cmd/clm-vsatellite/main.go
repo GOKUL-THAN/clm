@@ -13,9 +13,10 @@ import (
 	"time"
 
 	"github.com/m2p/clm/internal/satellite/deployment"
-	linuxdeployer "github.com/m2p/clm/internal/satellite/deployment/deployers/os"
 	datadeployer "github.com/m2p/clm/internal/satellite/deployment/deployers/data"
+	linuxdeployer "github.com/m2p/clm/internal/satellite/deployment/deployers/os"
 	"github.com/m2p/clm/internal/satellite/discovery/scanners"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"github.com/m2p/clm/pkg/config"
 	"github.com/m2p/clm/pkg/utils"
 	"go.uber.org/zap"
@@ -23,17 +24,18 @@ import (
 
 // VSatelliteConfig holds vSatellite agent configuration.
 type VSatelliteConfig struct {
-	ID              string   `mapstructure:"id"`
-	Name            string   `mapstructure:"name"`
-	GatewayEndpoint string   `mapstructure:"gateway_endpoint"`
-	Token           string   `mapstructure:"token"`
-	VPC             string   `mapstructure:"vpc"`
-	Subnet          string   `mapstructure:"subnet"`
-	CIDRs           []string `mapstructure:"cidrs"`
-	Capabilities    []string `mapstructure:"capabilities"`
-	HeartbeatSec    int      `mapstructure:"heartbeat_interval_sec"`
-	ScanPorts       []int    `mapstructure:"scan_ports"`
-	Concurrency     int      `mapstructure:"concurrency"`
+	ID              string                   `mapstructure:"id"`
+	Name            string                   `mapstructure:"name"`
+	GatewayEndpoint string                   `mapstructure:"gateway_endpoint"`
+	Token           string                   `mapstructure:"token"`
+	VPC             string                   `mapstructure:"vpc"`
+	Subnet          string                   `mapstructure:"subnet"`
+	CIDRs           []string                 `mapstructure:"cidrs"`
+	Capabilities    []string                 `mapstructure:"capabilities"`
+	HeartbeatSec    int                      `mapstructure:"heartbeat_interval_sec"`
+	ScanPorts       []int                    `mapstructure:"scan_ports"`
+	Concurrency     int                      `mapstructure:"concurrency"`
+	FileStorage     config.FileStorageConfig `mapstructure:"file_storage"`
 }
 
 func main() {
@@ -69,10 +71,20 @@ func main() {
 	}
 	scanner := scanners.NewNetworkScanner(concurrency, 5*time.Second, ports, logger)
 
+	filePolicy, err := securefs.NewPolicy(cfg.FileStorage.AllowedRoots, cfg.FileStorage.TenantRoots)
+	if err != nil {
+		logger.Fatal("vSatellite file storage policy is invalid", zap.Error(err))
+	}
+	defer func() {
+		if err := filePolicy.Close(); err != nil {
+			logger.Error("closing vSatellite file storage policy failed", zap.Error(err))
+		}
+	}()
+
 	// Initialize deployment executor
 	deployExec := deployment.NewExecutor(logger)
-	deployExec.RegisterDeployer(linuxdeployer.NewLinuxDeployer(logger))
-	deployExec.RegisterDeployer(datadeployer.NewPostgreSQLDeployer(logger))
+	deployExec.RegisterDeployer(linuxdeployer.NewLinuxDeployer(logger, filePolicy))
+	deployExec.RegisterDeployer(datadeployer.NewPostgreSQLDeployer(logger, filePolicy))
 
 	// Create agent
 	agent := &Agent{
@@ -96,11 +108,11 @@ func main() {
 
 // Agent is the vSatellite runtime.
 type Agent struct {
-	config   *VSatelliteConfig
-	scanner  *scanners.NetworkScanner
-	deployer *deployment.Executor
-	client   *http.Client
-	logger   *zap.Logger
+	config    *VSatelliteConfig
+	scanner   *scanners.NetworkScanner
+	deployer  *deployment.Executor
+	client    *http.Client
+	logger    *zap.Logger
 	certCount int
 }
 
@@ -142,7 +154,11 @@ func (a *Agent) sendHeartbeat() []gatewayCommand {
 		"cert_count": a.certCount,
 		"version":    "1.0.0",
 	}
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		a.logger.Error("could not encode heartbeat request", zap.Error(err))
+		return nil
+	}
 
 	url := a.config.GatewayEndpoint + "/vsatellite/heartbeat"
 	resp, err := a.client.Post(url, "application/json", bytes.NewReader(data))
@@ -150,7 +166,11 @@ func (a *Agent) sendHeartbeat() []gatewayCommand {
 		a.logger.Warn("heartbeat failed", zap.Error(err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			a.logger.Warn("closing heartbeat response failed", zap.Error(err))
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		a.logger.Warn("heartbeat rejected", zap.Int("status", resp.StatusCode))
@@ -160,8 +180,15 @@ func (a *Agent) sendHeartbeat() []gatewayCommand {
 	var result struct {
 		Commands []gatewayCommand `json:"commands"`
 	}
-	respBody, _ := io.ReadAll(resp.Body)
-	json.Unmarshal(respBody, &result)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		a.logger.Warn("reading heartbeat response failed", zap.Error(err))
+		return nil
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		a.logger.Warn("decoding heartbeat response failed", zap.Error(err))
+		return nil
+	}
 
 	if len(result.Commands) > 0 {
 		a.logger.Info("received commands", zap.Int("count", len(result.Commands)))
@@ -245,7 +272,11 @@ func (a *Agent) reportResult(cmdID, status, result string) {
 		"status":   status,
 		"result":   result,
 	}
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		a.logger.Error("could not encode command result", zap.Error(err))
+		return
+	}
 
 	url := a.config.GatewayEndpoint + "/vsatellite/result"
 	resp, err := a.client.Post(url, "application/json", bytes.NewReader(data))
@@ -253,5 +284,7 @@ func (a *Agent) reportResult(cmdID, status, result string) {
 		a.logger.Warn("result report failed", zap.Error(err))
 		return
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		a.logger.Warn("closing command result response failed", zap.Error(err))
+	}
 }

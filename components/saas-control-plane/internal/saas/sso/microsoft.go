@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	microsoftAuthURLTemplate  = "https://login.microsoftonline.com/%s/oauth2/v2.0/authorize"
-	microsoftTokenURLTemplate = "https://login.microsoftonline.com/%s/oauth2/v2.0/token"
-	microsoftGraphMeURL       = "https://graph.microsoft.com/v1.0/me"
+	microsoftAuthURLTemplate  = "https://login.microsoftonline.com/%s/oauth2/v2.0/authorize" // #nosec G101 -- fixed public OAuth endpoint.
+	microsoftTokenURLTemplate = "https://login.microsoftonline.com/%s/oauth2/v2.0/token"     // #nosec G101 -- fixed public OAuth endpoint.
+	microsoftGraphMeURL       = "https://graph.microsoft.com/v1.0/me"                        // #nosec G101 -- fixed public API endpoint.
 )
 
 // MicrosoftProvider implements Microsoft/Azure AD OAuth2 login.

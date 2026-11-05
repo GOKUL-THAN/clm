@@ -3,7 +3,6 @@ package sync
 import (
 	"context"
 	"testing"
-	"time"
 
 	"go.uber.org/zap/zaptest"
 )
@@ -123,4 +122,3 @@ func TestRotationController_FailedVerificationRollback(t *testing.T) {
 		t.Fatalf("expected health verified false")
 	}
 }
-

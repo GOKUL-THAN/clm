@@ -2,10 +2,14 @@ package connector
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"go.uber.org/zap"
 )
 
@@ -33,6 +37,47 @@ func TestDevelopmentHTTPRequiresExplicitEnvironment(t *testing.T) {
 	}
 	if conn == nil {
 		t.Fatal("connector is nil")
+	}
+}
+
+func TestConnectorRejectsTLSFilesOutsideApprovedRoots(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("secure filesystem policy tests require Linux ownership and mode semantics")
+	}
+	root := t.TempDir()
+	approvedRoot := filepath.Join(root, "approved")
+	if err := os.Mkdir(approvedRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := securefs.NewPolicy([]string{approvedRoot}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer policy.Close()
+
+	caPath := filepath.Join(root, "outside-ca.pem")
+	if err := os.WriteFile(caPath, []byte("not a certificate"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		SatelliteID:  "00000000-0000-0000-0000-000000000001",
+		SaaSEndpoint: "https://clm.example.test",
+		TLSCA:        caPath,
+		FilePolicy:   policy,
+	}
+	if _, err := New(&cfg, zap.NewNop()); err == nil || !strings.Contains(err.Error(), "outside the configured roots") {
+		t.Fatalf("outside CA bundle error = %v, want policy denial", err)
+	}
+}
+
+func TestConnectorRequiresPolicyForTLSFiles(t *testing.T) {
+	cfg := Config{
+		SatelliteID:  "00000000-0000-0000-0000-000000000001",
+		SaaSEndpoint: "https://clm.example.test",
+		TLSCA:        filepath.Join(t.TempDir(), "ca.pem"),
+	}
+	if _, err := New(&cfg, zap.NewNop()); err == nil || !strings.Contains(err.Error(), "file storage policy is required") {
+		t.Fatalf("missing file policy error = %v, want explicit policy error", err)
 	}
 }
 

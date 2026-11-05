@@ -111,18 +111,18 @@ func (d *AzureDeployer) Deploy(ctx context.Context, req *deployers.DeployRequest
 	}
 	if len(missing) > 0 {
 		res.Error = "an Azure target requires: " + strings.Join(missing, ", ")
-		return res, fmt.Errorf(res.Error)
+		return res, fmt.Errorf("%s", res.Error)
 	}
 
 	vaultName := strings.TrimSpace(target.VaultName)
 	if vaultName == "" {
 		res.Error = "target.vault_name must identify the Azure Key Vault"
-		return res, fmt.Errorf(res.Error)
+		return res, fmt.Errorf("%s", res.Error)
 	}
 	certName := strings.TrimSpace(target.ResourceID)
 	if certName == "" {
 		res.Error = "target.resource_id must give the certificate name to use inside the vault"
-		return res, fmt.Errorf(res.Error)
+		return res, fmt.Errorf("%s", res.Error)
 	}
 	certName = sanitiseAzureName(certName)
 

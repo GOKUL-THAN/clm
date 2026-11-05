@@ -16,8 +16,9 @@ package state
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 // not need to branch on whether persistence is configured.
 type Store struct {
 	dir    string
+	root   *os.Root
 	logger *zap.Logger
 
 	mu sync.Mutex
@@ -46,14 +48,66 @@ type Store struct {
 	writeMu sync.Mutex
 }
 
+func (s *Store) readFile(name string) ([]byte, error) {
+	info, err := s.root.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("state file %q must be a regular, non-symlink file", name)
+	}
+	file, err := s.root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if !os.SameFile(info, openedInfo) {
+		_ = file.Close()
+		return nil, fmt.Errorf("state file %q changed while it was being opened", name)
+	}
+	data, readErr := io.ReadAll(file)
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("closing state file %q: %w", name, closeErr)
+	}
+	return data, nil
+}
+
 // SaveDelay is how long a save is deferred to absorb a burst of changes.
 const SaveDelay = 750 * time.Millisecond
 
 // New opens a store rooted at dir. An empty dir returns a disabled store that
 // silently accepts calls, which is how persistence stays optional.
 func New(dir string, logger *zap.Logger) (*Store, error) {
+	if dir == "" {
+		return NewWithRoot(dir, logger, nil)
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return nil, fmt.Errorf("creating state dir %s: %w", dir, err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("opening state dir %s: %w", dir, err)
+	}
+	store, err := NewWithRoot(dir, logger, root)
+	if err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+// NewWithRoot constructs a store using an already-confined directory handle.
+func NewWithRoot(dir string, logger *zap.Logger, root *os.Root) (*Store, error) {
 	s := &Store{
-		dir: dir, logger: logger,
+		dir: dir, root: root, logger: logger,
 		pending: map[string]*time.Timer{}, sequence: map[string]uint64{}, committed: map[string]uint64{},
 	}
 	if dir == "" {
@@ -61,16 +115,27 @@ func New(dir string, logger *zap.Logger) (*Store, error) {
 			"be lost on restart (set state.dir to enable it)")
 		return s, nil
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, fmt.Errorf("creating state dir %s: %w", dir, err)
+	if root == nil {
+		return nil, fmt.Errorf("state directory root is required")
 	}
 	// Fail fast on an unwritable directory rather than discovering it on the
 	// first save, by which point the caller has no way to report it.
-	probe := filepath.Join(dir, ".write-probe")
-	if err := os.WriteFile(probe, []byte("ok"), 0o600); err != nil {
+	probe, err := root.OpenFile(".write-probe", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
 		return nil, fmt.Errorf("state dir %s is not writable: %w", dir, err)
 	}
-	_ = os.Remove(probe)
+	if _, err := probe.Write([]byte("ok")); err != nil {
+		_ = probe.Close()
+		_ = root.Remove(".write-probe")
+		return nil, fmt.Errorf("state dir %s is not writable: %w", dir, err)
+	}
+	if err := probe.Close(); err != nil {
+		_ = root.Remove(".write-probe")
+		return nil, fmt.Errorf("closing state write probe: %w", err)
+	}
+	if err := root.Remove(".write-probe"); err != nil {
+		return nil, fmt.Errorf("removing state write probe: %w", err)
+	}
 
 	logger.Info("state persistence enabled", zap.String("dir", dir))
 	return s, nil
@@ -88,7 +153,13 @@ func (s *Store) Dir() string {
 }
 
 func (s *Store) path(name string) string {
-	return filepath.Join(s.dir, name+".json")
+	return name + ".json"
+}
+
+func validCollectionName(name string) bool {
+	return strings.TrimSpace(name) == name && name != "" &&
+		!strings.Contains(name, "/") && !strings.Contains(name, "\\") &&
+		name != "." && name != ".." && !strings.Contains(name, "..")
 }
 
 // Load reads a collection into v. A missing file is not an error: first start is
@@ -97,7 +168,10 @@ func (s *Store) Load(name string, v any) error {
 	if !s.Enabled() {
 		return nil
 	}
-	data, err := os.ReadFile(s.path(name))
+	if !validCollectionName(name) {
+		return fmt.Errorf("invalid state collection name %q", name)
+	}
+	data, err := s.readFile(s.path(name))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -111,7 +185,9 @@ func (s *Store) Load(name string, v any) error {
 		// A corrupt snapshot must not stop the gateway from starting. Keep the
 		// bad file for inspection and carry on empty.
 		bad := s.path(name) + ".corrupt"
-		_ = os.Rename(s.path(name), bad)
+		if renameErr := s.root.Rename(s.path(name), bad); renameErr != nil {
+			return fmt.Errorf("snapshot %s is corrupt (%v) and could not be preserved: %w", name, err, renameErr)
+		}
 		s.logger.Error("state snapshot was unreadable and has been set aside",
 			zap.String("collection", name), zap.String("kept_at", bad), zap.Error(err))
 		return nil
@@ -129,6 +205,9 @@ func (s *Store) Load(name string, v any) error {
 func (s *Store) SaveNow(name string, v any) error {
 	if !s.Enabled() {
 		return nil
+	}
+	if !validCollectionName(name) {
+		return fmt.Errorf("invalid state collection name %q", name)
 	}
 	s.mu.Lock()
 	if s.sequence == nil {
@@ -160,19 +239,22 @@ func (s *Store) saveVersion(name string, v any, sequence uint64) error {
 	}
 
 	target := s.path(name)
-	tmp, err := os.CreateTemp(s.dir, "."+name+"-*.tmp")
+	tmpName := fmt.Sprintf(".%s-%d.tmp", name, time.Now().UnixNano())
+	tmp, err := s.root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating temp file for %s: %w", name, err)
 	}
-	tmpName := tmp.Name()
 
 	cleanup := func() {
 		_ = tmp.Close()
-		_ = os.Remove(tmpName)
+		_ = s.root.Remove(tmpName)
 	}
-	if _, err := tmp.Write(data); err != nil {
+	if n, err := tmp.Write(data); err != nil {
 		cleanup()
 		return fmt.Errorf("writing %s: %w", name, err)
+	} else if n != len(data) {
+		cleanup()
+		return fmt.Errorf("writing %s: %w", name, io.ErrShortWrite)
 	}
 	// fsync before rename: without it the rename can be visible while the
 	// contents are not yet on disk, which is exactly the truncated-file case the
@@ -182,15 +264,15 @@ func (s *Store) saveVersion(name string, v any, sequence uint64) error {
 		return fmt.Errorf("syncing %s: %w", name, err)
 	}
 	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
+		_ = s.root.Remove(tmpName)
 		return fmt.Errorf("closing %s: %w", name, err)
 	}
-	if err := os.Chmod(tmpName, 0o600); err != nil {
-		_ = os.Remove(tmpName)
+	if err := s.root.Chmod(tmpName, 0o600); err != nil {
+		_ = s.root.Remove(tmpName)
 		return fmt.Errorf("setting mode on %s: %w", name, err)
 	}
-	if err := os.Rename(tmpName, target); err != nil {
-		_ = os.Remove(tmpName)
+	if err := s.root.Rename(tmpName, target); err != nil {
+		_ = s.root.Remove(tmpName)
 		return fmt.Errorf("replacing %s: %w", name, err)
 	}
 
@@ -260,7 +342,10 @@ func (s *Store) LoadStrict(name string, v any) error {
 	if !s.Enabled() {
 		return nil
 	}
-	data, err := os.ReadFile(s.path(name))
+	if !validCollectionName(name) {
+		return fmt.Errorf("invalid state collection name %q", name)
+	}
+	data, err := s.readFile(s.path(name))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -274,4 +359,13 @@ func (s *Store) LoadStrict(name string, v any) error {
 		return fmt.Errorf("decoding security-sensitive state %s: %w", name, err)
 	}
 	return nil
+}
+
+// Close releases the rooted directory handle after pending writes are flushed.
+func (s *Store) Close() error {
+	if s == nil || s.root == nil {
+		return nil
+	}
+	s.Flush()
+	return s.root.Close()
 }

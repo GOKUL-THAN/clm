@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/m2p/clm/internal/satellite/ca"
 	"github.com/m2p/clm/internal/satellite/deployment/deployers"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"go.uber.org/zap"
 )
 
@@ -104,11 +105,14 @@ func deploymentBindingID(target *deployers.DeployTarget, fallbackType, fallbackH
 	return fmt.Sprintf("%x", sum[:])
 }
 
-func cleanupUntrackedIssuedKey(path string) error {
+func (s *Server) cleanupUntrackedIssuedKey(path, tenantID string) error {
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if s.filePolicy == nil {
+		return fmt.Errorf("secure file storage policy is not configured")
+	}
+	if err := s.filePolicy.Remove(path, tenantID, securefs.PrivateKey); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing untracked issued private key: %w", err)
 	}
 	return nil
@@ -474,10 +478,16 @@ func (s *Server) deployRenewalVersion(ctx context.Context, certID string, versio
 		return nil, fmt.Errorf("certificate version and deployment target are required")
 	}
 	workTarget := sanitizedTarget(target)
+	cert, ok := s.inventory.Get(certID)
+	if !ok {
+		return nil, fmt.Errorf("certificate %q not found", certID)
+	}
+	workTarget.TenantID = cert.TenantID
+	workTarget.AllowReplace = true
 	if err := s.resolveRenewalCredentials(workTarget); err != nil {
 		return nil, fmt.Errorf("resolving target credentials: %w", err)
 	}
-	keyPEM, err := readKeyFile(version.SecretRef)
+	keyPEM, err := s.readKeyFile(version.SecretRef, cert.TenantID)
 	if err != nil {
 		workTarget.Credentials = nil
 		return nil, fmt.Errorf("reading version %d private key: %w", version.Number, err)
@@ -770,7 +780,7 @@ func (s *Server) issueAndRolloutRenewal(ctx context.Context, cert *Certificate) 
 	if len(domains) == 0 {
 		domains = []string{cert.Domain}
 	}
-	issued, err := s.acme.Issue(ctx, cert.ID, domains)
+	issued, err := s.acme.IssueForTenant(ctx, cert.TenantID, cert.ID, domains)
 	if err != nil {
 		if failErr := s.inventory.failRenewal(cert.ID, attempt.ID, "", err.Error(), false); failErr != nil {
 			return errors.Join(err, failErr)
@@ -780,7 +790,7 @@ func (s *Server) issueAndRolloutRenewal(ctx context.Context, cert *Certificate) 
 	fingerprint, err := deployers.LeafSHA256([]byte(issued.ChainPEM))
 	if err != nil {
 		failure := fmt.Errorf("fingerprinting renewal certificate: %w", err)
-		if cleanupErr := cleanupUntrackedIssuedKey(issued.KeyPath); cleanupErr != nil {
+		if cleanupErr := s.cleanupUntrackedIssuedKey(issued.KeyPath, cert.TenantID); cleanupErr != nil {
 			failure = errors.Join(failure, cleanupErr)
 		}
 		if failErr := s.inventory.failRenewal(cert.ID, attempt.ID, "", failure.Error(), false); failErr != nil {
@@ -796,7 +806,7 @@ func (s *Server) issueAndRolloutRenewal(ctx context.Context, cert *Certificate) 
 	}
 	if err := s.inventory.setRenewalCandidate(cert.ID, attempt.ID, candidate); err != nil {
 		failure := err
-		if cleanupErr := cleanupUntrackedIssuedKey(issued.KeyPath); cleanupErr != nil {
+		if cleanupErr := s.cleanupUntrackedIssuedKey(issued.KeyPath, cert.TenantID); cleanupErr != nil {
 			failure = errors.Join(failure, cleanupErr)
 		}
 		if failErr := s.inventory.failRenewal(cert.ID, attempt.ID, candidate.ID, failure.Error(), false); failErr != nil {

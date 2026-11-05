@@ -2,9 +2,6 @@ package integrations
 
 import (
 	"context"
-	"crypto/tls"
-	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -133,9 +130,9 @@ func TestValidateWebhookURL_SSRFProtection(t *testing.T) {
 		{"IPv6 Link-Local fe80::1", "https://[fe80::1]/webhook", true, "destination IP fe80::1 is prohibited"},
 
 		// IPv4-Mapped IPv6
-		{"IPv4-Mapped IPv6 Loopback", "https://[::ffff:127.0.0.1]/webhook", true, "destination IP ::ffff:127.0.0.1 is prohibited"},
-		{"IPv4-Mapped IPv6 AWS IMDS", "https://[::ffff:169.254.169.254]/webhook", true, "destination IP ::ffff:169.254.169.254 is prohibited"},
-		{"IPv4-Mapped IPv6 RFC 1918", "https://[::ffff:10.0.0.1]/webhook", true, "destination IP ::ffff:10.0.0.1 is prohibited"},
+		{"IPv4-Mapped IPv6 Loopback", "https://[::ffff:127.0.0.1]/webhook", true, "destination IP 127.0.0.1 is prohibited"},
+		{"IPv4-Mapped IPv6 AWS IMDS", "https://[::ffff:169.254.169.254]/webhook", true, "destination IP 169.254.169.254 is prohibited"},
+		{"IPv4-Mapped IPv6 RFC 1918", "https://[::ffff:10.0.0.1]/webhook", true, "destination IP 10.0.0.1 is prohibited"},
 
 		// Valid Public HTTPS endpoints
 		{"Valid Public HTTPS Webhook", "https://api.corporate-siem.com/v1/events", false, ""},
@@ -185,10 +182,10 @@ func TestIsPrivateOrReservedIP_Unit(t *testing.T) {
 		{"::ffff:127.0.0.1", true},
 		{"::ffff:169.254.169.254", true},
 		{"::ffff:10.0.0.1", true},
-		{"224.0.0.1", true}, // Multicast
-		{"ff02::1", true},   // IPv6 Multicast
-		{"8.8.8.8", false},  // Google Public DNS
-		{"1.1.1.1", false},  // Cloudflare Public DNS
+		{"224.0.0.1", true},             // Multicast
+		{"ff02::1", true},               // IPv6 Multicast
+		{"8.8.8.8", false},              // Google Public DNS
+		{"1.1.1.1", false},              // Cloudflare Public DNS
 		{"2606:4700:4700::1111", false}, // Cloudflare Public IPv6
 	}
 
@@ -289,7 +286,7 @@ func TestSafeHTTPClient_MixedDNSResponseProtection(t *testing.T) {
 	// Mixed IP check verification: if DNS returns public IP + private IP, private IP must trigger rejection
 	mixedIPs := []net.IP{
 		net.ParseIP("93.184.216.34"), // public
-		net.ParseIP("10.0.0.1"),       // private RFC 1918
+		net.ParseIP("10.0.0.1"),      // private RFC 1918
 	}
 
 	foundProhibited := false

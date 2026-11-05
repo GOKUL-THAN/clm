@@ -193,10 +193,13 @@ func (s *Server) handleDispatchVSatelliteCommand(w http.ResponseWriter, r *http.
 	}
 
 	switch req.Type {
-	case "scan_cidr", "deploy_cert", "verify_cert", "health_check", "collect_inventory":
-	default:
+	case "scan_cidr", "health_check":
+	case "deploy_cert":
 		writeErr(w, http.StatusBadRequest,
-			"type must be one of scan_cidr, deploy_cert, verify_cert, health_check, collect_inventory")
+			"deploy_cert is disabled until tenant authorization and authenticated deployment transport are available")
+		return
+	default:
+		writeErr(w, http.StatusBadRequest, "type must be one of scan_cidr or health_check")
 		return
 	}
 

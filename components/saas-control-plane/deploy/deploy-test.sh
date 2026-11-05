@@ -419,7 +419,7 @@ else
     echo "Backups created: $CLM_BACKUP and $KEYCLOAK_BACKUP"
 
     # Init scripts do not rerun against an existing volume.
-    for migration in migrations/003_tenant_security.sql migrations/004_secure_command_transport.sql; do
+    for migration in migrations/003_tenant_security.sql migrations/004_secure_command_transport.sql migrations/009_approval_requests_rls.sql migrations/010_certificates_rls.sql; do
         echo "Applying $migration"
         $COMPOSE exec -T postgres psql -U clm -d clm_db \
             -v ON_ERROR_STOP=1 --single-transaction < "$migration"
@@ -460,10 +460,28 @@ SELECT
   AND EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema='public' AND table_name='satellites' AND column_name='credential_hash'
+  )
+  AND EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname='public' AND c.relname='approval_requests'
+      AND c.relrowsecurity AND c.relforcerowsecurity
+  )
+  AND EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname='public' AND c.relname='approval_rules'
+      AND c.relrowsecurity AND c.relforcerowsecurity
+  )
+  AND EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname='public' AND c.relname='certificates'
+      AND c.relrowsecurity AND c.relforcerowsecurity
   );" </dev/null)
 [ "$SCHEMA_OK" = "t" ] || { echo "Live schema verification failed" >&2; exit 1; }
 
-echo "CLM server is healthy and migrations 003/004 are present."
+echo "CLM server is healthy and approval/certificate RLS is enabled and forced."
 $COMPOSE ps
 $COMPOSE logs --tail=50 clm-server
 REMOTE_DEPLOY

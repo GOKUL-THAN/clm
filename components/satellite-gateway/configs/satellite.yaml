@@ -52,6 +52,18 @@ discovery:
 state:
   dir: "/var/lib/clm/state"
 
+file_storage:
+  # Administrator-managed roots for certificate and private-key file operations.
+  # Every root must already exist; the gateway will not create configured roots.
+  # Tenant roots, when configured, replace these roots for that tenant.
+  allowed_roots:
+    - "/var/lib/clm"
+    - "/etc/clm/certs"
+    - "/etc/ssl/certs"
+    - "/etc/ssl/private"
+    - "/var/lib/postgresql/certs"
+  tenant_roots: {}
+
 commands:
   poll_interval: "5s"
   timeout: "15m"

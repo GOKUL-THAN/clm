@@ -24,13 +24,13 @@ import (
 )
 
 var (
-	ErrInvalidSlug           = errors.New("slug must be 3-30 lowercase alphanumeric characters and hyphens, starting with a letter")
-	ErrSlugTaken             = errors.New("organization slug is already registered")
-	ErrInvalidAWSAccountID   = errors.New("aws_account_id must be exactly 12 digits")
-	ErrInvalidVPCID          = errors.New("vpc_id must be formatted as vpc-xxxxxxxx (8 or 17 hex characters)")
-	ErrInvalidRoleARN        = errors.New("cross_account_role_arn must be a valid IAM role ARN")
-	ErrInvalidExternalID     = errors.New("external_id must be at least 16 characters for secure STS trust")
-	ErrInvalidEmail          = errors.New("invalid contact email address")
+	ErrInvalidSlug         = errors.New("slug must be 3-30 lowercase alphanumeric characters and hyphens, starting with a letter")
+	ErrSlugTaken           = errors.New("organization slug is already registered")
+	ErrInvalidAWSAccountID = errors.New("aws_account_id must be exactly 12 digits")
+	ErrInvalidVPCID        = errors.New("vpc_id must be formatted as vpc-xxxxxxxx (8 or 17 hex characters)")
+	ErrInvalidRoleARN      = errors.New("cross_account_role_arn must be a valid IAM role ARN")
+	ErrInvalidExternalID   = errors.New("external_id must be at least 16 characters for secure STS trust")
+	ErrInvalidEmail        = errors.New("invalid contact email address")
 )
 
 var (
@@ -62,10 +62,10 @@ type PreflightCheck struct {
 
 // PreflightReport is returned when validating inputs prior to tenant provisioning.
 type PreflightReport struct {
-	Valid   bool             `json:"valid"`
-	Checks  []PreflightCheck `json:"checks"`
-	Plan    string           `json:"plan"`
-	Quotas  models.PlanQuota `json:"quotas"`
+	Valid  bool             `json:"valid"`
+	Checks []PreflightCheck `json:"checks"`
+	Plan   string           `json:"plan"`
+	Quotas models.PlanQuota `json:"quotas"`
 }
 
 // OnboardingResult contains the provisioned tenant, primary gateway, and admin credentials.
@@ -92,10 +92,14 @@ type GatewayBootstrap struct {
 }
 
 // Service manages corporate tenant onboarding.
+type satelliteBootstrapRepository interface {
+	Create(ctx context.Context, sat *models.Satellite) error
+}
+
 type Service struct {
 	tenantRepo core.TenantRepository
 	userRepo   core.UserRepository
-	satRepo    core.SatelliteRepository
+	satRepo    satelliteBootstrapRepository
 	logger     *zap.Logger
 }
 
@@ -103,7 +107,7 @@ type Service struct {
 func NewService(
 	tenantRepo core.TenantRepository,
 	userRepo core.UserRepository,
-	satRepo core.SatelliteRepository,
+	satRepo satelliteBootstrapRepository,
 	logger *zap.Logger,
 ) *Service {
 	return &Service{

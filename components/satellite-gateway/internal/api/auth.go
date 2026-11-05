@@ -52,6 +52,15 @@ func (c *Claims) EffectiveRole() string {
 	return "viewer"
 }
 
+func isGlobalAdmin(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "super_admin", "admin":
+		return true
+	default:
+		return false
+	}
+}
+
 // Authenticator validates bearer tokens from the Gateway Portal.
 type Authenticator struct {
 	hmacSecret []byte

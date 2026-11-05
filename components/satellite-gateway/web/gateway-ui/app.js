@@ -1321,13 +1321,13 @@ function createEnrolment() {
 }
 
 function dispatchVSatCommand(agentId) {
-    const type = prompt('Command type:\n\nscan_cidr, deploy_cert, verify_cert, health_check, collect_inventory', 'health_check');
+    const type = prompt('Command type (certificate deployment is disabled until tenant authorization and authenticated transport are available):\n\nscan_cidr, health_check', 'health_check');
     if (!type) return;
     let payload = {};
     if (type === 'scan_cidr') {
         const cidr = prompt('CIDR for the agent to scan:', '10.0.0.0/24');
         if (!cidr) return;
-        payload = { cidr: cidr };
+        payload = { cidrs: [cidr] };
     }
     apiPost('/api/v1/vsatellites/' + encodeURIComponent(agentId) + '/command',
             { type: type, payload: payload }).then(d => {

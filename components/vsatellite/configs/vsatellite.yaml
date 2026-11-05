@@ -48,3 +48,9 @@ concurrency: 50
 # Logging level: debug, info, warn, error
 log_level: info
 
+# Local certificate deployment paths are deny-by-default. Every root must
+# already exist and be owned by this agent or root, with restrictive modes.
+file_storage:
+  allowed_roots:
+    - "/var/lib/clm/certs"
+  tenant_roots: {}

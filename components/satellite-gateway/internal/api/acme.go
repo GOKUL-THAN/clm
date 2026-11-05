@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/m2p/clm/internal/satellite/audit"
 	"github.com/m2p/clm/internal/satellite/ca"
 	"github.com/m2p/clm/internal/satellite/dns01"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/acme"
 )
@@ -65,7 +67,8 @@ type ACMEConfig struct {
 	ChallengeType string
 	DNS01         *dns01.Solver
 	// KeyDir is where issued private keys are written.
-	KeyDir string
+	KeyDir     string
+	FilePolicy *securefs.Policy
 }
 
 // ACMEManager owns the ACME account and performs orders.
@@ -116,7 +119,10 @@ func NewACMEManager(cfg ACMEConfig, logger *zap.Logger) (*ACMEManager, error) {
 	if cfg.KeyDir == "" {
 		return nil, fmt.Errorf("a key directory is required; set state.dir so issued keys can be stored")
 	}
-	if err := os.MkdirAll(cfg.KeyDir, 0o700); err != nil {
+	if cfg.FilePolicy == nil {
+		return nil, fmt.Errorf("a secure file storage policy is required for ACME keys")
+	}
+	if err := cfg.FilePolicy.MkdirAll(cfg.KeyDir, "", 0o700); err != nil {
 		return nil, fmt.Errorf("creating key dir: %w", err)
 	}
 
@@ -137,7 +143,7 @@ func NewACMEManager(cfg ACMEConfig, logger *zap.Logger) (*ACMEManager, error) {
 		// Only for a test CA such as Pebble, which uses its own untrusted root.
 		logger.Warn("ACME TLS verification is disabled — acceptable only against a test CA")
 		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- production config validation forbids this test-only option.
 		}
 	}
 
@@ -161,7 +167,8 @@ func (m *ACMEManager) accountKeyPath() string {
 // through the CA's account rate limits.
 func (m *ACMEManager) loadOrCreateAccountKey() (crypto.Signer, error) {
 	path := m.accountKeyPath()
-	if data, err := os.ReadFile(path); err == nil {
+	// #nosec G304 -- path is the local ACME account key path derived from configured state storage.
+	if data, err := m.cfg.FilePolicy.ReadFile(path, "", securefs.PrivateKey); err == nil {
 		block, _ := pem.Decode(data)
 		if block == nil {
 			return nil, fmt.Errorf("account key at %s is not valid PEM", path)
@@ -172,6 +179,8 @@ func (m *ACMEManager) loadOrCreateAccountKey() (crypto.Signer, error) {
 		}
 		m.logger.Info("reusing existing ACME account key", zap.String("path", path))
 		return key, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading ACME account key: %w", err)
 	}
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -182,8 +191,8 @@ func (m *ACMEManager) loadOrCreateAccountKey() (crypto.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encoding account key: %w", err)
 	}
-	if err := os.WriteFile(path,
-		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), 0o600); err != nil {
+	if err := m.cfg.FilePolicy.WriteFile(path, "", securefs.PrivateKey,
+		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), false); err != nil {
 		return nil, fmt.Errorf("writing account key: %w", err)
 	}
 	m.logger.Info("generated a new ACME account key", zap.String("path", path))
@@ -250,6 +259,10 @@ type IssuedCert struct {
 //
 // The first name becomes the certificate's common name; the rest are SANs.
 func (m *ACMEManager) Issue(ctx context.Context, certID string, domains []string) (*IssuedCert, error) {
+	return m.IssueForTenant(ctx, "", certID, domains)
+}
+
+func (m *ACMEManager) IssueForTenant(ctx context.Context, tenantID, certID string, domains []string) (*IssuedCert, error) {
 	if len(domains) == 0 {
 		return nil, fmt.Errorf("at least one domain is required")
 	}
@@ -404,8 +417,15 @@ func (m *ACMEManager) Issue(ctx context.Context, certID string, domains []string
 	// Key files are immutable per issued serial. Reusing certID.key would erase
 	// the active version before renewal deployment had been verified, making
 	// rollback impossible after a partial rollout.
-	keyPath := filepath.Join(m.cfg.KeyDir, certID+"-"+leaf.SerialNumber.Text(16)+".key")
-	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+	keyPath, err := m.cfg.FilePolicy.DerivedPath(filepath.Dir(m.cfg.KeyDir),
+		filepath.Join("keys", certID+"-"+leaf.SerialNumber.Text(16)+".key"), tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving issued private key path: %w", err)
+	}
+	if err := m.cfg.FilePolicy.MkdirAll(filepath.Dir(keyPath), tenantID, 0o700); err != nil {
+		return nil, fmt.Errorf("creating issued private key directory: %w", err)
+	}
+	if err := m.cfg.FilePolicy.WriteFile(keyPath, tenantID, securefs.PrivateKey, keyPEM, false); err != nil {
 		return nil, fmt.Errorf("writing private key: %w", err)
 	}
 
@@ -427,6 +447,10 @@ func (m *ACMEManager) Issue(ctx context.Context, certID string, domains []string
 
 // Revoke revokes a certificate at the CA using its own private key.
 func (m *ACMEManager) Revoke(ctx context.Context, chainPEM, keyPath string, reason acme.CRLReasonCode) error {
+	return m.RevokeForTenant(ctx, "", chainPEM, keyPath, reason)
+}
+
+func (m *ACMEManager) RevokeForTenant(ctx context.Context, tenantID, chainPEM, keyPath string, reason acme.CRLReasonCode) error {
 	if err := m.ensureAccount(ctx); err != nil {
 		return err
 	}
@@ -436,7 +460,8 @@ func (m *ACMEManager) Revoke(ctx context.Context, chainPEM, keyPath string, reas
 		return fmt.Errorf("stored chain is not valid PEM")
 	}
 
-	keyData, err := os.ReadFile(keyPath)
+	// #nosec G304 -- keyPath is the gateway-local ACME key path recorded in inventory.
+	keyData, err := m.cfg.FilePolicy.ReadFile(keyPath, tenantID, securefs.PrivateKey)
 	if err != nil {
 		return fmt.Errorf("reading private key: %w", err)
 	}
@@ -787,6 +812,7 @@ func (s *Server) revokeVia(ctx context.Context, cert *Certificate, reason string
 
 	req := ca.RevokeRequest{
 		OrderID: cert.CAOrderID, ChainPEM: cert.ChainPEM, Reason: reason,
+		TenantID: cert.TenantID,
 	}
 	// ACME requires the certificate's own key to sign the revocation; read it only
 	// for the provider that needs it, so a key is never loaded unnecessarily.

@@ -3,7 +3,7 @@
 # ==============================================================================
 
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.27.3-alpine AS builder
 
 WORKDIR /src
 
@@ -24,16 +24,16 @@ RUN apk add --no-cache ca-certificates tzdata
 RUN addgroup -S clm && adduser -S -G clm -h /opt/clm-vsatellite clm
 
 WORKDIR /opt/clm-vsatellite
+RUN mkdir -p /var/lib/clm/state /var/lib/clm/certs
 
 # Copy compiled binary and sample configuration
 COPY --from=builder /src/components/vsatellite/bin/clm-vsatellite /usr/local/bin/clm-vsatellite
 COPY --from=builder /src/components/vsatellite/configs/vsatellite.yaml /etc/clm/vsatellite.yaml
 
-RUN chown -R clm:clm /opt/clm-vsatellite /etc/clm
+RUN chown -R clm:clm /opt/clm-vsatellite /etc/clm /var/lib/clm
 
 USER clm
 
 ENV CLM_VSATELLITE_CONFIG=/etc/clm/vsatellite.yaml
 
 ENTRYPOINT ["/usr/local/bin/clm-vsatellite"]
-

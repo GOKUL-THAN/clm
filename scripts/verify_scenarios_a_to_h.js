@@ -214,9 +214,10 @@ async function runAllScenarios() {
             comment: "Self-approving my own contract"
         });
         assert(
-            requesterAttempt.status === 403 || requesterAttempt.json().error?.includes("segregation") || requesterAttempt.status === 200,
+            requesterAttempt.status === 403 &&
+                requesterAttempt.json().error?.includes("segregation"),
             "Scenario D",
-            "Segregation of Duties Policy Evaluated"
+            "Requester self-approval is rejected"
         );
 
         // 3. Authorized Approver approval
@@ -224,7 +225,13 @@ async function runAllScenarios() {
             approver_id: "00000000-0000-0000-0000-000000000099",
             comment: "Approved by Authorized Enterprise Signatory"
         });
-        assert(authorizedApp.status === 200, "Scenario D", "Authorized Approver Signoff Recorded");
+        assert(
+            authorizedApp.status === 200 &&
+                authorizedApp.json().approval.status === "approved" &&
+                authorizedApp.json().approval.id === targetApp.id,
+            "Scenario D",
+            "Authorized Approver Signoff Recorded"
+        );
     }
 
     // --------------------------------------------------------------------------

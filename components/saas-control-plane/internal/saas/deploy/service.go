@@ -283,9 +283,13 @@ func (s *Service) Deploy(ctx context.Context, req *DeployRequest) (*DeployJob, e
 	s.jobs[job.ID] = job
 	s.mu.Unlock()
 
+	// The API request may end as soon as the job is accepted, so detach its
+	// cancellation while retaining request values and bounding the job lifetime.
+	deployCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
+
 	// Run deployment asynchronously
 	go func() {
-		deployCtx := context.Background()
+		defer cancel()
 		job.State = StateValidating
 
 		if err := p.ValidateCredentials(deployCtx, req.Credentials); err != nil {

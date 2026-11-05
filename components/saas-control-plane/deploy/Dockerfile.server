@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.27.3-alpine AS builder
 
 WORKDIR /app
 
@@ -18,13 +18,20 @@ RUN sed -i 's|module github.com/m2p/clm/saas-control-plane|module github.com/m2p
 # Runtime
 FROM alpine:3.19
 
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata && \
+    addgroup -S clm && adduser -S -G clm -h /var/lib/clm clm && \
+    mkdir -p /var/lib/clm && chown -R clm:clm /var/lib/clm
 
-COPY --from=builder /bin/clm-server /usr/local/bin/clm-server
-COPY configs/server.yaml /etc/clm/server.yaml
+COPY --from=builder --chown=clm:clm /bin/clm-server /usr/local/bin/clm-server
+COPY --chown=clm:clm configs/server.yaml /etc/clm/server.yaml
 
 ENV CLM_CONFIG=/etc/clm/server.yaml
 
 EXPOSE 8080 9090
+
+USER clm
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1
 
 ENTRYPOINT ["clm-server"]

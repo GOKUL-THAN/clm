@@ -20,6 +20,7 @@ package audit
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,6 +76,7 @@ const maxMemory = 20000
 type Logger struct {
 	dir    string
 	path   string
+	root   *os.Root
 	file   *os.File
 	logger *zap.Logger
 
@@ -87,21 +89,64 @@ type Logger struct {
 // is made optional — a gateway with no state.dir configured has nowhere
 // durable to put this either.
 func New(dir string, logger *zap.Logger) (*Logger, error) {
-	l := &Logger{logger: logger}
+	if strings.TrimSpace(dir) == "" {
+		return NewWithRoot(dir, logger, nil)
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return nil, fmt.Errorf("creating audit dir %s: %w", dir, err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("opening audit dir %s: %w", dir, err)
+	}
+	l, err := NewWithRoot(dir, logger, root)
+	if err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	return l, nil
+}
+
+// NewWithRoot opens an audit logger under an already-confined directory handle.
+func NewWithRoot(dir string, logger *zap.Logger, root *os.Root) (*Logger, error) {
+	l := &Logger{dir: dir, root: root, logger: logger}
 	if strings.TrimSpace(dir) == "" {
 		logger.Warn("audit trail is disabled: no directory configured " +
 			"(set state.dir so actions taken on this gateway are recorded)")
 		return l, nil
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, fmt.Errorf("creating audit dir %s: %w", dir, err)
+	if root == nil {
+		return nil, fmt.Errorf("audit directory root is required")
 	}
-	l.dir = dir
 	l.path = filepath.Join(dir, "audit.jsonl")
 
-	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	info, statErr := root.Lstat("audit.jsonl")
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("checking audit log: %w", statErr)
+	}
+	if statErr == nil && (info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0) {
+		return nil, fmt.Errorf("audit log must be a regular file with permissions 0600 or stricter")
+	}
+	flags := os.O_APPEND | os.O_WRONLY
+	if os.IsNotExist(statErr) {
+		flags |= os.O_CREATE | os.O_EXCL
+	}
+	f, err := root.OpenFile("audit.jsonl", flags, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("opening audit log %s: %w", l.path, err)
+	}
+	openedInfo, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("checking opened audit log: %w", err)
+	}
+	if statErr == nil && !os.SameFile(info, openedInfo) {
+		_ = f.Close()
+		return nil, fmt.Errorf("audit log changed while it was being opened")
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("setting audit log permissions: %w", err)
 	}
 	l.file = f
 
@@ -125,7 +170,7 @@ func (l *Logger) Enabled() bool { return l != nil && l.file != nil }
 // audit log reaches on a single gateway; it is not the read path a query uses
 // day to day, only the one-time cost at startup.
 func (l *Logger) loadRecent() error {
-	f, err := os.Open(l.path)
+	f, err := l.OpenReader()
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -295,13 +340,50 @@ func (l *Logger) Actions() []string {
 // the full history rather than only what fits in memory.
 func (l *Logger) Path() string { return l.path }
 
+// OpenReader opens the audit log through its rooted directory handle.
+func (l *Logger) OpenReader() (*os.File, error) {
+	if !l.Enabled() || l.root == nil {
+		return nil, fmt.Errorf("audit trail is disabled")
+	}
+	info, err := l.root.Lstat("audit.jsonl")
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("audit log is not a regular file")
+	}
+	file, err := l.root.Open("audit.jsonl")
+	if err != nil {
+		return nil, err
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if !os.SameFile(info, openedInfo) {
+		_ = file.Close()
+		return nil, fmt.Errorf("audit log changed while it was being opened")
+	}
+	return file, nil
+}
+
 // Close flushes and closes the underlying file. Safe to call on a disabled
 // logger.
 func (l *Logger) Close() error {
-	if !l.Enabled() {
+	if l == nil {
 		return nil
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.file.Close()
+	var closeErr error
+	if l.file != nil {
+		closeErr = l.file.Close()
+	}
+	if l.root != nil {
+		if err := l.root.Close(); err != nil {
+			closeErr = errors.Join(closeErr, err)
+		}
+	}
+	return closeErr
 }

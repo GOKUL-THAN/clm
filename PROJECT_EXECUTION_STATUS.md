@@ -2,15 +2,40 @@
 
 **Platform:** Enterprise Contract & Certificate Lifecycle Management Platform (CLM)  
 **Architecture:** Zero-Knowledge Hybrid SaaS Control Plane + Customer In-VPC Satellite Gateway  
-**Version:** 3.4.0-Enterprise-Production  
-**Evaluation Timestamp:** 2026-10-31  
-**Status:** COMPLETED & CERTIFIED (ALL 25 PHASES PASSED — 100%)
+**Version:** 4.0.0
+**Evaluation Timestamp:** 2026-11-05
+**Status:** Historical phase claims below are not current verification evidence. Production readiness is NOT VERIFIED.
+
+> **Current verification notice:** The six declared local Node suites passed
+> (40 scenario checks, 400 feature-registry smoke checks, 26 lifecycle checks,
+> 10 corporate checks, 3 workflow checks, and 15 global checks). The 400-entry
+> suite validates registry wrappers, not 400 independent business capabilities.
+> Go 1.22.12 was checksum-verified and used for staged SaaS, gateway, and
+> vSatellite modules; `gofmt`, `go vet`, tests, and builds passed. SaaS Go
+> repository tests and configured `NewDB` connection tests passed against
+> PostgreSQL 18.6 using a temporary app-role DSN. Migrations 001–010 and the
+> app-role/table-owner RLS SQL suites also passed; the scratch database and
+> temporary role were removed. The race detector is blocked by disabled CGO
+> and no C compiler. PostgreSQL 15 CI, Docker, external integrations, and
+> deployment verification remain unrun. No external certification or
+> production readiness is claimed.
+> Use [MASTER_REQUIREMENT_TRACKER.md](./MASTER_REQUIREMENT_TRACKER.md) for the
+> active, evidence-based phase status.
+
+> **Legacy snapshot warning:** The phase, department, and security-posture
+> statuses below are historical assertions from 2026-10-31. They were not
+> independently revalidated in this execution and must not be read as current
+> completion or certification claims.
 
 ---
 
-## 1. Executive Master Execution Dashboard
+## 1. Historical Master Execution Dashboard (Unverified)
 
-| Phase | Phase Name | Primary Scope | Status | Verification Gate |
+The statuses and verification gates in this legacy snapshot are reproduced
+for historical context only. They are not current evidence. See
+`MASTER_REQUIREMENT_TRACKER.md` for the active status.
+
+| Phase | Phase Name | Primary Scope | Historical status (not verified) | Historical gate (not evidence) |
 | :--- | :--- | :--- | :--- | :--- |
 | **Phase 0** | Discovery, Audit & Gap Analysis | Codebase scan, gap analysis, traceability matrix | **COMPLETED** | Verified via Phase 0 Reports |
 | **Phase 1** | Zero-Trust Hybrid Architecture | Control Plane vs In-VPC Satellite boundary, mTLS | **COMPLETED** | Zero Private Key SaaS Leakage Verified |
@@ -61,7 +86,7 @@
 
 ---
 
-## 3. Cryptographic & Security Posture Status
+## 3. Historical Cryptographic & Security Posture Claims (Unverified)
 
 * **Zero-Knowledge Key Storage:** Confirmed. Private keys and HSM secrets never leave customer In-VPC boundary.
 * **Row-Level Security (RLS):** Enabled across all 15 core database tables with tenant isolation policies.

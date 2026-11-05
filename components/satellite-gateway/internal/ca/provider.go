@@ -53,7 +53,7 @@ const (
 // offering a combination that will be rejected and the API can explain why.
 type Capabilities struct {
 	// Synchronous is true when Issue returns a usable certificate directly.
-	Synchronous bool `json:"synchronous"`
+	Synchronous bool     `json:"synchronous"`
 	CertTypes   []string `json:"cert_types"` // dv, ov, ev
 	Wildcard    bool     `json:"wildcard"`
 	MultiSAN    bool     `json:"multi_san"`
@@ -66,7 +66,7 @@ type Capabilities struct {
 	Quoting     bool `json:"quoting"`
 	// MaxValidityYears is the longest term the CA will sell. Public CAs cannot
 	// issue beyond 398 days, so a "3 year" product is billing, not validity.
-	MaxValidityYears int `json:"max_validity_years"`
+	MaxValidityYears int    `json:"max_validity_years"`
 	Notes            string `json:"notes,omitempty"`
 }
 
@@ -101,14 +101,15 @@ type IssueRequest struct {
 	DCVMethod string
 	// CertID is the gateway's own identifier, passed through so a provider can
 	// name keys or correlate its own records.
-	CertID string
+	CertID   string
+	TenantID string
 }
 
 // ValidationInstruction is what the domain owner has to do for the CA to
 // validate. Returning these is the whole point of an asynchronous order: without
 // them a pending order can never progress and the operator has nothing to act on.
 type ValidationInstruction struct {
-	Type   string `json:"type"`   // http, dns, email
+	Type   string `json:"type"` // http, dns, email
 	Domain string `json:"domain"`
 	// For http: the path to serve and the content to serve there.
 	// For dns: the record name and value.
@@ -174,8 +175,9 @@ type RevokeRequest struct {
 	// KeyPEM is needed by ACME, which requires the revocation to be signed with
 	// the certificate's own key. Commercial CAs revoke by order ID on an
 	// authenticated account instead.
-	KeyPEM string
-	Reason string
+	KeyPEM   string
+	Reason   string
+	TenantID string
 }
 
 // Provider is one certificate authority reached through one account.

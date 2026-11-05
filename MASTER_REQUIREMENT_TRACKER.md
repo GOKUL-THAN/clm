@@ -1,0 +1,66 @@
+# Master Requirement Tracker
+
+**Status:** Active; phase-level baseline.
+**Last evidence review:** 2026-11-05
+**Production readiness:** Not established.
+
+This tracker is the active status source for the 26-phase directive. Existing
+reports and traceability matrices contain useful design references, but their
+completion and certification claims are not accepted as evidence without
+reproduction. Requirement IDs below identify phase-level work packages; they
+do not replace the still-pending normalization of the existing 115-item
+requirements matrix and 400-entry feature registry into atomic requirements.
+
+Status values follow the directive: `IMPLEMENTED_AND_VERIFIED`,
+`IMPLEMENTED_BUT_UNVERIFIED`, `PARTIALLY_IMPLEMENTED`, `DOCUMENTED_ONLY`,
+`MOCK_OR_SIMULATED`, `MISSING`, `FAILED_VERIFICATION`,
+`NOT_APPLICABLE`, and `EXTERNAL_DEPENDENCY_REQUIRED`.
+
+| Requirement ID | Requirement / phase | Applicable standard or business need | Existing implementation / evidence | Required work | Priority | Status | Test status and evidence | Remaining gap |
+|---|---|---|---|---|---|---|---|---|
+| CLM-PH01 | Repository discovery | Preserve functionality; establish actual scope | Root README, component directories, test manifests, and existing reports inspected; tracked component inventory recorded in `REPOSITORY_INVENTORY.md` | Complete file-level/module dependency inventory and reconcile stale documentation | P0 | PARTIALLY_IMPLEMENTED | Local filesystem and `git ls-files` inventory; not every file reviewed | Full dependency and integration map |
+| CLM-PH02 | Baseline verification | Evidence-based engineering | Six declared Node suites, PostgreSQL SQL suites, and local Go module checks passed; see `EXECUTION_CHECKPOINT.md` and `DATABASE_VERIFICATION_REPORT.md` | Run real API/integration checks | P0 | PARTIALLY_IMPLEMENTED | Go 1.22.12 tidy/vet/test/build passed for all three staged modules; SaaS tests used live PostgreSQL 18.6 app-role DSN | PostgreSQL 15 CI, live API and external integration checks |
+| CLM-PH03 | Architecture assessment | Traceable service and trust boundaries | Existing architecture and gap reports reviewed; contradictions found in completion status reports | Validate boundaries against code, deployment, and actual runtime | P1 | PARTIALLY_IMPLEMENTED | Static source/document review only | Full end-to-end architecture verification |
+| CLM-PH04 | Architecture improvements | Maintainable, secure service boundaries | Certificate tenant scanner separated from API repository interface; approval and certificate tenant scoping changes present | Review affected call paths and verify integration behavior | P0 | IMPLEMENTED_BUT_UNVERIFIED | Go vet, tests, and build passed in the three staged modules; SaaS repository tests used a live app-role connection | Live deployed integration and independent review |
+| CLM-PH05 | Frontend | Real user operations and accessibility | Admin and gateway web assets exist | Verify user flows, accessibility, API wiring, and authorization | P1 | PARTIALLY_IMPLEMENTED | No frontend/browser verification in this phase | Browser E2E and accessibility tests |
+| CLM-PH06 | Backend | Correct persisted business behavior | Go control plane, gateway, and vSatellite code exist; approval/certificate fixes are in the worktree | Verify domain and API behavior against real services | P0 | IMPLEMENTED_BUT_UNVERIFIED | Go vet, tests, and build passed for all three staged modules; SaaS tests used a required live PostgreSQL DSN | Live API/provider integration and CI evidence |
+| CLM-PH07 | Database | Safe migrations and persistent tenant-scoped data | Numbered migrations 001–010 applied to a unique PostgreSQL 18.6 scratch database | Verify supported PostgreSQL version in CI and broaden tenant-repository coverage | P0 | PARTIALLY_IMPLEMENTED | App-role and table-owner SQL suites plus SaaS Go repository tests passed on PostgreSQL 18.6 | PostgreSQL 15 CI evidence and broader tenant-owned repository coverage |
+| CLM-PH08 | Contract lifecycle | Valid, persisted and authorized contract transitions | 26-stage Node lifecycle harness passes | Verify Go state transitions, persistence, authorization, retries, and interruption cases | P1 | PARTIALLY_IMPLEMENTED | `npm run test:lifecycle` passed 26 checks; this is not Go persistence evidence | Backend lifecycle integration and concurrency tests |
+| CLM-PH09 | Certificate lifecycle | Issuance, deployment, renewal, revocation and inventory | Certificate repository, handlers, worker scans, and RLS migration changes present | Validate real CA/gateway paths and tenant-scoped state transitions | P0 | PARTIALLY_IMPLEMENTED | SaaS and gateway Go test/build checks passed; DB-backed SaaS tests ran against PostgreSQL 18.6 | Live CA/provider workflows and PostgreSQL 15 CI |
+| CLM-PH10 | Workflow engine | Durable, authorized workflow execution | Workflow engine and three-mode test exist | Verify business workflow persistence, authorization, failures, and retry semantics | P1 | PARTIALLY_IMPLEMENTED | `npm run test:workflows` passed 3 workflow checks | Real backend workflow integration |
+| CLM-PH11 | SaaS control plane | Integrated multi-tenant SaaS operations | Go service and REST API modules exist | Verify deployed API, IAM, persistence, limits, and operations | P1 | PARTIALLY_IMPLEMENTED | No live service validation | Isolated deployment and API verification |
+| CLM-PH12 | Satellite gateway | Secure customer-boundary operations | Gateway Go component and web UI exist | Verify enrollment, mTLS, command handling, local state, and offline behavior | P1 | PARTIALLY_IMPLEMENTED | Staged gateway module passed tidy, vet, all package tests, and build | Integration environment, certificate provisioning, and gateway runtime checks |
+| CLM-PH13 | vSatellite agent | Secure edge connector behavior | vSatellite Go component exists | Verify protocol, identity, updates, persistence, and recovery | P2 | IMPLEMENTED_BUT_UNVERIFIED | Staged vSatellite module passed tidy, vet, all package tests, and build | Gateway integration and runtime recovery tests |
+| CLM-PH14 | Multi-tenant security | Prevent cross-tenant read/write access | Approval RLS migration 009; certificate RLS migration 010; scoped repository operations | Extend runtime tests across application paths and verify on supported CI PostgreSQL | P0 | PARTIALLY_IMPLEMENTED | PostgreSQL 18.6 app-role and table-owner SQL suites plus SaaS repository tests passed; superuser negative-control also passed | PostgreSQL 15 CI evidence and full application/API isolation |
+| CLM-PH15 | IAM and Zero Trust | Authenticate and authorize every sensitive operation | Keycloak/OIDC and role middleware configuration exists | Verify live auth, claim validation, MFA, session handling, and negative authorization cases | P0 | PARTIALLY_IMPLEMENTED | No live identity provider test in this phase | Identity provider and end-to-end auth environment |
+| CLM-PH16 | PKI and cryptography | Correct key custody and cryptographic verification | Software crypto and provider abstractions exist; prior reports identify HSM/TSA dependencies | Independently validate key custody, signature format, certificate verification and rotation | P0 | EXTERNAL_DEPENDENCY_REQUIRED | No hardware/KMS or live TSA verification here | HSM/KMS credentials and test hardware/service |
+| CLM-PH17 | AI governance | Safe, explainable and controlled AI behavior | In-process AI/risk logic and Node safety checks exist | Verify actual provider behavior, data handling, threat controls, and governance | P1 | PARTIALLY_IMPLEMENTED | Scenario suite passed; no external provider exercised | Provider and governance evidence |
+| CLM-PH18 | Enterprise integrations | Secure, reliable provider-specific exchange | Integration code and adapters exist | Verify provider credentials, retries, idempotency, webhook authenticity and health | P1 | EXTERNAL_DEPENDENCY_REQUIRED | No provider-level execution in this phase | Provider sandbox credentials and endpoints |
+| CLM-PH19 | Audit and evidence | Tamper resistance and attributable records | Database triggers, audit tests, and event code exist | Validate external evidence anchoring and production retention controls | P0 | PARTIALLY_IMPLEMENTED | Node scenario H and PostgreSQL live SQL audit/RLS suite passed on scratch DB | External WORM verification and deployment-level evidence |
+| CLM-PH20 | Standards and compliance mapping | Correct applicability and no fabricated certification | Standards and compliance registers exist | Verify authoritative versions, legal applicability, control mappings, and evidence freshness | P1 | DOCUMENTED_ONLY | Existing documents reviewed, not independently revalidated | Standards source review and control-level evidence |
+| CLM-PH21 | DevOps / DevSecOps / GitOps | Reproducible, secure build and deployment | CI workflow and deployment assets exist; shell syntax checks passed | Execute CI, image scans, IaC validation, deployment, and provenance checks | P0 | IMPLEMENTED_BUT_UNVERIFIED | Local shell syntax only; remote CI not run | Runner execution and deployment validation |
+| CLM-PH22 | Observability and SRE | Detect and operate service health reliably | Monitoring and observability assets exist | Verify telemetry, alerting, SLOs, incident and runbook behavior | P1 | PARTIALLY_IMPLEMENTED | No live telemetry validation | Running observability stack and alert exercises |
+| CLM-PH23 | Performance and scalability | Meet measured service objectives | Performance claims exist in legacy reports | Define workload and targets; run representative load tests | P1 | DOCUMENTED_ONLY | No current benchmark evidence | Approved SLOs and load-test environment |
+| CLM-PH24 | Testing and security verification | Reproducible quality and negative security tests | Node suites and CI config exist | Run auth, API, crypto, security, accessibility, and regression suites | P0 | PARTIALLY_IMPLEMENTED | Node suites and three Go module vet/test/build checks passed; DB suites passed on PostgreSQL 18.6 | PostgreSQL 15 CI, race detector, provider/auth/API/security scans, accessibility |
+| CLM-PH25 | Disaster recovery / production validation | Demonstrate recoverability and operational readiness | DR and deployment documents exist | Execute backup/restore, failover, recovery timing, and staging release gates | P0 | DOCUMENTED_ONLY | No current DR or staging exercise | Isolated staging infrastructure and authorization |
+| CLM-PH26 | Independent engineering audit | Independent evidence-based final release decision | Historical audit reports exist | Re-review final code, test evidence, residual risk, and release gates independently | P0 | MISSING | No independent audit performed in this execution | Complete implementation evidence and independent reviewer |
+
+## Release gates
+
+| Gate | Current status | Evidence required to pass |
+|---|---|---|
+| Repository and architecture | PARTIALLY_IMPLEMENTED | Current inventory and architecture verified against code and runtime |
+| Application functionality | PARTIALLY_IMPLEMENTED | Persisted API and UI workflows pass acceptance tests |
+| Contract and certificate lifecycle | PARTIALLY_IMPLEMENTED | Backend lifecycle and real certificate workflows pass |
+| Database and tenant isolation | PARTIALLY_IMPLEMENTED | Go repository tests and SQL RLS suites pass on PostgreSQL 18.6; supported PostgreSQL 15 CI and broader application/API isolation remain open |
+| Identity and access management | PARTIALLY_IMPLEMENTED | Live identity and negative authorization tests pass |
+| Cryptography and PKI | EXTERNAL_DEPENDENCY_REQUIRED | Real KMS/HSM and timestamp provider validation |
+| Security and threat verification | PARTIALLY_IMPLEMENTED | Current security review and control-specific tests |
+| AI governance | PARTIALLY_IMPLEMENTED | Actual provider/data-governance verification or explicit non-provider scope |
+| Enterprise integrations | EXTERNAL_DEPENDENCY_REQUIRED | Provider sandbox tests with production-like auth and failure modes |
+| Standards and compliance | DOCUMENTED_ONLY | Applicable controls mapped to verified evidence; no certification claim |
+| DevOps and deployment | IMPLEMENTED_BUT_UNVERIFIED | Reproducible CI and authorized staging deployment |
+| Observability and reliability | PARTIALLY_IMPLEMENTED | Running telemetry, alerts, and recovery evidence |
+| Performance and scalability | DOCUMENTED_ONLY | Measured workload against approved objectives |
+| Disaster recovery | DOCUMENTED_ONLY | Executed restore/failover exercise with measured RPO/RTO |
+| Production readiness | FAILED_VERIFICATION | All critical gates passed and release owner approval recorded |

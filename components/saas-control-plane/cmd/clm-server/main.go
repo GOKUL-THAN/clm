@@ -224,6 +224,7 @@ func buildTLSConfig(cfg *config.ServerConfig) (*tls.Config, error) {
 		return nil, fmt.Errorf("unsupported TLS client_auth %q", cfg.TLS.ClientAuth)
 	}
 	if tlsConfig.ClientAuth != tls.NoClientCert {
+		// #nosec G304 G703 -- this path comes from trusted local server configuration.
 		pem, err := os.ReadFile(cfg.TLS.ClientCAPath)
 		if err != nil {
 			return nil, fmt.Errorf("reading gateway client CA bundle: %w", err)

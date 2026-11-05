@@ -265,6 +265,7 @@ func (r *SatelliteRepository) ClaimCommands(ctx context.Context, satelliteID uui
 		return nil, err
 	}
 	until := time.Now().UTC().Add(leaseDuration)
+	// #nosec G202 -- returned column names are fixed constants, not caller input.
 	rows, err := tx.QueryContext(ctx, `WITH candidates AS (
 		SELECT id FROM satellite_commands WHERE satellite_id=$1 AND attempts<max_attempts AND
 		((status='queued' AND available_at<=NOW()) OR (status IN ('leased','running') AND lease_until<NOW()))

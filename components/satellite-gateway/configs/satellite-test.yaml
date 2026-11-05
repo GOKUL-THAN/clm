@@ -41,6 +41,10 @@ discovery:
 
 state:
   dir: ""
+file_storage:
+  allowed_roots:
+    - "/tmp/clm-satellite-test"
+  tenant_roots: {}
 commands:
   poll_interval: "100ms"
   timeout: "5s"

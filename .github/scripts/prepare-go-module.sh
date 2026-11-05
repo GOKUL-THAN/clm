@@ -37,6 +37,13 @@ stage_shared_gateway_source() {
     if [[ ! -d "$DESTINATION/pkg" ]]; then
         cp -R "$GATEWAY/pkg" "$DESTINATION/"
     fi
+    stage_control_plane_shared_models
+}
+
+stage_control_plane_shared_models() {
+    mkdir -p "$DESTINATION/pkg/models"
+    cp "$CONTROL/pkg/models/audit.go" "$DESTINATION/pkg/models/"
+    cp "$CONTROL/pkg/models/cloud_account.go" "$DESTINATION/pkg/models/"
 }
 
 case "$MODULE" in
@@ -54,11 +61,13 @@ case "$MODULE" in
         mkdir -p "$DESTINATION/internal/satellite" "$DESTINATION/internal/core"
         cp -R "$GATEWAY/internal/deployment" "$DESTINATION/internal/satellite/"
         cp -R "$GATEWAY/internal/discovery" "$DESTINATION/internal/satellite/"
+        cp -R "$GATEWAY/internal/securefs" "$DESTINATION/internal/satellite/"
         rm -rf "$DESTINATION/internal/satellite/deployment/deployers/cloud"
         rm -rf "$DESTINATION/internal/satellite/discovery/scanners/cloud"
         cp "$CONTROL/internal/core/interfaces.go" "$DESTINATION/internal/core/"
         cp -R "$GATEWAY/pkg" "$DESTINATION/"
         cp "$GATEWAY/go.mod" "$DESTINATION/go.mod"
+        stage_control_plane_shared_models
         ;;
     *)
         echo "unsupported module path: $MODULE" >&2

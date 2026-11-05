@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/m2p/clm/internal/api/rest/middleware"
+	"github.com/m2p/clm/internal/core"
 	"github.com/m2p/clm/internal/saas/approval"
 )
 
@@ -21,7 +23,10 @@ func NewApprovalHandler(engine *approval.Engine) *ApprovalHandler {
 
 // ListPending handles GET /api/v1/approvals/pending
 func (h *ApprovalHandler) ListPending(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID, ok := tenantForRequest(c)
+	if !ok {
+		return
+	}
 
 	reqs, err := h.engine.ListPending(c.Request.Context(), tenantID)
 	if err != nil {
@@ -40,12 +45,20 @@ func (h *ApprovalHandler) GetRequest(c *gin.Context) {
 		return
 	}
 
-	req, err := h.engine.GetRequest(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "approval request not found"})
+	tenantID, ok := tenantForRequest(c)
+	if !ok {
 		return
 	}
 
+	req, err := h.engine.GetRequest(c.Request.Context(), tenantID, id)
+	if err != nil {
+		if errors.Is(err, core.ErrNotFound) || errors.Is(err, approval.ErrRequestNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "approval request not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get approval request"})
+		return
+	}
 	c.JSON(http.StatusOK, req)
 }
 
@@ -60,13 +73,17 @@ func (h *ApprovalHandler) Approve(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid approval ID"})
 		return
 	}
+	tenantID, ok := tenantForRequest(c)
+	if !ok {
+		return
+	}
 
 	var req approveRejectRequest
 	_ = c.ShouldBindJSON(&req)
 
 	approverID := middleware.GetUserID(c)
 
-	result, err := h.engine.Approve(c.Request.Context(), id, approverID, req.Comment)
+	result, err := h.engine.Approve(c.Request.Context(), tenantID, id, approverID, req.Comment)
 	if err != nil {
 		switch err {
 		case approval.ErrSegregationOfDuties:
@@ -93,12 +110,16 @@ func (h *ApprovalHandler) Escalate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid approval ID"})
 		return
 	}
+	tenantID, ok := tenantForRequest(c)
+	if !ok {
+		return
+	}
 
 	var req approveRejectRequest
 	_ = c.ShouldBindJSON(&req)
 
 	escalaterID := middleware.GetUserID(c)
-	result, err := h.engine.Escalate(c.Request.Context(), id, escalaterID, req.Comment)
+	result, err := h.engine.Escalate(c.Request.Context(), tenantID, id, escalaterID, req.Comment)
 	if err != nil {
 		switch err {
 		case approval.ErrAlreadyResolved:
@@ -127,7 +148,10 @@ type submitApprovalRequest struct {
 
 // Submit handles POST /api/v1/approvals
 func (h *ApprovalHandler) Submit(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID, ok := tenantForRequest(c)
+	if !ok {
+		return
+	}
 	var req submitApprovalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -161,6 +185,10 @@ func (h *ApprovalHandler) Reject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid approval ID"})
 		return
 	}
+	tenantID, ok := tenantForRequest(c)
+	if !ok {
+		return
+	}
 
 	var req approveRejectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -170,11 +198,13 @@ func (h *ApprovalHandler) Reject(c *gin.Context) {
 
 	approverID := middleware.GetUserID(c)
 
-	result, err := h.engine.Reject(c.Request.Context(), id, approverID, req.Comment)
+	result, err := h.engine.Reject(c.Request.Context(), tenantID, id, approverID, req.Comment)
 	if err != nil {
 		switch err {
 		case approval.ErrAlreadyResolved:
 			c.JSON(http.StatusConflict, gin.H{"error": "request already resolved"})
+		case approval.ErrRequestNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"error": "request not found"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reject"})
 		}

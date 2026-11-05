@@ -83,7 +83,7 @@ func (d *GCPDeployer) gcpToken(ctx context.Context, sa *serviceAccount, scope st
 
 	tokenURI := sa.TokenURI
 	if tokenURI == "" {
-		tokenURI = "https://oauth2.googleapis.com/token"
+		tokenURI = "https://oauth2.googleapis.com/token" // #nosec G101 -- fixed public OAuth token endpoint.
 	}
 
 	now := time.Now()
@@ -163,16 +163,16 @@ func (d *GCPDeployer) Deploy(ctx context.Context, req *deployers.DeployRequest) 
 	saJSON := target.Credentials["service_account_json"]
 	if strings.TrimSpace(saJSON) == "" {
 		res.Error = "service_account_json is required for a GCP target"
-		return res, fmt.Errorf(res.Error)
+		return res, fmt.Errorf("%s", res.Error)
 	}
 	var sa serviceAccount
 	if err := json.Unmarshal([]byte(saJSON), &sa); err != nil {
 		res.Error = "service_account_json is not valid JSON: " + err.Error()
-		return res, fmt.Errorf(res.Error)
+		return res, fmt.Errorf("%s", res.Error)
 	}
 	if sa.ClientEmail == "" || sa.PrivateKey == "" {
 		res.Error = "service_account_json is missing client_email or private_key"
-		return res, fmt.Errorf(res.Error)
+		return res, fmt.Errorf("%s", res.Error)
 	}
 
 	project := strings.TrimSpace(target.Credentials["project_id"])
@@ -181,7 +181,7 @@ func (d *GCPDeployer) Deploy(ctx context.Context, req *deployers.DeployRequest) 
 	}
 	if project == "" {
 		res.Error = "no project_id: supply it or use a service account key that carries one"
-		return res, fmt.Errorf(res.Error)
+		return res, fmt.Errorf("%s", res.Error)
 	}
 
 	token, err := d.gcpToken(ctx, &sa, "https://www.googleapis.com/auth/cloud-platform")
@@ -257,7 +257,7 @@ func (d *GCPDeployer) Deploy(ctx context.Context, req *deployers.DeployRequest) 
 			"SSL certificate %s was created but attaching it to proxy %s failed: %v",
 			resourceName, proxy, err)
 		res.Duration = time.Since(started)
-		return res, fmt.Errorf(res.Error)
+		return res, fmt.Errorf("%s", res.Error)
 	}
 
 	res.Success = true

@@ -103,7 +103,10 @@ func (h *CertHandler) CreateCertificate(c *gin.Context) {
 
 // ListCertificates handles GET /api/v1/certificates
 func (h *CertHandler) ListCertificates(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID, ok := tenantForRequest(c)
+	if !ok {
+		return
+	}
 
 	filter := &core.CertFilter{
 		Environment: c.Query("environment"),
@@ -132,7 +135,11 @@ func (h *CertHandler) GetCertificate(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	cert, err := h.certRepo.GetByIDForTenant(c.Request.Context(), tenantID, id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "certificate not found"})
+		if errors.Is(err, core.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "certificate not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get certificate"})
 		return
 	}
 
@@ -150,7 +157,11 @@ func (h *CertHandler) RevokeCertificate(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 	cert, err := h.certRepo.GetByIDForTenant(c.Request.Context(), tenantID, id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "certificate not found"})
+		if errors.Is(err, core.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "certificate not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get certificate"})
 		return
 	}
 

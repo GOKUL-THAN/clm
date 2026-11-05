@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"github.com/m2p/clm/internal/satellite/policy"
 	"github.com/m2p/clm/internal/satellite/secrets"
 	secretproviders "github.com/m2p/clm/internal/satellite/secrets/providers"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"github.com/m2p/clm/internal/satellite/state"
 	"github.com/m2p/clm/internal/satellite/vsatellite"
 	"github.com/m2p/clm/pkg/config"
@@ -60,29 +62,34 @@ func main() {
 		zap.String("connector_mode", cfg.ConnectorMode),
 	)
 
+	filePolicy, err := securefs.NewPolicy(cfg.FileStorage.AllowedRoots, cfg.FileStorage.TenantRoots)
+	if err != nil {
+		logger.Fatal("secure file storage policy is invalid", zap.Error(err))
+	}
+	defer func() {
+		if err := filePolicy.Close(); err != nil {
+			logger.Error("closing secure file storage policy failed", zap.Error(err))
+		}
+	}()
+
 	// Initialize crypto engine
 	cryptoEng := cryptoengine.NewEngine(logger)
 
 	// Initialize secrets store based on config
 	var secretsStore *secrets.Manager
-	switch cfg.Secrets.Provider {
-	case "aws":
-		awsStore := secretproviders.NewAWSSecretsManager(
-			cfg.Secrets.Region,
-			cfg.Secrets.KMSKeyID,
-			cfg.Secrets.Prefix,
-			logger,
-		)
-		secretsStore = secrets.NewManager(awsStore, cfg.Secrets.Prefix, logger)
-	default:
-		awsStore := secretproviders.NewAWSSecretsManager(
-			cfg.Secrets.Region,
-			cfg.Secrets.KMSKeyID,
-			cfg.Secrets.Prefix,
-			logger,
-		)
-		secretsStore = secrets.NewManager(awsStore, cfg.Secrets.Prefix, logger)
+	if !strings.EqualFold(strings.TrimSpace(cfg.Secrets.Provider), "aws") {
+		logger.Fatal("configured secrets provider is unsupported", zap.String("provider", cfg.Secrets.Provider))
 	}
+	awsStore, err := secretproviders.NewAWSSecretsManager(
+		cfg.Secrets.Region,
+		cfg.Secrets.KMSKeyID,
+		cfg.Secrets.Prefix,
+		logger,
+	)
+	if err != nil {
+		logger.Fatal("AWS Secrets Manager configuration is invalid", zap.Error(err))
+	}
+	secretsStore = secrets.NewManager(awsStore, cfg.Secrets.Prefix, logger)
 
 	// Initialize network scanner
 	ports := cfg.Discovery.Ports
@@ -119,8 +126,26 @@ func main() {
 	if env := os.Getenv("CLM_STATE_DIR"); env != "" {
 		stateDir = env
 	}
-	stateStore, err := state.New(stateDir, logger)
+	if stateDir != "" {
+		if _, _, err := filePolicy.Resolve(stateDir, ""); err != nil {
+			logger.Fatal("state directory is outside approved file storage", zap.Error(err))
+		}
+		if err := filePolicy.MkdirAll(stateDir, "", 0750); err != nil {
+			logger.Fatal("state directory is unsafe or unusable", zap.Error(err))
+		}
+	}
+	var stateRoot *os.Root
+	if stateDir != "" {
+		stateRoot, err = filePolicy.OpenDirectory(stateDir, "", 0750)
+		if err != nil {
+			logger.Fatal("opening state directory securely failed", zap.Error(err))
+		}
+	}
+	stateStore, err := state.NewWithRoot(stateDir, logger, stateRoot)
 	if err != nil {
+		if stateRoot != nil {
+			_ = stateRoot.Close()
+		}
 		logger.Fatal("state directory is unusable", zap.Error(err))
 	}
 	commandJournal, err := state.NewCommandJournal(stateStore)
@@ -183,6 +208,7 @@ func main() {
 				ChallengeType:      cfg.ACME.ChallengeType,
 				DNS01:              dnsSolver,
 				KeyDir:             filepath.Join(stateStore.Dir(), "keys"),
+				FilePolicy:         filePolicy,
 			}, logger)
 			if err != nil {
 				logger.Error("ACME could not be initialised; issuance is disabled", zap.Error(err))
@@ -217,11 +243,19 @@ func main() {
 	if stateStore.Enabled() {
 		auditDir = filepath.Join(stateStore.Dir(), "audit")
 	}
-	auditLogger, err := audit.New(auditDir, logger)
+	var auditRoot *os.Root
+	if auditDir != "" {
+		auditRoot, err = filePolicy.OpenDirectory(auditDir, "", 0750)
+		if err != nil {
+			logger.Fatal("opening audit directory securely failed", zap.Error(err))
+		}
+	}
+	auditLogger, err := audit.NewWithRoot(auditDir, logger, auditRoot)
 	if err != nil {
-		logger.Error("audit trail could not be initialised; actions taken on this "+
-			"gateway will not be recorded", zap.Error(err))
-		auditLogger, _ = audit.New("", logger) // disabled logger, safe to use nil-style
+		if auditRoot != nil {
+			_ = auditRoot.Close()
+		}
+		logger.Fatal("audit trail could not be initialized", zap.Error(err))
 	}
 
 	// Certificate policy engine: enforceable issuance rules, persisted the same
@@ -253,7 +287,7 @@ func main() {
 	// pointing one way while still letting an ACME account be registered at
 	// runtime like any other vendor.
 	ca.SetACMEBuilder(func(buildCfg ca.ACMEBuildConfig, l *zap.Logger) (ca.Provider, error) {
-		return newRuntimeACMEProvider(buildCfg, cfg.Env, l)
+		return newRuntimeACMEProvider(buildCfg, cfg.Env, filePolicy, l)
 	})
 
 	if acmeManager != nil {
@@ -318,8 +352,8 @@ func main() {
 
 	// Initialize deployment executor with deployers
 	deployExecutor := deployment.NewExecutor(logger)
-	deployExecutor.RegisterDeployer(linuxdeployer.NewLinuxDeployer(logger))
-	deployExecutor.RegisterDeployer(datadeployer.NewPostgreSQLDeployer(logger))
+	deployExecutor.RegisterDeployer(linuxdeployer.NewLinuxDeployer(logger, filePolicy))
+	deployExecutor.RegisterDeployer(datadeployer.NewPostgreSQLDeployer(logger, filePolicy))
 
 	// AWS ACM / ALB. This deployer was written but never registered, so the
 	// target type was unreachable no matter what a caller asked for. It needs AWS
@@ -352,6 +386,7 @@ func main() {
 		Environment:        cfg.Env,
 		MaxResultBytes:     cfg.Commands.MaxResultBytes,
 		NetworkRetries:     cfg.Commands.NetworkRetries,
+		FilePolicy:         filePolicy,
 	}, logger)
 	if err != nil {
 		logger.Fatal("satellite connector configuration is invalid", zap.Error(err))
@@ -393,6 +428,7 @@ func main() {
 		Audit:         auditLogger,
 		Policies:      policyStore,
 		KeyDir:        keyDir,
+		FilePolicy:    filePolicy,
 		Deployer:      deployExecutor,
 		Agents:        vsatCoordinator,
 		Logger:        logger,
@@ -414,16 +450,18 @@ func main() {
 		zap.Strings("accounts", caRegistry.Names()),
 		zap.String("default", caRegistry.Default()))
 
+	vSatelliteServer := newHTTPServer(":9090", mux)
+	portalServer := newHTTPServer(portalAddr, portalAPI.Handler())
 	go func() {
 		logger.Info("vSatellite API listening on :9090")
-		if err := http.ListenAndServe(":9090", mux); err != nil {
+		if err := vSatelliteServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("vSatellite API error", zap.Error(err))
 		}
 	}()
 	go func() {
 		logger.Info("gateway portal API listening",
 			zap.String("addr", portalAddr), zap.String("jwks", jwksURL))
-		if err := http.ListenAndServe(portalAddr, portalAPI.Handler()); err != nil {
+		if err := portalServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("gateway portal API error", zap.Error(err))
 		}
 	}()
@@ -476,6 +514,14 @@ func main() {
 		logger.Fatal("satellite runtime error", zap.Error(err))
 	}
 
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	for _, server := range []*http.Server{vSatelliteServer, portalServer} {
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("HTTP server shutdown failed", zap.String("addr", server.Addr), zap.Error(err))
+		}
+	}
+
 	// Write state synchronously on the way out, so a clean stop does not lose the
 	// last few seconds of changes sitting in the debounce window.
 	portalAPI.Inventory().FlushState()
@@ -485,14 +531,29 @@ func main() {
 	if err := portalAPI.Audit().Close(); err != nil {
 		logger.Warn("closing the audit log failed", zap.Error(err))
 	}
+	if err := stateStore.Close(); err != nil {
+		logger.Error("closing state storage failed", zap.Error(err))
+	}
 
 	logger.Info("satellite stopped")
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      2 * time.Minute,
+		IdleTimeout:       time.Minute,
+		MaxHeaderBytes:    1 << 20,
+	}
 }
 
 // newRuntimeACMEProvider enforces TLS policy using the gateway environment,
 // never the account's staging/production label. Otherwise a production gateway
 // could register an account labelled staging and disable certificate validation.
-func newRuntimeACMEProvider(buildCfg ca.ACMEBuildConfig, gatewayEnvironment string, logger *zap.Logger) (ca.Provider, error) {
+func newRuntimeACMEProvider(buildCfg ca.ACMEBuildConfig, gatewayEnvironment string, filePolicy *securefs.Policy, logger *zap.Logger) (ca.Provider, error) {
 	if buildCfg.KeyDir == "" {
 		return nil, fmt.Errorf("state.dir must be set so issued private keys can be stored")
 	}
@@ -516,7 +577,8 @@ func newRuntimeACMEProvider(buildCfg ca.ACMEBuildConfig, gatewayEnvironment stri
 		AcceptTOS: buildCfg.AcceptTOS, KeyType: buildCfg.KeyType,
 		InsecureSkipVerify: buildCfg.InsecureSkipVerify,
 		ChallengeType:      buildCfg.ChallengeType, DNS01: dnsSolver,
-		KeyDir: buildCfg.KeyDir,
+		KeyDir:     buildCfg.KeyDir,
+		FilePolicy: filePolicy,
 	}, logger)
 	if err != nil {
 		return nil, err

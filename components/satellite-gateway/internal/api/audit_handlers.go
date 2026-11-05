@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -126,7 +125,7 @@ func (s *Server) handleAuditExport(w http.ResponseWriter, r *http.Request) {
 	}
 	stamp := time.Now().UTC().Format("20060102-150405")
 
-	f, err := os.Open(s.audit.Path())
+	f, err := s.audit.OpenReader()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "reading the audit log failed: "+err.Error())
 		return

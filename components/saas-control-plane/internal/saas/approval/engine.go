@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	ErrRequestNotFound      = errors.New("approval request not found")
-	ErrAlreadyResolved      = errors.New("request already resolved")
-	ErrNotAuthorized        = errors.New("user not authorized to approve this request")
-	ErrSegregationOfDuties  = errors.New("segregation of duties: requester cannot approve their own request")
+	ErrRequestNotFound     = errors.New("approval request not found")
+	ErrAlreadyResolved     = errors.New("request already resolved")
+	ErrNotAuthorized       = errors.New("user not authorized to approve this request")
+	ErrSegregationOfDuties = errors.New("segregation of duties: requester cannot approve their own request")
 )
 
 // Engine handles the multi-level approval workflow.
@@ -106,10 +106,10 @@ func (e *Engine) SubmitRequest(ctx context.Context, tenantID uuid.UUID, req *Sub
 }
 
 // Approve approves a pending request with segregation of duties (ARC-004) and multi-tier stage progression.
-func (e *Engine) Approve(ctx context.Context, requestID uuid.UUID, approverID uuid.UUID, comment string) (*models.ApprovalRequest, error) {
-	req, err := e.repo.GetByID(ctx, requestID)
+func (e *Engine) Approve(ctx context.Context, tenantID, requestID, approverID uuid.UUID, comment string) (*models.ApprovalRequest, error) {
+	req, err := e.repo.GetByID(ctx, tenantID, requestID)
 	if err != nil {
-		return nil, ErrRequestNotFound
+		return nil, approvalLookupError(err)
 	}
 
 	if req.Status != models.ApprovalPending {
@@ -182,10 +182,10 @@ func (e *Engine) Approve(ctx context.Context, requestID uuid.UUID, approverID uu
 }
 
 // Escalate manually escalates a pending approval request to the next tier or executive review.
-func (e *Engine) Escalate(ctx context.Context, requestID uuid.UUID, escalaterID uuid.UUID, reason string) (*models.ApprovalRequest, error) {
-	req, err := e.repo.GetByID(ctx, requestID)
+func (e *Engine) Escalate(ctx context.Context, tenantID, requestID, escalaterID uuid.UUID, reason string) (*models.ApprovalRequest, error) {
+	req, err := e.repo.GetByID(ctx, tenantID, requestID)
 	if err != nil {
-		return nil, ErrRequestNotFound
+		return nil, approvalLookupError(err)
 	}
 
 	if req.Status != models.ApprovalPending {
@@ -214,10 +214,10 @@ func (e *Engine) Escalate(ctx context.Context, requestID uuid.UUID, escalaterID 
 }
 
 // Reject rejects a pending request.
-func (e *Engine) Reject(ctx context.Context, requestID uuid.UUID, approverID uuid.UUID, reason string) (*models.ApprovalRequest, error) {
-	req, err := e.repo.GetByID(ctx, requestID)
+func (e *Engine) Reject(ctx context.Context, tenantID, requestID, approverID uuid.UUID, reason string) (*models.ApprovalRequest, error) {
+	req, err := e.repo.GetByID(ctx, tenantID, requestID)
 	if err != nil {
-		return nil, ErrRequestNotFound
+		return nil, approvalLookupError(err)
 	}
 
 	if req.Status != models.ApprovalPending {
@@ -250,8 +250,15 @@ func (e *Engine) ListPending(ctx context.Context, tenantID uuid.UUID) ([]*models
 }
 
 // GetRequest returns a single approval request.
-func (e *Engine) GetRequest(ctx context.Context, id uuid.UUID) (*models.ApprovalRequest, error) {
-	return e.repo.GetByID(ctx, id)
+func (e *Engine) GetRequest(ctx context.Context, tenantID, id uuid.UUID) (*models.ApprovalRequest, error) {
+	return e.repo.GetByID(ctx, tenantID, id)
+}
+
+func approvalLookupError(err error) error {
+	if errors.Is(err, core.ErrNotFound) || errors.Is(err, ErrRequestNotFound) {
+		return ErrRequestNotFound
+	}
+	return err
 }
 
 // CheckExpired checks for SLA-breached requests and escalates them.
@@ -289,7 +296,10 @@ func (e *Engine) CheckExpired(ctx context.Context, tenantID uuid.UUID) error {
 // evaluateRules determines the approval level based on configured rules.
 func (e *Engine) evaluateRules(ctx context.Context, tenantID uuid.UUID, req *SubmitInput) (models.ApprovalLevel, error) {
 	rules, err := e.repo.GetRules(ctx, tenantID)
-	if err != nil || len(rules) == 0 {
+	if err != nil {
+		return "", err
+	}
+	if len(rules) == 0 {
 		// Default rules if none configured
 		return e.defaultRuleEval(req), nil
 	}

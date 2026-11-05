@@ -12,7 +12,6 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -54,18 +53,18 @@ type ComplianceFinding struct {
 
 // ComplianceSummary provides executive-level compliance posture metrics.
 type ComplianceSummary struct {
-	EvaluatedAt       time.Time            `json:"evaluated_at"`
-	OverallScore      int                  `json:"overall_score"` // 0 - 100
-	OverallGrade      string               `json:"overall_grade"` // A+, A, B, C, D, F
-	FrameworkScores   map[string]int       `json:"framework_scores"`
-	TotalCertificates int                  `json:"total_certificates"`
-	CompliantCerts    int                  `json:"compliant_certs"`
-	NonCompliantCerts int                  `json:"non_compliant_certs"`
-	CriticalFindings  int                  `json:"critical_findings"`
-	HighFindings      int                  `json:"high_findings"`
-	MediumFindings    int                  `json:"medium_findings"`
-	Findings          []ComplianceFinding  `json:"findings"`
-	IntegrityHash     string               `json:"integrity_hash"`
+	EvaluatedAt       time.Time           `json:"evaluated_at"`
+	OverallScore      int                 `json:"overall_score"` // 0 - 100
+	OverallGrade      string              `json:"overall_grade"` // A+, A, B, C, D, F
+	FrameworkScores   map[string]int      `json:"framework_scores"`
+	TotalCertificates int                 `json:"total_certificates"`
+	CompliantCerts    int                 `json:"compliant_certs"`
+	NonCompliantCerts int                 `json:"non_compliant_certs"`
+	CriticalFindings  int                 `json:"critical_findings"`
+	HighFindings      int                 `json:"high_findings"`
+	MediumFindings    int                 `json:"medium_findings"`
+	Findings          []ComplianceFinding `json:"findings"`
+	IntegrityHash     string              `json:"integrity_hash"`
 }
 
 // CertAuditRecord provides the minimal certificate properties evaluated by compliance.

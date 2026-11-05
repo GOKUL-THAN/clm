@@ -50,14 +50,14 @@ func (s *Server) handleMultiCloudSyncRun(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Gather inventory certificates for sync
-	allCerts := s.inventory.ListCertificates()
+	allCerts := s.inventory.ListCerts()
 	descriptors := make([]sync.CertificateDescriptor, 0, len(allCerts))
 	for _, c := range allCerts {
 		descriptors = append(descriptors, sync.CertificateDescriptor{
 			ID:       c.ID,
 			Domain:   c.Domain,
 			SANs:     c.SANs,
-			CertPEM:  c.CertPEM,
+			CertPEM:  c.ChainPEM,
 			NotAfter: c.NotAfter,
 		})
 	}

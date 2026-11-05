@@ -16,6 +16,7 @@ func TestCommandJournalSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer store.Close()
 	journal, err := NewCommandJournal(store)
 	if err != nil {
 		t.Fatal(err)
@@ -57,6 +58,7 @@ func TestCommandJournalCorruptionFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer store.Close()
 	if err := os.WriteFile(filepath.Join(dir, commandCollection+".json"), []byte("not-json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -92,6 +94,7 @@ func TestCommandJournalDeleteSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer store.Close()
 	journal, err := NewCommandJournal(store)
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +120,7 @@ func TestCommandJournalConcurrentWritesSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer store.Close()
 	journal, err := NewCommandJournal(store)
 	if err != nil {
 		t.Fatal(err)

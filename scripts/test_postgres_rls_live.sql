@@ -44,9 +44,28 @@ WHERE relname IN (
     'contract_approvals', 'procurement_purchase_orders', 'procurement_goods_receipts',
     'procurement_supplier_invoices', 'procurement_three_way_matches', 'satellite_enclave_keys',
     'contract_versions', 'contract_negotiations', 'contract_redlines', 'contract_signatures',
-    'contract_obligations', 'contract_risks', 'contract_cryptographic_envelopes'
+    'contract_obligations', 'contract_risks', 'contract_cryptographic_envelopes',
+    'approval_requests', 'approval_rules', 'certificates'
 )
 ORDER BY relname;
+
+DO $$
+DECLARE
+    table_name text;
+BEGIN
+    FOREACH table_name IN ARRAY ARRAY['approval_requests', 'approval_rules', 'certificates'] LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema()
+                AND c.relname = table_name
+                AND c.relrowsecurity
+                AND c.relforcerowsecurity
+        ) THEN
+            RAISE EXCEPTION 'RLS and FORCE RLS must both be enabled for %', table_name;
+        END IF;
+    END LOOP;
+END $$;
 
 -- ------------------------------------------------------------------------------
 -- 2. Tenant Alpha Isolated Operations
@@ -57,6 +76,178 @@ VALUES
     ('a0000000-0000-0000-0000-000000000001', 'Tenant Alpha Corp', 'tenant-alpha'),
     ('b0000000-0000-0000-0000-000000000002', 'Tenant Beta LLC', 'tenant-beta')
 ON CONFLICT (id) DO NOTHING;
+
+BEGIN;
+SELECT set_config('app.current_tenant_id', 'a0000000-0000-0000-0000-000000000001', true);
+INSERT INTO users (id, tenant_id, email, name, role, status, password_hash)
+VALUES (
+    'a0000000-0000-0000-0000-000000000011',
+    'a0000000-0000-0000-0000-000000000001',
+    'rls-approval-alpha@example.invalid',
+    'RLS Approval Alpha',
+    'approver',
+    'active',
+    'test-only'
+)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO approval_requests (
+    id, tenant_id, request_type, level, status, requested_by, justification,
+    payload, estimated_cost, sla_deadline
+)
+VALUES (
+    'd0000000-0000-0000-0000-000000000001',
+    'a0000000-0000-0000-0000-000000000001',
+    'cert_create', 'L1', 'pending',
+    'a0000000-0000-0000-0000-000000000011',
+    'RLS tenant isolation test', '{}', 0, NOW() + interval '1 day'
+)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO approval_rules (id, tenant_id, name, level, priority)
+VALUES (
+    'e0000000-0000-0000-0000-000000000011',
+    'a0000000-0000-0000-0000-000000000001',
+    'RLS Alpha approval rule', 'L1', 1
+)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO certificates (id, tenant_id, domain, type, status, key_algorithm, environment)
+VALUES (
+    'f0000000-0000-0000-0000-000000000001',
+    'a0000000-0000-0000-0000-000000000001',
+    'rls-approval-alpha.example.invalid', 'x509', 'active', 'ECDSA-P256', 'test'
+)
+ON CONFLICT (id) DO NOTHING;
+DO $$
+DECLARE
+    visible_count integer;
+BEGIN
+    SELECT count(*) INTO visible_count
+    FROM certificates
+    WHERE id = 'f0000000-0000-0000-0000-000000000001';
+    IF visible_count <> 1 THEN
+        RAISE EXCEPTION 'Certificate RLS blocked the owning tenant from reading its certificate';
+    END IF;
+END $$;
+COMMIT;
+
+BEGIN;
+SELECT set_config('app.current_tenant_id', 'b0000000-0000-0000-0000-000000000002', true);
+INSERT INTO users (id, tenant_id, email, name, role, status, password_hash)
+VALUES (
+    'b0000000-0000-0000-0000-000000000012',
+    'b0000000-0000-0000-0000-000000000002',
+    'rls-approval-beta@example.invalid',
+    'RLS Approval Beta',
+    'approver',
+    'active',
+    'test-only'
+)
+ON CONFLICT (id) DO NOTHING;
+COMMIT;
+
+-- ------------------------------------------------------------------------------
+-- Approval RLS: tenant access and write enforcement
+-- ------------------------------------------------------------------------------
+\echo '>>> [TEST 2A] Approval RLS blocks cross-tenant read, update, delete, and insert <<<'
+BEGIN;
+SELECT set_config('app.current_tenant_id', 'b0000000-0000-0000-0000-000000000002', true);
+DO $$
+DECLARE
+    visible_count integer;
+    affected_count integer;
+BEGIN
+    SELECT count(*) INTO visible_count
+    FROM approval_requests
+    WHERE id = 'd0000000-0000-0000-0000-000000000001';
+    IF visible_count <> 0 THEN
+        RAISE EXCEPTION 'Approval RLS leaked % cross-tenant requests', visible_count;
+    END IF;
+
+    SELECT count(*) INTO visible_count
+    FROM approval_rules
+    WHERE id = 'e0000000-0000-0000-0000-000000000011';
+    IF visible_count <> 0 THEN
+        RAISE EXCEPTION 'Approval RLS leaked % cross-tenant rules', visible_count;
+    END IF;
+
+    SELECT count(*) INTO visible_count
+    FROM certificates
+    WHERE id = 'f0000000-0000-0000-0000-000000000001';
+    IF visible_count <> 0 THEN
+        RAISE EXCEPTION 'Certificate RLS leaked % cross-tenant certificates', visible_count;
+    END IF;
+
+    UPDATE approval_requests
+    SET comment = 'cross-tenant update attempt'
+    WHERE id = 'd0000000-0000-0000-0000-000000000001';
+    GET DIAGNOSTICS affected_count = ROW_COUNT;
+    IF affected_count <> 0 THEN
+        RAISE EXCEPTION 'Approval RLS allowed cross-tenant update';
+    END IF;
+
+    DELETE FROM approval_requests
+    WHERE id = 'd0000000-0000-0000-0000-000000000001';
+    GET DIAGNOSTICS affected_count = ROW_COUNT;
+    IF affected_count <> 0 THEN
+        RAISE EXCEPTION 'Approval RLS allowed cross-tenant delete';
+    END IF;
+
+    UPDATE certificates
+    SET status = 'revoked'
+    WHERE id = 'f0000000-0000-0000-0000-000000000001';
+    GET DIAGNOSTICS affected_count = ROW_COUNT;
+    IF affected_count <> 0 THEN
+        RAISE EXCEPTION 'Certificate RLS allowed cross-tenant update';
+    END IF;
+
+    DELETE FROM certificates
+    WHERE id = 'f0000000-0000-0000-0000-000000000001';
+    GET DIAGNOSTICS affected_count = ROW_COUNT;
+    IF affected_count <> 0 THEN
+        RAISE EXCEPTION 'Certificate RLS allowed cross-tenant delete';
+    END IF;
+
+    BEGIN
+        INSERT INTO approval_rules (id, tenant_id, name, level, priority)
+        VALUES (
+            'e0000000-0000-0000-0000-000000000012',
+            'a0000000-0000-0000-0000-000000000001',
+            'Cross-tenant rule insert attempt', 'L1', 1
+        );
+        RAISE EXCEPTION 'Approval RLS allowed cross-tenant rule insert';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'SUCCESS: cross-tenant approval rule insert blocked by RLS';
+    END;
+
+    BEGIN
+        INSERT INTO approval_requests (
+            id, tenant_id, request_type, level, status, requested_by, justification,
+            payload, estimated_cost, sla_deadline
+        )
+        VALUES (
+            'd0000000-0000-0000-0000-000000000002',
+            'a0000000-0000-0000-0000-000000000001',
+            'cert_create', 'L1', 'pending',
+            'b0000000-0000-0000-0000-000000000012',
+            'cross-tenant insert attempt', '{}', 0, NOW() + interval '1 day'
+        );
+        RAISE EXCEPTION 'Approval RLS allowed cross-tenant insert';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'SUCCESS: cross-tenant approval insert blocked by RLS';
+    END;
+
+    BEGIN
+        INSERT INTO certificates (id, tenant_id, domain, type, status, key_algorithm, environment)
+        VALUES (
+            'f0000000-0000-0000-0000-000000000002',
+            'a0000000-0000-0000-0000-000000000001',
+            'cross-tenant.example.invalid', 'x509', 'pending', 'ECDSA-P256', 'test'
+        );
+        RAISE EXCEPTION 'Certificate RLS allowed cross-tenant insert';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'SUCCESS: cross-tenant certificate insert blocked by RLS';
+    END;
+END $$;
+COMMIT;
 
 BEGIN;
 SELECT set_config('app.current_tenant_id', 'a0000000-0000-0000-0000-000000000001', true);
@@ -98,17 +289,69 @@ COMMIT;
 BEGIN;
 SELECT count(*) AS visible_without_tenant_context FROM contracts;
 -- Must return 0 rows (RLS fails closed when app.current_tenant_id is NULL/empty)
+DO $$
+DECLARE
+    visible_count integer;
+BEGIN
+    SELECT count(*) INTO visible_count
+    FROM approval_requests
+    WHERE id = 'd0000000-0000-0000-0000-000000000001';
+    IF visible_count <> 0 THEN
+        RAISE EXCEPTION 'Approval RLS exposed % requests without tenant context', visible_count;
+    END IF;
+
+    SELECT count(*) INTO visible_count
+    FROM certificates
+    WHERE id = 'f0000000-0000-0000-0000-000000000001';
+    IF visible_count <> 0 THEN
+        RAISE EXCEPTION 'Certificate RLS exposed % certificates without tenant context', visible_count;
+    END IF;
+
+    BEGIN
+        INSERT INTO approval_requests (
+            id, tenant_id, request_type, level, status, requested_by, justification,
+            payload, estimated_cost, sla_deadline
+        )
+        VALUES (
+            'd0000000-0000-0000-0000-000000000003',
+            'a0000000-0000-0000-0000-000000000001',
+            'cert_create', 'L1', 'pending',
+            'a0000000-0000-0000-0000-000000000011',
+            'missing tenant context insert attempt', '{}', 0, NOW() + interval '1 day'
+        );
+        RAISE EXCEPTION 'Approval RLS allowed insert without tenant context';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'SUCCESS: approval insert without tenant context blocked by RLS';
+    END;
+
+    BEGIN
+        INSERT INTO certificates (id, tenant_id, domain, type, status, key_algorithm, environment)
+        VALUES (
+            'f0000000-0000-0000-0000-000000000003',
+            'a0000000-0000-0000-0000-000000000001',
+            'missing-context.example.invalid', 'x509', 'pending', 'ECDSA-P256', 'test'
+        );
+        RAISE EXCEPTION 'Certificate RLS allowed insert without tenant context';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'SUCCESS: certificate insert without tenant context blocked by RLS';
+    END;
+END $$;
 
 -- Attempt INSERT without tenant context
 DO $$
+DECLARE
+    insert_succeeded boolean := false;
 BEGIN
     BEGIN
         INSERT INTO contracts (id, tenant_id, contract_number, title, counterparty_name, effective_date, expiration_date)
         VALUES (gen_random_uuid(), 'a0000000-0000-0000-0000-000000000001', 'CNT-LEAK-01', 'Leaked Contract', 'Counterparty', NOW(), NOW() + interval '1 year');
-        RAISE EXCEPTION 'RLS Failure: Insert succeeded without tenant context!';
-    EXCEPTION WHEN OTHERS THEN
-        RAISE NOTICE 'SUCCESS: Unauthenticated insert blocked by RLS policy: %', SQLERRM;
+        insert_succeeded := true;
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'SUCCESS: Unauthenticated insert blocked by RLS policy';
     END;
+    IF insert_succeeded THEN
+        RAISE EXCEPTION 'RLS Failure: Insert succeeded without tenant context!';
+    END IF;
 END $$;
 ROLLBACK;
 

@@ -151,7 +151,7 @@ func (s *NetworkScanner) probeTLS(ctx context.Context, host string, port int) (*
 
 	dialer := &net.Dialer{Timeout: s.timeout}
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
-		InsecureSkipVerify: true, // We want to discover all certs, even invalid ones
+		InsecureSkipVerify: true, // #nosec G402 -- discovery must collect expired and self-signed certificates without sending credentials.
 	})
 	if err != nil {
 		return nil, err // Host not responding on this port
@@ -180,7 +180,7 @@ func probeTLSSNI(dialAddr, serverName string, port int, timeout time.Duration) (
 	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
 		// Discovery must report certificates that are expired, self-signed or
 		// misissued, so verification is intentionally not performed here.
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402 -- this probe only retrieves certificate metadata.
 		ServerName:         serverName,
 	})
 	if err != nil {

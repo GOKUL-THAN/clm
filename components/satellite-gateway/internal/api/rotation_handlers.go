@@ -7,7 +7,6 @@ import (
 
 	"github.com/m2p/clm/internal/satellite/audit"
 	"github.com/m2p/clm/internal/satellite/deployment/sync"
-	"go.uber.org/zap"
 )
 
 // handleRotationStatus returns current auto-rotation posture and queue.
@@ -21,7 +20,7 @@ func (s *Server) handleRotationStatus(w http.ResponseWriter, r *http.Request) {
 		}, s.logger)
 	}
 
-	certs := s.inventory.ListCertificates()
+	certs := s.inventory.ListCerts()
 	candidates := make([]sync.RotationCandidate, 0, len(certs))
 	for _, c := range certs {
 		daysLeft := int(c.NotAfter.Sub(s.startedAt).Hours() / 24)
@@ -49,7 +48,7 @@ func (s *Server) handleRotationExecute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	certID := r.PathValue("id")
-	cert, ok := s.inventory.GetCertificate(certID)
+	cert, ok := s.inventory.Get(certID)
 	if !ok {
 		writeErr(w, http.StatusNotFound, "certificate "+certID+" not found")
 		return
@@ -95,4 +94,3 @@ func (s *Server) handleRotationExecute(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, rec)
 }
-

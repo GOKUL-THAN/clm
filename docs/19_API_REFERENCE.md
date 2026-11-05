@@ -59,13 +59,32 @@
 
 #### 2.5 Multi-Tier Approvals & Segregation of Duties
 * **`GET /api/v1/approvals/pending`**
+  * *Tenant scope:* Uses the authenticated tenant; platform admins may select a tenant with `?tenant_id=<UUID>`.
   * *Response 200 OK:* `{ "approvals": [...] }`
+* **`GET /api/v1/approvals/:id`**
+  * *Tenant scope:* The ID lookup is constrained by the authenticated or explicitly authorized tenant; a request from another tenant returns 404.
+  * *Errors:* Returns 404 only when no request exists in that tenant; database or repository failures return 500.
+* **`POST /api/v1/approvals`**
+  * *Tenant scope:* Creates the request only in the authenticated tenant, or a platform-admin-selected tenant validated by `?tenant_id=<UUID>`.
 * **`POST /api/v1/approvals/:id/approve`**
-  * *Body:* `{ "approver_id": "usr-01", "comment": "Approved" }`
+  * *Body:* `{ "comment": "Approved" }`; the approver identity comes from the authenticated token.
   * *Response 200 OK:* `{ "message": "Approval recorded", "approval": { ... } }`
   * *Response 403 Forbidden:* `{ "error": "segregation of duties: requester cannot approve own request" }`
+  * *Tenant scope:* Request lookup and update both include the authorized tenant ID.
+* **`POST /api/v1/approvals/:id/reject`** and **`POST /api/v1/approvals/:id/escalate`**
+  * *Tenant scope:* Request lookup and update are constrained to the authorized tenant.
 
-#### 2.6 Post-Execution Obligations & Financials
+Approval endpoint tenant scoping is enforced in the handler, tenant-qualified repository queries, and PostgreSQL RLS policies for `approval_requests` and `approval_rules`. Repository operations set tenant context transaction-locally.
+
+#### 2.6 Certificate Inventory & Revocation
+* **`GET /api/v1/certificates/:id`**
+  * *Tenant scope:* The certificate lookup is constrained to the authenticated tenant.
+  * *Errors:* Returns 404 only when the certificate is absent from that tenant; repository failures return 500.
+* **`POST /api/v1/certificates/:id/revoke`**
+  * *Tenant scope:* The certificate lookup and update use the authenticated tenant.
+  * *Errors:* Returns 404 only when the certificate is absent from that tenant; repository failures return 500.
+
+#### 2.7 Post-Execution Obligations & Financials
 * **`GET /api/v1/obligations`**
   * *Response 200 OK:* `{ "obligations": [...] }`
 * **`POST /api/v1/obligations`**
@@ -75,12 +94,11 @@
   * *Body:* `{ "purchase_order_id": "PO-1", "invoice_amount": 87500.00 }`
   * *Response 200 OK:* `{ "status": "matched", "verified": true }`
 
-#### 2.7 AI Contract Intelligence
+#### 2.8 AI Contract Intelligence
 * **`POST /api/v1/ai-contracts/:contractId/ask`**
   * *Body:* `{ "question": "What are the payment terms?" }`
   * *Response 200 OK:* `{ "answer": "Net 30 days.", "cited_clauses": ["Section 2: Commercial Terms"] }`
 
-#### 2.8 Executive Analytics & Reporting
+#### 2.9 Executive Analytics & Reporting
 * **`GET /api/v1/clm-reports/summary`**
   * *Response 200 OK:* `{ "cycle_time": { "average_days": 14.2 }, "portfolio_health": { "score": 92 } }`
-

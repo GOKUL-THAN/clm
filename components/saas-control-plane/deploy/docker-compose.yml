@@ -15,6 +15,8 @@ services:
       - ../internal/store/postgres/migrations/002_sso_fields.sql:/docker-entrypoint-initdb.d/002_sso_fields.sql
       - ../internal/store/postgres/migrations/003_tenant_security.sql:/docker-entrypoint-initdb.d/003_tenant_security.sql
       - ../internal/store/postgres/migrations/004_secure_command_transport.sql:/docker-entrypoint-initdb.d/004_secure_command_transport.sql
+      - ./migrations/009_approval_requests_rls.sql:/docker-entrypoint-initdb.d/009_approval_requests_rls.sql
+      - ./migrations/010_certificates_rls.sql:/docker-entrypoint-initdb.d/010_certificates_rls.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U clm"]
       interval: 5s

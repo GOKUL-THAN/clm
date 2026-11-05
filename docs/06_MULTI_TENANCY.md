@@ -47,3 +47,14 @@ CREATE POLICY tenant_isolation_contracts ON contracts
 Tenant isolation is verified continuously in CI/CD via automated attack scenarios:
 * **Scenario C Verification:** A request authenticated under Tenant B attempting to access contract records belonging to Tenant A returns zero results, guaranteeing absence of cross-tenant leakage.
 
+#### Approval and certificate coverage
+
+The approval API scopes detail reads and decision mutations with the authenticated tenant ID in repository queries. Tenant selection for list and create operations is also checked with `RequireTenantAccess`; cross-tenant object IDs return not found. Migration `009_approval_requests_rls.sql` enables and forces RLS on both `approval_requests` and `approval_rules`.
+
+Certificate operations likewise establish tenant context transaction-locally. Migration `010_certificates_rls.sql` enables and forces RLS on `certificates`. The tenant-scoped repository list rejects a nil tenant; only trusted monitoring and renewal workers use the explicit all-tenant scan, which enumerates tenant IDs and queries each tenant in a separate transaction-local context. CI is configured to check the repositories as `clm_app_role`, and SQL suites verify application-role and table-owner visibility boundaries. Live database execution remains required evidence; a passing application mock suite is not proof of RLS behavior.
+
+### Satellite filesystem destinations
+
+The satellite gateway and each vSatellite agent apply a default-deny filesystem policy from `file_storage.allowed_roots` and `file_storage.tenant_roots` in their respective YAML configurations. Roots must already exist, be absolute and canonical, and not group/world writable; the processes never create configured roots. A configured tenant root replaces the gateway-wide roots for that tenant. File deployments require a signed `tenant_id` claim; a caller-supplied path is accepted only when it resolves beneath that tenant's approved roots. Private keys are stored with mode `0600`, and file operations use rooted directory handles to prevent path traversal and symlink escapes. Filesystem ownership and POSIX mode enforcement is supported on Linux; other platforms fail closed at startup until equivalent ACL verification is implemented.
+
+Replacing an existing local certificate or key requires `replace_existing: true` and an authenticated fleet-management role; the API computes the deployer's replacement capability and does not deserialize it from client JSON. The authorization is audited. Production operators must provision and protect the configured roots before startup. The AWS secrets provider uses AWS Secrets Manager and the configured `kms_key_id`; unavailable AWS operations return errors rather than success-shaped references.

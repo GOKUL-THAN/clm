@@ -2,12 +2,51 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestDatabaseConfigDSNEscapesCredentialsAndDatabaseName(t *testing.T) {
+	cfg := DatabaseConfig{
+		Host:     "db.example.test",
+		Port:     5432,
+		User:     "clm user",
+		Password: "p@ss:/?&",
+		DBName:   "clm database/name",
+		SSLMode:  "verify-full",
+	}
+
+	connectionURL, err := url.Parse(cfg.DSN())
+	if err != nil {
+		t.Fatalf("parse database DSN: %v", err)
+	}
+	if connectionURL.Scheme != "postgres" {
+		t.Fatalf("DSN scheme = %q, want postgres", connectionURL.Scheme)
+	}
+	if connectionURL.Hostname() != cfg.Host || connectionURL.Port() != "5432" {
+		t.Fatalf("DSN host = %q:%q, want %q:5432", connectionURL.Hostname(), connectionURL.Port(), cfg.Host)
+	}
+	if username := connectionURL.User.Username(); username != cfg.User {
+		t.Fatalf("DSN username = %q, want configured username", username)
+	}
+	password, ok := connectionURL.User.Password()
+	if !ok || password != cfg.Password {
+		t.Fatal("DSN password does not match configured password")
+	}
+	if databaseName := strings.TrimPrefix(connectionURL.Path, "/"); databaseName != cfg.DBName {
+		t.Fatalf("DSN database name = %q, want configured database name", databaseName)
+	}
+	if sslMode := connectionURL.Query().Get("sslmode"); sslMode != cfg.SSLMode {
+		t.Fatalf("DSN sslmode = %q, want %q", sslMode, cfg.SSLMode)
+	}
+	if strings.Contains(cfg.DSN(), "******") {
+		t.Fatal("DSN contains the former password redaction placeholder")
+	}
+}
 
 func TestServerConfigValidate(t *testing.T) {
 	valid := ServerConfig{

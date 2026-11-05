@@ -49,6 +49,7 @@ type RenewalAttempt struct {
 // is mirrored to atomic snapshots under state.dir when persistence is enabled.
 type Certificate struct {
 	ID           string    `json:"id"`
+	TenantID     string    `json:"tenant_id,omitempty"`
 	Domain       string    `json:"domain"`
 	Type         string    `json:"type"`   // DV, OV, EV, Wildcard, discovered
 	Status       string    `json:"status"` // active, expired, expiring, pending

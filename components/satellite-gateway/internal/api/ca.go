@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/m2p/clm/internal/satellite/audit"
 	"github.com/m2p/clm/internal/satellite/ca"
 	"github.com/m2p/clm/internal/satellite/policy"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/acme"
 )
@@ -87,7 +87,7 @@ func (a *acmeAdapter) Issue(ctx context.Context, req ca.IssueRequest) (*ca.Issue
 		certID = uuid.NewString()
 	}
 
-	issued, err := a.mgr.Issue(ctx, certID, req.Domains)
+	issued, err := a.mgr.IssueForTenant(ctx, req.TenantID, certID, req.Domains)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (a *acmeAdapter) Revoke(ctx context.Context, req ca.RevokeRequest) error {
 	if req.KeyPEM == "" {
 		return fmt.Errorf("ACME revocation must be signed with the certificate's own key")
 	}
-	return a.mgr.Revoke(ctx, req.ChainPEM, req.KeyPEM, revocationReason(req.Reason))
+	return a.mgr.RevokeForTenant(ctx, req.TenantID, req.ChainPEM, req.KeyPEM, revocationReason(req.Reason))
 }
 
 // --- handlers ---
@@ -381,10 +381,12 @@ func (s *Server) handleCAIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	certID := uuid.NewString()
+	tenantID := strings.TrimSpace(callerClaims(r).TenantID)
 	issueReq := ca.IssueRequest{
 		Domains: domains, CertType: certType,
 		ValidityYears: req.ValidityYears, ContactEmail: req.ContactEmail,
 		Organization: req.Organization, DCVMethod: req.DCVMethod, CertID: certID,
+		TenantID: tenantID,
 	}
 
 	// Commercial CAs sign a CSR we supply, so generate the key pair here. The key
@@ -408,7 +410,8 @@ func (s *Server) handleCAIssue(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.inventory.Upsert(&Certificate{
 			ID: certID, Domain: domains[0], SANs: domains,
-			Type: strings.ToUpper(certType), Status: "failed", Source: "ca",
+			TenantID: tenantID,
+			Type:     strings.ToUpper(certType), Status: "failed", Source: "ca",
 			ManagedBy: account.Provider, CAName: account.Provider, CAAccount: account.Name,
 			Environment: environment, RequestedBy: callerName(r),
 			LastError: err.Error(), CreatedAt: time.Now(),
@@ -420,7 +423,7 @@ func (s *Server) handleCAIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secretRef, err := s.storeIssuedKey(certID, result, pendingKeyPEM)
+	secretRef, err := s.storeIssuedKey(certID, result, pendingKeyPEM, tenantID)
 	if err != nil {
 		s.logger.Error("storing the private key failed",
 			zap.String("cert_id", certID), zap.Error(err))
@@ -432,7 +435,8 @@ func (s *Server) handleCAIssue(w http.ResponseWriter, r *http.Request) {
 
 	cert := &Certificate{
 		ID: certID, Domain: domains[0], SANs: domains,
-		Type: strings.ToUpper(certType), Source: "ca",
+		TenantID: tenantID,
+		Type:     strings.ToUpper(certType), Source: "ca",
 		ManagedBy: account.Provider, CAName: nonEmpty(result.Issuer, account.Provider),
 		CAAccount: account.Name, CAOrderID: result.OrderID,
 		Environment: environment, RequestedBy: callerName(r),
@@ -491,11 +495,14 @@ func (s *Server) handleCAIssue(w http.ResponseWriter, r *http.Request) {
 // readKeyFile loads a stored private key for a deployment. This is the only
 // place a key is read back off disk, so the deploy path has one auditable route
 // to key material rather than several.
-func readKeyFile(path string) (string, error) {
+func (s *Server) readKeyFile(path, tenantID string) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("no key path recorded for this certificate")
 	}
-	data, err := os.ReadFile(path)
+	if s.filePolicy == nil {
+		return "", fmt.Errorf("secure file storage policy is not configured")
+	}
+	data, err := s.filePolicy.ReadFile(path, tenantID, securefs.PrivateKey)
 	if err != nil {
 		return "", err
 	}
@@ -504,7 +511,7 @@ func readKeyFile(path string) (string, error) {
 
 // storeIssuedKey puts the private key where the gateway keeps them and returns
 // its path. Providers either hand back a key to store or have stored one already.
-func (s *Server) storeIssuedKey(certID string, result *ca.IssueResult, pendingKeyPEM string) (string, error) {
+func (s *Server) storeIssuedKey(certID string, result *ca.IssueResult, pendingKeyPEM, tenantID string) (string, error) {
 	if result.KeyPath != "" {
 		return result.KeyPath, nil
 	}
@@ -519,12 +526,18 @@ func (s *Server) storeIssuedKey(certID string, result *ca.IssueResult, pendingKe
 	if s.keyDir == "" {
 		return "", fmt.Errorf("there is nowhere to store the private key: set state.dir")
 	}
-	if err := os.MkdirAll(s.keyDir, 0o700); err != nil {
+	if s.filePolicy == nil {
+		return "", fmt.Errorf("secure file storage policy is not configured")
+	}
+	path, err := s.filePolicy.DerivedPath(filepath.Dir(s.keyDir),
+		filepath.Join("keys", certID+".key"), tenantID)
+	if err != nil {
+		return "", fmt.Errorf("resolving the private key path: %w", err)
+	}
+	if err := s.filePolicy.MkdirAll(filepath.Dir(path), tenantID, 0o700); err != nil {
 		return "", fmt.Errorf("creating the key directory: %w", err)
 	}
-
-	path := filepath.Join(s.keyDir, certID+".key")
-	if err := os.WriteFile(path, []byte(keyPEM), 0o600); err != nil {
+	if err := s.filePolicy.WriteFile(path, tenantID, securefs.PrivateKey, []byte(keyPEM), false); err != nil {
 		return "", fmt.Errorf("writing the private key: %w", err)
 	}
 	return path, nil

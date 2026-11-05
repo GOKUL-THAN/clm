@@ -204,7 +204,7 @@ JWT payloads are decoded with a base64url-safe helper. A bare `atob()` throws on
 | GET | `/api/v1/vsatellites` | Fleet with per-agent queue depth, plus outstanding enrolments |
 | POST | `/api/v1/vsatellites/enroll` | Issue a single-use enrolment token and install command (admin roles) |
 | GET | `/api/v1/vsatellites/install.sh?token=` | The generated installer. Authenticated by the enrolment token, not a JWT |
-| POST | `/api/v1/vsatellites/{id}/command` | Queue `scan_cidr`, `deploy_cert`, `verify_cert`, `health_check` or `collect_inventory` |
+| POST | `/api/v1/vsatellites/{id}/command` | Queue supported `scan_cidr` and `health_check` commands; certificate deployment is disabled until tenant authorization and authenticated deployment transport are available |
 | DELETE | `/api/v1/vsatellites/{id}` | Decommission: revokes the agent secret and drops its queue |
 | DELETE | `/api/v1/vsatellites/enrollments/{token}` | Revoke an unused enrolment |
 | POST | `/api/v1/deploy` | Deploy a gateway-managed certificate by `cert_id`; target credentials are resolved by optional `credential_ref`. Inline PEM/keys and inline credentials are rejected. Returns 200 only after verification; failed verification returns 502 with rollback evidence |

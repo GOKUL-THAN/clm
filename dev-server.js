@@ -12,7 +12,6 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
 
 let featureRegistry = null;
 try {
@@ -866,7 +865,7 @@ let mockAIAnalyses = {
 };
 
 function serveStatic(baseDir, req, res) {
-    let parsedUrl = url.parse(req.url);
+    const parsedUrl = new URL(req.url, 'http://localhost');
     let filePath = path.join(baseDir, parsedUrl.pathname === '/' ? 'index.html' : parsedUrl.pathname);
 
     fs.stat(filePath, (err, stats) => {
@@ -989,7 +988,7 @@ function isSSRFSafeUrl(urlStr) {
 }
 
 function handleMockAPI(req, res) {
-    const parsed = url.parse(req.url, true);
+    const parsed = new URL(req.url, 'http://localhost');
     const pathname = parsed.pathname;
 
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1172,7 +1171,7 @@ function handleMockAPI(req, res) {
     }
 
     if (pathname === '/api/v1/counterparty-portal/session' && req.method === 'GET') {
-        const token = parsedUrl.query.token;
+        const token = parsed.searchParams.get('token');
         const valResult = counterpartyPortalEngine.validateToken(token);
         res.writeHead(valResult.valid ? 200 : 401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(valResult));
@@ -1899,9 +1898,9 @@ function handleMockAPI(req, res) {
         }
 
         if (req.method === 'GET') {
-            const statusFilter = parsed.query.status;
-            const stageFilter = parsed.query.stage;
-            const tenantFilter = parsed.query.tenant_id;
+            const statusFilter = parsed.searchParams.get('status');
+            const stageFilter = parsed.searchParams.get('stage');
+            const tenantFilter = parsed.searchParams.get('tenant_id');
             
             // Defend against BOLA / IDOR Cross-Tenant Parameter Tampering
             if (isSecurityAudit && tenantFilter && (tenantFilter === "tenant-enterprise-uat" || tenantFilter === "tenant-999-victim")) {
@@ -2288,7 +2287,7 @@ function handleMockAPI(req, res) {
     // 6. Contractual Obligations & Post-Execution SLA Tracking
     if (pathname === '/api/v1/obligations') {
         if (req.method === 'GET') {
-            const contractFilter = parsed.query.contract_id;
+            const contractFilter = parsed.searchParams.get('contract_id');
             let list = [...mockObligations];
             if (contractFilter) list = list.filter(o => o.contract_id === contractFilter);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3557,8 +3556,8 @@ function handleMockAPI(req, res) {
             res.end(JSON.stringify({ error: "Feature registry unavailable" }));
             return true;
         }
-        const domainId = parsed.query?.domain;
-        const q = (parsed.query?.q || '').toLowerCase().trim();
+        const domainId = parsed.searchParams.get('domain');
+        const q = (parsed.searchParams.get('q') || '').toLowerCase().trim();
         let list = domainId ? featureRegistry.getByDomain(domainId) : featureRegistry.getAll();
         if (q) {
             list = list.filter(f => f.name.toLowerCase().includes(q) || String(f.id).includes(q) || f.domain.toLowerCase().includes(q));

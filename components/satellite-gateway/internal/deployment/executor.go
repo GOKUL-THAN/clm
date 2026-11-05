@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/m2p/clm/internal/satellite/deployment/deployers"
@@ -14,8 +15,9 @@ import (
 
 // Executor orchestrates certificate deployments to multiple targets.
 type Executor struct {
-	deployers map[string]deployers.Deployer
-	logger    *zap.Logger
+	deployers    map[string]deployers.Deployer
+	logger       *zap.Logger
+	fileDeployMu sync.Mutex
 }
 
 // NewExecutor creates a new deployment executor.
@@ -47,6 +49,10 @@ func (e *Executor) Deploy(ctx context.Context, req *deployers.DeployRequest) (*d
 	d, ok := e.deployers[key]
 	if !ok {
 		return nil, fmt.Errorf("no deployer registered for target type: %s", key)
+	}
+	if strings.EqualFold(target.Type, "linux") || strings.EqualFold(target.Type, "postgresql") {
+		e.fileDeployMu.Lock()
+		defer e.fileDeployMu.Unlock()
 	}
 
 	// Preflight must happen before Deploy: a cloud API write or file replacement

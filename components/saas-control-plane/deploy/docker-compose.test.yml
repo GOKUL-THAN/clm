@@ -15,6 +15,8 @@ services:
       - ./migrations/003_tenant_security.sql:/docker-entrypoint-initdb.d/003_tenant_security.sql
       - ./migrations/004_secure_command_transport.sql:/docker-entrypoint-initdb.d/004_secure_command_transport.sql
       - ./init-seed.sql:/docker-entrypoint-initdb.d/005_seed.sql
+      - ./migrations/009_approval_requests_rls.sql:/docker-entrypoint-initdb.d/009_approval_requests_rls.sql
+      - ./migrations/010_certificates_rls.sql:/docker-entrypoint-initdb.d/010_certificates_rls.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U clm"]
       interval: 5s

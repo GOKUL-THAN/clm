@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,17 +11,19 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/m2p/clm/internal/satellite/deployment/deployers"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"go.uber.org/zap"
 )
 
 // PostgreSQLDeployer handles certificate deployment to PostgreSQL servers.
 type PostgreSQLDeployer struct {
 	logger *zap.Logger
+	files  *securefs.Policy
 }
 
 // NewPostgreSQLDeployer creates a new PostgreSQL deployer.
-func NewPostgreSQLDeployer(logger *zap.Logger) *PostgreSQLDeployer {
-	return &PostgreSQLDeployer{logger: logger}
+func NewPostgreSQLDeployer(logger *zap.Logger, files *securefs.Policy) *PostgreSQLDeployer {
+	return &PostgreSQLDeployer{logger: logger, files: files}
 }
 
 func (d *PostgreSQLDeployer) Name() string     { return "postgresql" }
@@ -35,9 +38,15 @@ func (d *PostgreSQLDeployer) Deploy(ctx context.Context, req *deployers.DeployRe
 	if certDir == "" {
 		certDir = "/var/lib/postgresql/certs"
 	}
+	if d.files == nil {
+		return nil, fmt.Errorf("secure file storage policy is not configured")
+	}
+	if _, _, err := d.files.Resolve(certDir, target.TenantID); err != nil {
+		return nil, err
+	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(certDir, 0750); err != nil {
+	if err := d.files.MkdirAll(certDir, target.TenantID, 0750); err != nil {
 		return &deployers.DeployResult{Success: false, Error: err.Error(), Duration: time.Since(start)}, err
 	}
 
@@ -45,26 +54,39 @@ func (d *PostgreSQLDeployer) Deploy(ctx context.Context, req *deployers.DeployRe
 	keyPath := filepath.Join(certDir, "server.key")
 
 	previousFingerprint := ""
-	if previousPEM, err := os.ReadFile(certPath); err == nil {
+	if previousPEM, err := d.files.ReadFile(certPath, target.TenantID, securefs.Certificate); err == nil {
+		if !target.AllowReplace {
+			return nil, fmt.Errorf("certificate destination exists; replacement requires authorized approval")
+		}
 		previousFingerprint, _ = deployers.LeafSHA256(previousPEM)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading previous certificate: %w", err)
 	}
-
-	// Backup existing
-	_ = os.Rename(certPath, certPath+".bak")
-	_ = os.Rename(keyPath, keyPath+".bak")
+	if _, err := d.files.ReadFile(keyPath, target.TenantID, securefs.PrivateKey); err == nil {
+		if !target.AllowReplace {
+			return nil, fmt.Errorf("private-key destination exists; replacement requires authorized approval")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading previous private key: %w", err)
+	}
+	if err := backupFile(d.files, certPath, target.TenantID, securefs.Certificate, target.AllowReplace); err != nil {
+		return nil, fmt.Errorf("backing up certificate: %w", err)
+	}
+	if err := backupFile(d.files, keyPath, target.TenantID, securefs.PrivateKey, target.AllowReplace); err != nil {
+		return nil, fmt.Errorf("backing up private key: %w", err)
+	}
 
 	// Write fullchain
 	certData := req.FullChainPEM
 	if len(certData) == 0 {
 		certData = req.CertPEM
 	}
-	if err := os.WriteFile(certPath, certData, 0640); err != nil {
-		return &deployers.DeployResult{Success: false, Error: err.Error(), Duration: time.Since(start)}, err
+	if err := d.files.WriteFile(certPath, target.TenantID, securefs.Certificate, certData, target.AllowReplace); err != nil {
+		return failedFileDeployment(ctx, d, target, start, err)
 	}
 
-	// Write key with strict permissions
-	if err := os.WriteFile(keyPath, req.KeyPEM, 0600); err != nil {
-		return &deployers.DeployResult{Success: false, Error: err.Error(), Duration: time.Since(start)}, err
+	if err := d.files.WriteFile(keyPath, target.TenantID, securefs.PrivateKey, req.KeyPEM, target.AllowReplace); err != nil {
+		return failedFileDeployment(ctx, d, target, start, fmt.Errorf("writing private key: %w", err))
 	}
 
 	// Reload PostgreSQL configuration
@@ -75,12 +97,7 @@ func (d *PostgreSQLDeployer) Deploy(ctx context.Context, req *deployers.DeployRe
 
 	if err := d.reloadPostgres(ctx, target, reloadMethod); err != nil {
 		d.logger.Error("PostgreSQL reload failed", zap.Error(err))
-		return &deployers.DeployResult{
-			Success:  false,
-			Target:   target,
-			Error:    fmt.Sprintf("reload failed: %v", err),
-			Duration: time.Since(start),
-		}, err
+		return failedFileDeployment(ctx, d, target, start, fmt.Errorf("reload failed: %w", err))
 	}
 
 	d.logger.Info("certificate deployed to PostgreSQL",
@@ -110,12 +127,16 @@ func (d *PostgreSQLDeployer) Verify(ctx context.Context, req *deployers.DeployRe
 		Kind: "adapter", Method: "postgresql-file", Adapter: d.Name(), Resource: certPath,
 		CheckedAt: time.Now().UTC(),
 	}
-	info, err := os.Stat(certPath)
+	if d.files == nil {
+		evidence.Message = "secure file storage policy is not configured"
+		return evidence, fmt.Errorf("%s", evidence.Message)
+	}
+	data, err := d.files.ReadFile(certPath, target.TenantID, securefs.Certificate)
 	if err != nil {
 		evidence.Message = err.Error()
 		return evidence, err
 	}
-	if info.Size() == 0 {
+	if len(data) == 0 {
 		err := fmt.Errorf("PostgreSQL certificate file is empty")
 		evidence.Message = err.Error()
 		return evidence, err
@@ -133,15 +154,18 @@ func (d *PostgreSQLDeployer) Rollback(ctx context.Context, target *deployers.Dep
 	if certDir == "" {
 		certDir = "/var/lib/postgresql/certs"
 	}
+	if d.files == nil {
+		return fmt.Errorf("secure file storage policy is not configured")
+	}
 
 	certPath := filepath.Join(certDir, "server.crt")
 	keyPath := filepath.Join(certDir, "server.key")
 
 	var rollbackErr error
-	if err := os.Rename(certPath+".bak", certPath); err != nil {
+	if err := restoreFile(d.files, certPath, target.TenantID, securefs.Certificate); err != nil {
 		rollbackErr = fmt.Errorf("restore certificate backup: %w", err)
 	}
-	if err := os.Rename(keyPath+".bak", keyPath); err != nil {
+	if err := restoreFile(d.files, keyPath, target.TenantID, securefs.PrivateKey); err != nil {
 		if rollbackErr != nil {
 			rollbackErr = fmt.Errorf("%v; restore key backup: %w", rollbackErr, err)
 		} else {
@@ -156,6 +180,51 @@ func (d *PostgreSQLDeployer) Rollback(ctx context.Context, target *deployers.Dep
 		}
 	}
 	return rollbackErr
+}
+
+func backupFile(files *securefs.Policy, path, tenant string, material securefs.Material, replace bool) error {
+	data, err := files.ReadFile(path, tenant, material)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			err = files.Remove(path+".bak", tenant, material)
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+		}
+		return err
+	}
+	return files.WriteFile(path+".bak", tenant, material, data, replace)
+}
+
+func restoreFile(files *securefs.Policy, path, tenant string, material securefs.Material) error {
+	data, err := files.ReadFile(path+".bak", tenant, material)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			err = files.Remove(path, tenant, material)
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		return err
+	}
+	if err := files.WriteFile(path, tenant, material, data, true); err != nil {
+		return err
+	}
+	return files.Remove(path+".bak", tenant, material)
+}
+
+func failedFileDeployment(ctx context.Context, d *PostgreSQLDeployer, target *deployers.DeployTarget, started time.Time, cause error) (*deployers.DeployResult, error) {
+	result := &deployers.DeployResult{
+		Success: false, Target: target, Error: cause.Error(),
+		RollbackAttempted: true, Duration: time.Since(started),
+	}
+	if err := d.Rollback(ctx, target); err != nil {
+		result.RollbackError = err.Error()
+		return result, fmt.Errorf("%w; rollback failed: %v", cause, err)
+	}
+	result.RollbackSuccess = true
+	return result, cause
 }
 
 func (d *PostgreSQLDeployer) reloadPostgres(ctx context.Context, target *deployers.DeployTarget, method string) error {

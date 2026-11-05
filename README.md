@@ -3,8 +3,17 @@
 > **Version:** 4.0.0  
 > **Live Demo:** [https://clm-website-1cc7.vercel.app/](https://clm-website-1cc7.vercel.app/)  
 > **GitHub:** [https://github.com/GOKUL-THAN/cmd](https://github.com/GOKUL-THAN/cmd)  
-> **Status:** Production Demo — All 476 tests passing  
+> **Status:** Demonstration / pre-production; current verification does not establish production readiness
 > **Architecture:** Zero-Trust Hybrid SaaS Control Plane + Customer In-VPC Satellite Gateway  
+
+> **Latest local verification (2026-11-06):** The staged gateway module passed
+> tests, `go vet`, and a Linux/amd64 build with Go 1.27.3 after the latest
+> vSatellite command-boundary changes. The staged SaaS and vSatellite modules
+> passed their recorded checks on 2026-11-05; SaaS database tests used a
+> disposable PostgreSQL 18.6 app-role connection. Race detection, PostgreSQL 15
+> CI, provider integrations, staging, and production remain unverified. See
+> [EXECUTION_CHECKPOINT.md](./EXECUTION_CHECKPOINT.md) and
+> [MASTER_REQUIREMENT_TRACKER.md](./MASTER_REQUIREMENT_TRACKER.md).
 
 ---
 
@@ -45,7 +54,7 @@ The CLM Platform is a unified enterprise system that manages two interconnected 
 | Active portfolio value | $14,745,000 |
 | Enterprise features | 400 (across 20 domains) |
 | API endpoints | 87 |
-| Test coverage | 476/476 tests passing |
+| Local Node checks | 40 scenario, 400 registry smoke, 26 lifecycle, 10 corporate, 3 workflow, and 15 global checks passed; these are not a measure of production coverage |
 | Frontend pages | 35 menu pages |
 | Go source files | 365 |
 | Database migrations | 14 |
@@ -142,6 +151,12 @@ npm run demo:stop         # Stop all servers
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
+The diagram shows the intended topology, not a claim that every agent operation
+is enabled. The gateway deployment API currently runs deployments locally; its
+vSatellite command endpoint accepts only `scan_cidr` and `health_check`.
+Certificate deployment to vSatellites is disabled until tenant authorization
+and authenticated deployment transport are available.
+
 ### Architectural Invariants
 
 | ID | Rule |
@@ -149,7 +164,7 @@ npm run demo:stop         # Stop all servers
 | ARC-001 | Customer private keys never enter the SaaS control plane |
 | ARC-002 | Operations run at the gateway that can reach the CA and endpoints |
 | ARC-003 | Policy is centrally governed and locally enforceable offline |
-| ARC-004 | Every command is tenant-scoped, authenticated, and auditable |
+| ARC-004 | Production certificate-deployment commands must be tenant-scoped, authenticated, and auditable; vSatellite certificate deployment is disabled until this is enforced |
 | ARC-011 | Tenant data isolated at every layer (DB, cache, queue, logs) |
 | ARC-012 | Security-sensitive state is fail-closed |
 
@@ -207,7 +222,10 @@ MACRO 8 — ANALYTICS & AI
 
 ## 6. Certificate Lifecycle Management
 
-The **Satellite Gateway Portal** (`/gateway`) manages the full TLS/X.509 certificate lifecycle inside the customer network.
+The **Satellite Gateway Portal** (`/gateway`) provides certificate lifecycle
+management inside the customer network. The stages below describe the product
+lifecycle; provider and deployment capabilities depend on configuration, and
+the gateway does not currently dispatch certificate deployments to vSatellites.
 
 ### Certificate Lifecycle Stages
 
@@ -221,6 +239,9 @@ Stage 6: Revocation     ──▶  OCSP stapling, CRL distribution, emergency re
 ```
 
 ### Demo Certificate Inventory
+
+The following inventory, provider orders, and deployment statuses are demo data;
+they are not evidence of live CA or endpoint integrations.
 
 | Domain | Issuer | Key | Days Left | Status |
 |---|---|---|---|---|
@@ -622,7 +643,7 @@ CLM/
 | Tool | Version | Purpose |
 |---|---|---|
 | Node.js | >= 18.0.0 | Demo server (required) |
-| Go | 1.22 | Production backend (optional) |
+| Go | 1.27.3 for verified builds (modules declare Go 1.26.0) | Production backend (optional) |
 | PostgreSQL | 14+ | Production database (optional) |
 | Docker | latest | Container builds (optional) |
 
@@ -707,10 +728,21 @@ npm run test:400
 npm run test:corporate
 # ALL 10 TEST SUITES (CORPORATE MODULES & FIXES) PASSED OK!
 
-# Run all suites
+# Additional local suites
+npm run test:workflows
+npm run test:global
+
+# Integration workflow (requires .env.demo.local and a disposable demo database)
 npm run demo:test
-# Total: 476/476 tests passing
 ```
+
+The commands above are distinct harnesses, and their counts must not be added as a
+single coverage figure. In particular, `test:400` checks registry entries and
+wrappers; it does not prove that 400 independent business capabilities are
+implemented. These Node checks do not replace Go compilation, PostgreSQL-backed
+integration tests, live identity-provider verification, or deployment validation.
+Scenario C runs in the local demo harness and is not the PostgreSQL RLS test;
+see `DATABASE_VERIFICATION_REPORT.md` for the separate database evidence.
 
 ### What the Tests Verify
 
@@ -733,7 +765,7 @@ npm run demo:test
 
 - **No private keys in SaaS** — All cryptographic operations stay inside the satellite gateway
 - **mTLS** — All gateway-to-SaaS communication uses mutual TLS
-- **Tenant RLS** — PostgreSQL Row Level Security on every table
+- **Tenant RLS** — Forced PostgreSQL Row Level Security on covered tenant-owned tables. Migrations 001–010 and the application-role/table-owner SQL suites passed on a disposable PostgreSQL 18.6 database; the Go application's runtime connection and repository tests remain unverified.
 - **JWT validation** — Every API request requires a valid JWT
 - **Fail-closed** — Expired policy, invalid identity → block, never fallback to insecure default
 
@@ -803,7 +835,7 @@ To run this platform in production, you need:
 
 | Requirement | Purpose | Notes |
 |---|---|---|
-| Go 1.22+ toolchain | Compile 365 Go source files | 20 backend packages |
+| Go 1.27.3 toolchain | Current CI and verified build toolchain; modules declare Go 1.26.0 | 20 backend packages |
 | PostgreSQL 14+ | Persistent data store | 14 migrations ready |
 | Redis | Session cache, queue | Any Redis-compatible |
 | Keycloak 22+ | Enterprise SSO | OIDC + SAML |

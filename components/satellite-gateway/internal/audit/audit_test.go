@@ -3,6 +3,7 @@ package audit
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -63,6 +64,9 @@ func TestRecordAssignsDefaults(t *testing.T) {
 }
 
 func TestRecordPersistsAcrossRestart(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("audit file permission checks require Linux mode semantics")
+	}
 	dir := t.TempDir()
 	l1, err := New(dir, testLogger())
 	if err != nil {
@@ -206,6 +210,9 @@ func TestActionsReturnsDistinctSorted(t *testing.T) {
 }
 
 func TestLoadRecentSkipsCorruptLines(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("audit file permission checks require Linux mode semantics")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.jsonl")
 	content := `{"id":"1","action":"good.one","actor":"a","result":"success","time":"2026-01-01T00:00:00Z"}

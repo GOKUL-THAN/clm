@@ -34,14 +34,15 @@ type SatelliteConfig struct {
 	InsecureSkipVerify bool   `mapstructure:"insecure_skip_verify"`
 	LogLevel           string `mapstructure:"log_level"`
 
-	Crypto    CryptoConfig      `mapstructure:"crypto"`
-	Secrets   SecretsConfig     `mapstructure:"secrets"`
-	Discovery DiscoveryConfig   `mapstructure:"discovery"`
-	Auth      GatewayAuthConfig `mapstructure:"auth"`
-	State     StateConfig       `mapstructure:"state"`
-	Alerting  AlertingConfig    `mapstructure:"alerting"`
-	ACME      ACMEConfig        `mapstructure:"acme"`
-	Commands  CommandConfig     `mapstructure:"commands"`
+	Crypto      CryptoConfig      `mapstructure:"crypto"`
+	Secrets     SecretsConfig     `mapstructure:"secrets"`
+	Discovery   DiscoveryConfig   `mapstructure:"discovery"`
+	Auth        GatewayAuthConfig `mapstructure:"auth"`
+	State       StateConfig       `mapstructure:"state"`
+	Alerting    AlertingConfig    `mapstructure:"alerting"`
+	ACME        ACMEConfig        `mapstructure:"acme"`
+	Commands    CommandConfig     `mapstructure:"commands"`
+	FileStorage FileStorageConfig `mapstructure:"file_storage"`
 }
 
 // CommandConfig bounds command execution and result transport.
@@ -177,6 +178,14 @@ type StateConfig struct {
 	// Dir holds the JSON snapshots. Empty disables persistence, which leaves the
 	// inventory and fleet in memory only.
 	Dir string `mapstructure:"dir"`
+}
+
+// FileStorageConfig is the administrator-approved destination policy for
+// certificate and cryptographic material. Tenant roots replace, rather than
+// extend, the gateway-wide roots for a configured tenant.
+type FileStorageConfig struct {
+	AllowedRoots []string            `mapstructure:"allowed_roots"`
+	TenantRoots  map[string][]string `mapstructure:"tenant_roots"`
 }
 
 // AlertingConfig controls proactive expiry and risk notifications.

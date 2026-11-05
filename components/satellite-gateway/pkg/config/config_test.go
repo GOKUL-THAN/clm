@@ -10,14 +10,16 @@ import (
 
 func TestSatelliteConfigValidate(t *testing.T) {
 	t.Setenv("CLM_SATELLITE_TOKEN", strongTestValue(32))
+	approvedRoot := filepath.Join(t.TempDir(), "files")
 	valid := SatelliteConfig{
 		Env:           "production",
 		SaaSEndpoint:  "https://clm.example.test",
 		ConnectorMode: "direct",
-		TLSCertPath:   "/etc/clm/certs/satellite.crt",
-		TLSKeyPath:    "/etc/clm/certs/satellite.key",
-		TLSCAPath:     "/etc/clm/certs/control-plane-ca.crt",
-		State:         StateConfig{Dir: "/var/lib/clm/state"},
+		TLSCertPath:   filepath.Join(approvedRoot, "satellite.crt"),
+		TLSKeyPath:    filepath.Join(approvedRoot, "satellite.key"),
+		TLSCAPath:     filepath.Join(approvedRoot, "control-plane-ca.crt"),
+		State:         StateConfig{Dir: filepath.Join(approvedRoot, "state")},
+		FileStorage:   FileStorageConfig{AllowedRoots: []string{approvedRoot}},
 		Commands:      CommandConfig{PollInterval: "5s", Timeout: "15m", LeaseRenewal: "45s", MaxResultBytes: 262144, NetworkRetries: 5},
 		Auth: GatewayAuthConfig{
 			SaaSLoginURL: "https://clm.example.test/login",
@@ -76,6 +78,11 @@ func TestLoadSatelliteConfigReferences(t *testing.T) {
 		{name: "unresolved production reference fails", endpoint: "${CONFIG_TEST_MISSING_ENDPOINT}", wantErr: "CONFIG_TEST_MISSING_ENDPOINT"},
 	}
 	t.Setenv("CONFIG_TEST_SAAS_ENDPOINT", "https://clm.example.test")
+	approvedRoot := filepath.Join(t.TempDir(), "files")
+	tlsCertPath := filepath.Join(approvedRoot, "satellite.crt")
+	tlsKeyPath := filepath.Join(approvedRoot, "satellite.key")
+	tlsCAPath := filepath.Join(approvedRoot, "control-plane-ca.crt")
+	stateDir := filepath.Join(approvedRoot, "state")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,11 +90,14 @@ func TestLoadSatelliteConfigReferences(t *testing.T) {
 			contents := fmt.Sprintf(`env: production
 saas_endpoint: %q
 connector_mode: direct
-tls_cert_path: /etc/clm/certs/satellite.crt
-tls_key_path: /etc/clm/certs/satellite.key
-tls_ca_path: /etc/clm/certs/control-plane-ca.crt
+tls_cert_path: %q
+tls_key_path: %q
+tls_ca_path: %q
 state:
-  dir: /var/lib/clm/state
+  dir: %q
+file_storage:
+  allowed_roots:
+    - %q
 commands:
   poll_interval: 5s
   timeout: 15m
@@ -97,7 +107,7 @@ commands:
 secrets:
   provider: vault
   vault_token: %q
-`, tt.endpoint, "file://"+secretPath)
+`, tt.endpoint, tlsCertPath, tlsKeyPath, tlsCAPath, stateDir, approvedRoot, "file://"+secretPath)
 			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -116,6 +126,24 @@ secrets:
 				t.Fatalf("vault secret file was not resolved")
 			}
 		})
+	}
+}
+
+func TestSatelliteFileStorageDefaultsToDeny(t *testing.T) {
+	cfg := SatelliteConfig{Env: "test"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "default-deny") {
+		t.Fatalf("Validate() error = %v, want default-deny rejection", err)
+	}
+}
+
+func TestSatelliteFileStorageRequiresStateInsideApprovedRoot(t *testing.T) {
+	cfg := SatelliteConfig{
+		Env:         "test",
+		State:       StateConfig{Dir: filepath.Join(t.TempDir(), "state")},
+		FileStorage: FileStorageConfig{AllowedRoots: []string{filepath.Join(t.TempDir(), "approved")}},
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "state.dir") {
+		t.Fatalf("Validate() error = %v, want state root rejection", err)
 	}
 }
 

@@ -4,6 +4,13 @@
 Generated: 2026-11-02 14:00 UTC
 Node.js: v24.19.0
 
+> Historical local-demo report; not a current deployment or production
+> verification. Suite counts are harness-specific, not feature coverage. The
+> 400-entry registry suite is a smoke check. Since this historical demo run,
+> staged Go tidy/vet/test/build checks passed for all three modules, including
+> SaaS DB-backed tests on PostgreSQL 18.6; this is not deployed application,
+> external integration, or production verification. See `EXECUTION_CHECKPOINT.md`.
+
 ---
 
 ## SUMMARY
@@ -31,7 +38,7 @@ Node.js: v24.19.0
 | 26 CLM Lifecycle Stages | 26/26 | PASSED |
 | 400 Feature Registry | 400/400 | PASSED |
 | Corporate Modules | 10/10 | PASSED |
-| TOTAL | 476/476 | ALL PASSED |
+| TOTAL | Not aggregated | Harness counts are not a coverage total |
 
 ---
 
@@ -65,7 +72,8 @@ All 12 health check endpoints return HTTP 200 with valid JSON.
 3. Demo data — 10+ contracts, 5 users, 3 certs, 2 tenants pre-loaded
 4. Functional demo workflows — all 26 CLM stages verifiable end-to-end
 5. Working auth — login with demo credentials works
-6. Automated test results — 476 tests all passing
+6. Automated local demo checks — suite-specific results listed above; not a
+   business-feature coverage or production-readiness claim
 7. Health report — 12/12 checks passing
 8. DEMO-GUIDE.md — complete walkthrough document
 9. Demo scripts — setup, start, stop, reset, test, health-check

@@ -2,9 +2,9 @@ package monitoring
 
 import (
 	"bytes"
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -38,27 +38,27 @@ type Alert struct {
 
 // AlertConfig holds alert delivery configuration.
 type AlertConfig struct {
-	WebhookURL     string `yaml:"webhook_url"`
-	SlackURL       string `yaml:"slack_url"`
-	EmailEndpoint  string `yaml:"email_endpoint"`
-	CriticalDays   int    `yaml:"critical_days"`   // e.g., 7
-	WarningDays    int    `yaml:"warning_days"`    // e.g., 14
-	InfoDays       int    `yaml:"info_days"`       // e.g., 30
-	CheckInterval  time.Duration
+	WebhookURL    string `yaml:"webhook_url"`
+	SlackURL      string `yaml:"slack_url"`
+	EmailEndpoint string `yaml:"email_endpoint"`
+	CriticalDays  int    `yaml:"critical_days"` // e.g., 7
+	WarningDays   int    `yaml:"warning_days"`  // e.g., 14
+	InfoDays      int    `yaml:"info_days"`     // e.g., 30
+	CheckInterval time.Duration
 }
 
 // Monitor periodically checks certificate health and sends alerts.
 type Monitor struct {
-	certRepo core.CertificateRepository
-	satRepo  core.SatelliteRepository
-	config   *AlertConfig
+	certRepo   core.CertificateTenantScanner
+	satRepo    core.SatelliteRepository
+	config     *AlertConfig
 	logger     *zap.Logger
 	httpClient *http.Client
 }
 
 // NewMonitor creates a new certificate monitor.
 func NewMonitor(
-	certRepo core.CertificateRepository,
+	certRepo core.CertificateTenantScanner,
 	satRepo core.SatelliteRepository,
 	config *AlertConfig,
 	logger *zap.Logger,
@@ -76,9 +76,9 @@ func NewMonitor(
 		config.CheckInterval = 1 * time.Hour
 	}
 	return &Monitor{
-		certRepo: certRepo,
-		satRepo:  satRepo,
-		config:   config,
+		certRepo:   certRepo,
+		satRepo:    satRepo,
+		config:     config,
 		logger:     logger,
 		httpClient: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error { return errors.New("redirects prohibited") }},
 	}
@@ -121,7 +121,7 @@ func (m *Monitor) checkCertificates(ctx context.Context) {
 		PageSize:   1000,
 	}
 
-	certs, _, err := m.certRepo.List(ctx, uuid.Nil, filter)
+	certs, _, err := m.certRepo.ListAllTenants(ctx, filter)
 	if err != nil {
 		m.logger.Error("monitor: failed to query certificates", zap.Error(err))
 		return
@@ -223,13 +223,19 @@ func (m *Monitor) sendAlert(alert Alert) {
 }
 
 func (m *Monitor) sendWebhook(alert Alert) {
-	payload, _ := json.Marshal(alert)
+	payload, err := json.Marshal(alert)
+	if err != nil {
+		m.logger.Error("could not encode webhook alert", zap.Error(err))
+		return
+	}
 	resp, err := m.httpClient.Post(m.config.WebhookURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		m.logger.Debug("webhook delivery failed", zap.Error(err))
 		return
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		m.logger.Debug("closing webhook response failed", zap.Error(err))
+	}
 }
 
 func (m *Monitor) sendSlack(alert Alert) {
@@ -237,13 +243,19 @@ func (m *Monitor) sendSlack(alert Alert) {
 	slackPayload := map[string]string{
 		"text": fmt.Sprintf("%s *%s*\n%s", emoji[alert.Level], alert.Title, alert.Message),
 	}
-	payload, _ := json.Marshal(slackPayload)
+	payload, err := json.Marshal(slackPayload)
+	if err != nil {
+		m.logger.Error("could not encode Slack alert", zap.Error(err))
+		return
+	}
 	resp, err := m.httpClient.Post(m.config.SlackURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		m.logger.Debug("slack delivery failed", zap.Error(err))
 		return
 	}
-	resp.Body.Close()
+	if err := resp.Body.Close(); err != nil {
+		m.logger.Debug("closing Slack response failed", zap.Error(err))
+	}
 }
 
 func countByLevel(alerts []Alert, level AlertLevel) int {

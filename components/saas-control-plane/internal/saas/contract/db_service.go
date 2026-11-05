@@ -501,7 +501,7 @@ func (s *postgresService) ConvertRequestToContract(ctx context.Context, tenantID
 	now := time.Now().UTC()
 	c := &models.Contract{ID: uuid.New(), TenantID: tenantID,
 		ContractNumber: fmt.Sprintf("CNT-%d-%s", now.Year(), strings.ToUpper(uuid.New().String()[:8])),
-		Title: req.Title, Type: models.ContractType(req.ContractType), Status: models.StatusDraft,
+		Title:          req.Title, Type: models.ContractType(req.ContractType), Status: models.StatusDraft,
 		Stage: models.StageAuthoring, CounterpartyName: req.CounterpartyName, TotalValue: req.EstimatedValue,
 		Currency: req.Currency, Department: req.Department, OwnerEmail: req.RequesterEmail,
 		CurrentVersion: 1, ContentBody: fmt.Sprintf("Contract generated from Request %s: %s\n\nJustification: %s", req.RequestNumber, req.Title, req.BusinessJustification),
@@ -783,9 +783,9 @@ func (s *postgresService) ListSignatures(ctx context.Context, tenantID, contract
 func scanSignature(row interface{ Scan(...any) error }) (*models.ContractSignature, error) {
 	sig := new(models.ContractSignature)
 	var signed sql.NullTime
-	err := row.Scan(&sig.ID,&sig.ContractID,&sig.SignerName,&sig.SignerEmail,&sig.SignerRole,&sig.SigningOrder,
-		&sig.Status,&sig.AuthMethod,&sig.IPAddress,&sig.UserAgent,&sig.DigitalSignatureHash,
-		&sig.CertificateThumbprint,&signed,&sig.EvidenceBundleURI,&sig.CreatedAt)
+	err := row.Scan(&sig.ID, &sig.ContractID, &sig.SignerName, &sig.SignerEmail, &sig.SignerRole, &sig.SigningOrder,
+		&sig.Status, &sig.AuthMethod, &sig.IPAddress, &sig.UserAgent, &sig.DigitalSignatureHash,
+		&sig.CertificateThumbprint, &signed, &sig.EvidenceBundleURI, &sig.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -824,7 +824,7 @@ func (s *postgresService) ExecuteSignature(ctx context.Context, tenantID, sigID 
 	defer tx.Rollback()
 	var email, status string
 	err = tx.QueryRowContext(ctx, `SELECT s.signer_email,s.status FROM contract_signatures s
-		JOIN contracts c ON c.id=s.contract_id WHERE c.tenant_id=$1 AND s.id=$2 FOR UPDATE OF s`, tenantID, sigID).Scan(&email,&status)
+		JOIN contracts c ON c.id=s.contract_id WHERE c.tenant_id=$1 AND s.id=$2 FOR UPDATE OF s`, tenantID, sigID).Scan(&email, &status)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -893,9 +893,9 @@ const obligationSelect = `SELECT o.id,o.contract_id,COALESCE(o.title,''),COALESC
 func scanObligation(row interface{ Scan(...any) error }) (*models.ContractObligation, error) {
 	o := new(models.ContractObligation)
 	var completed sql.NullTime
-	err := row.Scan(&o.ID,&o.ContractID,&o.Title,&o.Category,&o.PartyResponsible,&o.OwnerEmail,&o.DueDate,
-		&o.Recurrence,&o.Status,&o.PenaltyDetails,&o.ServiceCreditPercent,&o.EvidenceNotes,
-		&o.EvidenceDocumentURI,&completed,&o.VerifiedBy,&o.CreatedAt,&o.UpdatedAt)
+	err := row.Scan(&o.ID, &o.ContractID, &o.Title, &o.Category, &o.PartyResponsible, &o.OwnerEmail, &o.DueDate,
+		&o.Recurrence, &o.Status, &o.PenaltyDetails, &o.ServiceCreditPercent, &o.EvidenceNotes,
+		&o.EvidenceDocumentURI, &completed, &o.VerifiedBy, &o.CreatedAt, &o.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -957,17 +957,23 @@ func (s *postgresService) GetAnalytics(ctx context.Context, tenantID uuid.UUID) 
 		var typ, risk string
 		var count int
 		if err := rows.Scan(&typ, &count, &risk); err != nil {
-			rows.Close()
+			if closeErr := rows.Close(); closeErr != nil {
+				return nil, fmt.Errorf("scan contract summary: %w (close rows: %v)", err, closeErr)
+			}
 			return nil, err
 		}
 		summary.TypeDistribution[typ] += count
 		summary.RiskDistribution[risk] += count
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		if closeErr := rows.Close(); closeErr != nil {
+			return nil, fmt.Errorf("read contract summary: %w (close rows: %v)", err, closeErr)
+		}
 		return nil, err
 	}
-	rows.Close()
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close contract summary rows: %w", err)
+	}
 	if summary.TotalContracts > 0 {
 		summary.ComplianceRate = float64(compliant) * 100 / float64(summary.TotalContracts)
 	}

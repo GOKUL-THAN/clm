@@ -3,10 +3,10 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/m2p/clm/internal/satellite/audit"
 	"github.com/m2p/clm/internal/satellite/deployment/migration"
-	"go.uber.org/zap"
 )
 
 // handleMigrationValidate checks a certificate bundle without importing it.
@@ -66,7 +66,7 @@ func (s *Server) handleMigrationImport(w http.ResponseWriter, r *http.Request) {
 			if env == "" {
 				env = "prod"
 			}
-			s.inventory.AddCertificate(&Certificate{
+			s.inventory.Upsert(&Certificate{
 				ID:           cert.ID,
 				Domain:       cert.Domain,
 				SANs:         cert.SANs,
@@ -76,7 +76,7 @@ func (s *Server) handleMigrationImport(w http.ResponseWriter, r *http.Request) {
 				KeyAlgorithm: cert.KeyAlgorithm,
 				KeySize:      cert.KeySize,
 				Fingerprint:  cert.Fingerprint,
-				CertPEM:      cert.CertPEM,
+				ChainPEM:     strings.TrimSpace(cert.CertPEM + "\n" + cert.ChainPEM),
 				Status:       "active",
 				Environment:  env,
 			})
@@ -106,4 +106,3 @@ func (s *Server) handleMigrationHistory(w http.ResponseWriter, r *http.Request) 
 		"count":   len(history),
 	})
 }
-

@@ -115,7 +115,8 @@ func VerifyEndpoint(ctx context.Context, opts EndpointVerifyOptions) (*Verificat
 		}
 	}
 
-	tlsConn := tls.Client(conn, &tls.Config{ // #nosec G402 -- verified manually below for structured evidence.
+	// #nosec G402 -- accept the peer certificate to record it, then verify hostname, validity, issuer, and fingerprint below.
+	tlsConn := tls.Client(conn, &tls.Config{
 		ServerName:         serverName,
 		InsecureSkipVerify: true,
 		MinVersion:         tls.VersionTLS12,

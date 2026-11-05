@@ -11,10 +11,11 @@ import (
 	"github.com/m2p/clm/internal/satellite/ca"
 	"github.com/m2p/clm/internal/satellite/credstore"
 	"github.com/m2p/clm/internal/satellite/deployment"
-	"github.com/m2p/clm/internal/satellite/deployment/sync"
 	"github.com/m2p/clm/internal/satellite/deployment/migration"
+	deploymentSync "github.com/m2p/clm/internal/satellite/deployment/sync"
 	"github.com/m2p/clm/internal/satellite/discovery/scanners"
 	"github.com/m2p/clm/internal/satellite/policy"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"github.com/m2p/clm/internal/satellite/vsatellite"
 	"go.uber.org/zap"
 )
@@ -65,11 +66,12 @@ type Server struct {
 	// environment, wildcard, approval requirements). Nil when disabled.
 	policies *policy.Store
 	// keyDir is where private keys for CA-issued certificates are written.
-	keyDir string
-	syncController       *sync.MultiCloudSyncController
+	keyDir               string
+	filePolicy           *securefs.Policy
+	syncController       *deploymentSync.MultiCloudSyncController
 	complianceController *audit.ComplianceController
 	migrationController  *migration.BulkMigrationController
-	rotationController  *sync.RotationController
+	rotationController   *deploymentSync.RotationController
 	logger               *zap.Logger
 }
 
@@ -91,9 +93,10 @@ type Options struct {
 	EndpointStore        *EndpointStore
 	Audit                *audit.Logger
 	Policies             *policy.Store
-	SyncController       *sync.MultiCloudSyncController
+	SyncController       *deploymentSync.MultiCloudSyncController
 	ComplianceController *audit.ComplianceController
 	KeyDir               string
+	FilePolicy           *securefs.Policy
 	Logger               *zap.Logger
 }
 
@@ -120,6 +123,7 @@ func NewServer(o Options) *Server {
 		syncController:            o.SyncController,
 		complianceController:      o.ComplianceController,
 		keyDir:                    o.KeyDir,
+		filePolicy:                o.FilePolicy,
 		deployer:                  o.Deployer,
 		agents:                    o.Agents,
 		logger:                    o.Logger,

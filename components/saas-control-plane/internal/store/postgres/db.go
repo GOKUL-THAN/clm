@@ -17,12 +17,7 @@ type DB struct {
 
 // NewDB creates a new PostgreSQL connection.
 func NewDB(cfg *config.DatabaseConfig) (*DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,
-	)
-
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("postgres", cfg.DSN())
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -31,6 +26,7 @@ func NewDB(cfg *config.DatabaseConfig) (*DB, error) {
 	db.SetMaxIdleConns(5)
 
 	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
 

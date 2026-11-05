@@ -180,6 +180,7 @@ func (r *TenantRepository) DeleteCascade(ctx context.Context, id uuid.UUID) erro
 	defer tx.Rollback() //nolint:errcheck // no-op once committed
 
 	for _, table := range tenantChildTables {
+		// #nosec G202 -- table names come only from the package-private constant allow-list.
 		if _, err := tx.ExecContext(ctx,
 			`DELETE FROM `+table+` WHERE tenant_id = $1`, id); err != nil {
 			if isUndefinedTable(err) {

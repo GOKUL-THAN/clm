@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"reflect"
@@ -89,10 +90,17 @@ type DatabaseConfig struct {
 }
 
 func (d *DatabaseConfig) DSN() string {
-	return fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		d.Host, d.Port, d.User, d.Password, d.DBName, d.SSLMode,
-	)
+	connectionURL := url.URL{
+		Scheme:  "postgres",
+		User:    url.UserPassword(d.User, d.Password),
+		Host:    net.JoinHostPort(d.Host, fmt.Sprint(d.Port)),
+		Path:    "/" + d.DBName,
+		RawPath: "/" + url.PathEscape(d.DBName),
+	}
+	query := connectionURL.Query()
+	query.Set("sslmode", d.SSLMode)
+	connectionURL.RawQuery = query.Encode()
+	return connectionURL.String()
 }
 
 // RedisConfig holds Redis connection details.
@@ -452,6 +460,7 @@ func resolveValue(value reflect.Value, missing map[string]struct{}) error {
 			if strings.TrimSpace(path) == "" {
 				return fmt.Errorf("empty secret-file path")
 			}
+			// #nosec G304 -- file:// secret references are resolved from trusted local config.
 			contents, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("reading secret file %q: %w", path, err)

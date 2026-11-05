@@ -54,7 +54,7 @@ psql_admin -c "DROP DATABASE IF EXISTS $TEST_DB;" > /dev/null
 psql_admin -c "CREATE DATABASE $TEST_DB OWNER $PGUSER;" > /dev/null
 
 echo "=== applying schema ==="
-for f in migrations/001_initial.sql migrations/002_sso_fields.sql migrations/003_tenant_security.sql migrations/004_secure_command_transport.sql; do
+for f in migrations/001_initial.sql migrations/002_sso_fields.sql migrations/003_tenant_security.sql migrations/004_secure_command_transport.sql migrations/009_approval_requests_rls.sql migrations/010_certificates_rls.sql; do
     if [ -f "$f" ]; then
         echo "  $f"
         psql_test -v ON_ERROR_STOP=1 -q < "$f" > /dev/null

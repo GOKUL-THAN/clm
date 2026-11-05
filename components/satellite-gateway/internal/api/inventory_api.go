@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"sort"
@@ -8,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/m2p/clm/internal/satellite/audit"
+	"github.com/m2p/clm/internal/satellite/securefs"
 	"go.uber.org/zap"
 )
 
@@ -301,6 +305,11 @@ func (s *Server) handleDeleteCertificate(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusNotFound, "certificate not found")
 		return
 	}
+	if cert.TenantID != strings.TrimSpace(callerClaims(r).TenantID) &&
+		!isGlobalAdmin(callerClaims(r).EffectiveRole()) {
+		writeErr(w, http.StatusForbidden, "certificate is not owned by the authenticated tenant")
+		return
+	}
 
 	force := r.URL.Query().Get("force") == "true"
 	live := cert.ManagedBy == "acme" && !cert.Revoked && cert.Status != "failed" &&
@@ -330,9 +339,15 @@ func (s *Server) handleDeleteCertificate(w http.ResponseWriter, r *http.Request)
 	removedKeys := 0
 	removalFailed := false
 	for keyRef := range keyRefs {
-		if err := os.Remove(keyRef); err == nil {
+		if s.filePolicy == nil {
+			removalFailed = true
+			s.logger.Warn("secure file storage policy is unavailable; private key was retained",
+				zap.String("path", keyRef))
+			continue
+		}
+		if err := s.filePolicy.Remove(keyRef, cert.TenantID, securefs.PrivateKey); err == nil {
 			removedKeys++
-		} else if !os.IsNotExist(err) {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			removalFailed = true
 			s.logger.Warn("could not remove a private key for a deleted certificate lineage",
 				zap.String("path", keyRef), zap.Error(err))
@@ -345,6 +360,8 @@ func (s *Server) handleDeleteCertificate(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.inventory.Delete(id)
+	s.recordAudit(r, "inventory.certificate.delete", "certificate", id, cert.Domain,
+		audit.ResultSuccess, fmt.Sprintf("removed_keys=%d", removedKeys))
 	s.logger.Info("inventory record removed",
 		zap.String("id", id), zap.String("domain", cert.Domain),
 		zap.Int("keys_removed", removedKeys), zap.String("by", callerName(r)))
@@ -403,7 +420,11 @@ func (s *Server) handlePruneInventory(w http.ResponseWriter, r *http.Request) {
 	}
 	victims := []victim{}
 
+	claims := callerClaims(r)
 	for _, c := range s.inventory.ListCerts() {
+		if c.TenantID != strings.TrimSpace(claims.TenantID) && !isGlobalAdmin(claims.EffectiveRole()) {
+			continue
+		}
 		switch {
 		case req.Failed && c.Status == "failed":
 			victims = append(victims, victim{c.ID, c.Domain, "issuance never succeeded"})
@@ -415,12 +436,36 @@ func (s *Server) handlePruneInventory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	removed := 0
+	removalErrors := []string{}
 	if !req.DryRun {
 		for _, v := range victims {
-			if cert, ok := s.inventory.Get(v.ID); ok && cert.SecretRef != "" {
-				if err := os.Remove(cert.SecretRef); err != nil && !os.IsNotExist(err) {
-					s.logger.Warn("could not remove a private key while pruning",
-						zap.String("path", cert.SecretRef), zap.Error(err))
+			if cert, ok := s.inventory.Get(v.ID); ok {
+				if s.filePolicy == nil {
+					if cert.SecretRef != "" || len(cert.Versions) > 0 {
+						removalErrors = append(removalErrors, cert.ID+": secure file storage policy is unavailable")
+						continue
+					}
+				}
+				keyRefs := map[string]struct{}{}
+				if cert.SecretRef != "" {
+					keyRefs[cert.SecretRef] = struct{}{}
+				}
+				for _, version := range cert.Versions {
+					if version != nil && version.SecretRef != "" {
+						keyRefs[version.SecretRef] = struct{}{}
+					}
+				}
+				failed := false
+				for keyRef := range keyRefs {
+					if err := s.filePolicy.Remove(keyRef, cert.TenantID, securefs.PrivateKey); err != nil && !errors.Is(err, os.ErrNotExist) {
+						s.logger.Warn("could not remove a private key while pruning",
+							zap.String("path", keyRef), zap.Error(err))
+						removalErrors = append(removalErrors, cert.ID+": "+err.Error())
+						failed = true
+					}
+				}
+				if failed {
+					continue
 				}
 			}
 			if s.inventory.Delete(v.ID) {
@@ -429,14 +474,21 @@ func (s *Server) handlePruneInventory(w http.ResponseWriter, r *http.Request) {
 		}
 		s.logger.Info("inventory pruned",
 			zap.Int("removed", removed), zap.String("by", callerName(r)))
+		s.recordAudit(r, "inventory.prune", "inventory", "", "",
+			audit.ResultSuccess, fmt.Sprintf("removed=%d failures=%d", removed, len(removalErrors)))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	status := http.StatusOK
+	if len(removalErrors) > 0 {
+		status = http.StatusMultiStatus
+	}
+	writeJSON(w, status, map[string]any{
 		"dry_run":     req.DryRun,
 		"matched":     len(victims),
 		"removed":     removed,
 		"candidates":  victims,
 		"stale_after": staleWindow.String(),
+		"errors":      removalErrors,
 	})
 }
 
