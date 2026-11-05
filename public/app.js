@@ -31,15 +31,46 @@ function resolveTenantScope() {
     }
     if (activeTenantId) return Promise.resolve(activeTenantId);
     return apiGet('/api/v1/tenants').then(data => {
-        const tenants = data.tenants || [];
+        const tenants = Array.isArray(data.tenants) ? data.tenants : [];
         if (tenants.length !== 1) {
-            throw new Error(tenants.length === 0
-                ? 'No tenant exists. Create a tenant before managing gateways.'
-                : 'Select a tenant before managing gateways.');
+            if (tenants.length === 0) {
+                throw new Error('No tenant exists. Create a tenant before managing gateways.');
+            }
+            const error = new Error('Select a tenant before managing gateways.');
+            error.code = 'TENANT_SELECTION_REQUIRED';
+            error.tenants = tenants;
+            throw error;
         }
         activeTenantId = tenants[0].id;
         return activeTenantId;
     });
+}
+
+function renderTenantSelection(el, error) {
+    if (!error || error.code !== 'TENANT_SELECTION_REQUIRED') return false;
+
+    const tenants = error.tenants || [];
+    const options = tenants.map(tenant =>
+        `<option value="${esc(tenant.id)}">${esc(tenant.name || tenant.id)}</option>`
+    ).join('');
+    el.innerHTML = `<div class="card">
+        <h3>Select a tenant</h3>
+        <p style="color:var(--muted);margin:0.5rem 0 1rem">Choose the tenant whose cloud accounts, gateways, and deployment jobs you want to view.</p>
+        <div class="form-group">
+            <label for="tenant-scope-select">Tenant</label>
+            <select id="tenant-scope-select" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+                <option value="">-- Select a tenant --</option>
+                ${options}
+            </select>
+        </div>
+    </div>`;
+    el.querySelector('#tenant-scope-select').addEventListener('change', event => {
+        const tenant = tenants.find(item => item.id === event.target.value);
+        if (!tenant) return;
+        activeTenantId = tenant.id;
+        navigate(currentPage);
+    });
+    return true;
 }
 
 function defaultRegion(provider) {
@@ -70,6 +101,7 @@ function doLogin() {
     .then(r => r.json())
     .then(data => {
         if (data.access_token) {
+            activeTenantId = '';
             token = data.access_token;
             localStorage.setItem('clm_token', token);
             if (data.refresh_token) localStorage.setItem('clm_refresh_token', data.refresh_token);
@@ -97,6 +129,7 @@ function fallbackLogin(email, password, errEl) {
     .then(r => r.json())
     .then(data => {
         if (data.access_token) {
+            activeTenantId = '';
             token = data.access_token;
             localStorage.setItem('clm_token', token);
             document.getElementById('login-overlay').classList.add('hidden');
@@ -111,6 +144,7 @@ function fallbackLogin(email, password, errEl) {
 }
 
 function logout() {
+    activeTenantId = '';
     token = '';
     localStorage.removeItem('clm_token');
     localStorage.removeItem('clm_refresh_token');
@@ -1102,7 +1136,7 @@ function loadCloudAccounts() {
     el.innerHTML = '<div class="card"><p>Loading cloud accounts...</p></div>';
 
     resolveTenantScope().then(tenantId => apiGet(scopedPath('/api/v1/cloud-accounts', tenantId))).then(data => {
-    const accounts = (data.cloud_accounts || []).map(a => Object.assign({}, a, {
+    const accounts = (data.cloud_accounts || data.accounts || []).map(a => Object.assign({}, a, {
         cloud: a.provider,
         region: defaultRegion(a.provider)
     }));
@@ -1147,6 +1181,7 @@ function loadCloudAccounts() {
         <div id="ca-status" style="margin-top:0.75rem"></div>
     </div>`;
     }).catch(err => {
+        if (renderTenantSelection(el, err)) return;
         el.innerHTML = `<div class="card"><p style="color:var(--danger)">Failed to load cloud accounts: ${esc(err.message)}</p></div>`;
     });
 }
@@ -1354,6 +1389,7 @@ function loadGateways() {
             <div id="edit-gw-status" style="margin-top:0.5rem"></div>
         </div>`;
     }).catch(err => {
+        if (renderTenantSelection(el, err)) return;
         el.innerHTML = `<div class="card"><p style="color:var(--danger)">Failed to load gateways: ${err.message}</p></div>`;
     });
 }
@@ -1911,17 +1947,23 @@ function loadDeployJobs() {
             return;
         }
         let rows = jobs.map(j => {
-            const stateColor = j.state === 'online' ? 'var(--success)' : j.state === 'failed' ? 'var(--danger)' : j.state === 'deploying' ? '#f59e0b' : 'var(--muted)';
-            const stateIcon = j.state === 'online' ? '&#10003;' : j.state === 'failed' ? '&#10007;' : j.state === 'deploying' ? '&#9881;' : '&#8226;';
+            const state = j.state || j.status || 'unknown';
+            const name = j.name || j.type || j.id || 'Deployment job';
+            const stateColor = state === 'online' || state === 'completed' ? 'var(--success)' : state === 'failed' ? 'var(--danger)' : state === 'deploying' || state === 'running' ? '#f59e0b' : 'var(--muted)';
+            const stateIcon = state === 'online' || state === 'completed' ? '&#10003;' : state === 'failed' ? '&#10007;' : state === 'deploying' || state === 'running' ? '&#9881;' : '&#8226;';
+            const createdAt = j.created_at || j.started_at;
+            const progress = Array.isArray(j.steps) && j.steps.length
+                ? `${j.current_step || 0}/${j.steps.length}`
+                : '-';
             return `<tr style="cursor:pointer" onclick="viewDeployJob('${j.id}')">
-                <td><strong>${j.name}</strong></td>
-                <td>${j.cloud||'aws'}</td>
-                <td>${j.mode||'lightsail'}</td>
-                <td>${j.region||'-'}</td>
-                <td><span style="color:${stateColor};font-weight:600">${stateIcon} ${j.state}</span></td>
-                <td>${j.public_ip||'-'}</td>
-                <td>${j.current_step||0}/${(j.steps||[]).length||'?'}</td>
-                <td>${j.created_at ? new Date(j.created_at).toLocaleString() : '-'}</td>
+                <td><strong>${esc(name)}</strong></td>
+                <td>${esc(j.cloud || 'aws')}</td>
+                <td>${esc(j.mode || '-')}</td>
+                <td>${esc(j.region || '-')}</td>
+                <td><span style="color:${stateColor};font-weight:600">${stateIcon} ${esc(state)}</span></td>
+                <td>${esc(j.public_ip || '-')}</td>
+                <td>${progress}</td>
+                <td>${createdAt ? new Date(createdAt).toLocaleString() : '-'}</td>
             </tr>`;
         }).join('');
         el.innerHTML = `<div class="card">
@@ -1933,6 +1975,7 @@ function loadDeployJobs() {
             <tbody>${rows}</tbody></table>
         </div>`;
     }).catch(err => {
+        if (renderTenantSelection(el, err)) return;
         el.innerHTML = `<div class="card"><p style="color:var(--danger)">Failed to load jobs: ${err.message}</p></div>`;
     });
 }
