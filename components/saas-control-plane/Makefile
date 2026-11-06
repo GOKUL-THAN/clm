@@ -4,16 +4,16 @@ BINARY=bin/clm-server
 CLI_BINARY=bin/clm
 
 build:
-	../shared/scripts/go-staged.sh control build
+	bash ../shared/scripts/go-staged.sh control build
 
 run:
 	go run ./cmd/clm-server
 
 test:
-	../shared/scripts/go-staged.sh control test
+	bash ../shared/scripts/go-staged.sh control test
 
 vet:
-	../shared/scripts/go-staged.sh control vet
+	bash ../shared/scripts/go-staged.sh control vet
 
 validate: test vet build
 

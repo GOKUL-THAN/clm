@@ -3,16 +3,16 @@
 BINARY=bin/clm-vsatellite
 
 build:
-	../shared/scripts/go-staged.sh vsatellite build
+	bash ../shared/scripts/go-staged.sh vsatellite build
 
 run:
 	go run ./cmd/clm-vsatellite
 
 test:
-	../shared/scripts/go-staged.sh vsatellite test
+	bash ../shared/scripts/go-staged.sh vsatellite test
 
 vet:
-	../shared/scripts/go-staged.sh vsatellite vet
+	bash ../shared/scripts/go-staged.sh vsatellite vet
 
 validate: test vet build
 

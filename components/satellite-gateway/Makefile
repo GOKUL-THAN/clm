@@ -3,16 +3,16 @@
 BINARY=bin/clm-satellite
 
 build:
-	../shared/scripts/go-staged.sh satellite build
+	bash ../shared/scripts/go-staged.sh satellite build
 
 run:
 	go run ./cmd/clm-satellite
 
 test:
-	../shared/scripts/go-staged.sh satellite test
+	bash ../shared/scripts/go-staged.sh satellite test
 
 vet:
-	../shared/scripts/go-staged.sh satellite vet
+	bash ../shared/scripts/go-staged.sh satellite vet
 
 validate: test vet build
 

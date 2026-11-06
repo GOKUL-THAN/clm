@@ -19,7 +19,7 @@ case "$COMPONENT" in
     ;;
   satellite)
     SOURCE="$COMPONENTS/satellite-gateway"
-    "$SOURCE/deploy/build-src-bundle.sh" "$STAGE/source.tar.gz" >/dev/null
+    bash "$SOURCE/deploy/build-src-bundle.sh" "$STAGE/source.tar.gz" >/dev/null
     tar xzf "$STAGE/source.tar.gz" -C "$STAGE"
     rm -f "$STAGE/source.tar.gz"
     sed -i.bak 's|module github.com/m2p/clm/satellite-gateway|module github.com/m2p/clm|' "$STAGE/go.mod"
@@ -29,7 +29,7 @@ case "$COMPONENT" in
   vsatellite)
     SOURCE="$COMPONENTS/vsatellite"
     GATEWAY="$COMPONENTS/satellite-gateway"
-    "$GATEWAY/deploy/build-src-bundle.sh" "$STAGE/source.tar.gz" >/dev/null
+    bash "$GATEWAY/deploy/build-src-bundle.sh" "$STAGE/source.tar.gz" >/dev/null
     tar xzf "$STAGE/source.tar.gz" -C "$STAGE"
     rm -rf "$STAGE/cmd" "$STAGE/source.tar.gz"
     cp -R "$SOURCE/cmd" "$STAGE/"

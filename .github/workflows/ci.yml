@@ -97,6 +97,7 @@ jobs:
           bash -n components/saas-control-plane/deploy/deploy-test.sh
           bash -n components/saas-control-plane/deploy/run-tests.sh
           bash -n components/satellite-gateway/deploy/build-src-bundle.sh
+          bash -n components/shared/scripts/go-staged.sh
       - name: Check JSON and YAML syntax
         run: |
           python3 -m json.tool components/saas-control-plane/deploy/keycloak/clm-realm.json >/dev/null
