@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 
 func TestAuthMiddlewareFailClosedClaims(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	secret := "0123456789abcdef0123456789abcdef"
+	secret := strings.Repeat("x", 32)
 	tenantID := uuid.New()
 	userID := uuid.New()
 	base := config.JWTConfig{
@@ -60,7 +61,7 @@ func TestAuthMiddlewareFailClosedClaims(t *testing.T) {
 }
 
 func TestAuthMiddlewareRejectsInvalidProvidedTenantForPlatformRole(t *testing.T) {
-	secret := "0123456789abcdef0123456789abcdef"
+	secret := strings.Repeat("x", 32)
 	userID := uuid.New()
 	claims := jwt.MapClaims{
 		"user_id":   userID.String(),
@@ -320,8 +321,8 @@ func TestAuthMiddlewareSeparatesInternalAndExternalTrustPolicies(t *testing.T) {
 		internalAudience = "clm-api-test"
 		externalIssuer   = "https://id.example.test/realms/clm"
 		externalAudience = "clm-api"
-		secret           = "0123456789abcdef0123456789abcdef"
 	)
+	secret := strings.Repeat("x", 32)
 	cfg := config.JWTConfig{
 		Secret: secret, Issuer: internalIssuer, Audience: internalAudience,
 		ExternalIssuer: externalIssuer, ExternalAudience: externalAudience,

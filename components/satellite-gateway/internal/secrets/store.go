@@ -3,7 +3,6 @@ package secrets
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 
 	"github.com/m2p/clm/internal/core"
@@ -109,16 +108,4 @@ type CertArtifacts struct {
 	FullChain   []byte             // PEM-encoded cert + chain
 	PFX         []byte             // PKCS12 binary
 	Metadata    models.CertMetadata
-}
-
-// ToJSON serializes the CertSecret (with base64 values) to JSON for storage.
-func ToJSON(secret *models.CertSecret) ([]byte, error) {
-	return json.Marshal(secret)
-}
-
-// FromJSON deserializes JSON back to CertSecret.
-func FromJSON(data []byte) (*models.CertSecret, error) {
-	var secret models.CertSecret
-	err := json.Unmarshal(data, &secret)
-	return &secret, err
 }

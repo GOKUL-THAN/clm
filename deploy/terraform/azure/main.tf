@@ -22,6 +22,17 @@ variable "resource_group_name" {
   default = "rg-clm-enterprise-prod"
 }
 
+variable "administrator_password" {
+  type      = string
+  sensitive = true
+  nullable  = false
+
+  validation {
+    condition     = length(var.administrator_password) >= 16 && length(var.administrator_password) <= 128
+    error_message = "administrator_password must be between 16 and 128 characters."
+  }
+}
+
 # 1. Resource Group
 resource "azurerm_resource_group" "clm_rg" {
   name     = var.resource_group_name
@@ -69,7 +80,7 @@ resource "azurerm_postgresql_flexible_server" "clm_pg" {
   location               = azurerm_resource_group.clm_rg.location
   version                = "15"
   administrator_login    = "clm_admin"
-  administrator_password = "CHANGE_ME_IN_KEYVAULT"
+  administrator_password = var.administrator_password
   storage_mb             = 131072
   sku_name               = "GP_Standard_D4ds_v4"
   backup_retention_days  = 35
@@ -79,4 +90,3 @@ resource "azurerm_postgresql_flexible_server" "clm_pg" {
     mode = "ZoneRedundant"
   }
 }
-

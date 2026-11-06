@@ -22,6 +22,17 @@ variable "environment" {
   default = "production"
 }
 
+variable "db_password" {
+  type      = string
+  sensitive = true
+  nullable  = false
+
+  validation {
+    condition     = length(var.db_password) >= 16 && length(var.db_password) <= 128
+    error_message = "db_password must be between 16 and 128 characters."
+  }
+}
+
 # 1. Customer-Managed KMS Key for Envelope Encryption
 resource "aws_kms_key" "clm_master_key" {
   description             = "Customer In-VPC KMS Master Key for CLM Envelope Encryption"
@@ -77,7 +88,7 @@ resource "aws_db_instance" "clm_rds" {
   multi_az              = true
   db_name               = "clmdb"
   username              = "clm_master_admin"
-  password              = "CHANGE_ME_IN_VAULT"
+  password              = var.db_password
   storage_encrypted     = true
   kms_key_id            = aws_kms_key.clm_master_key.arn
   skip_final_snapshot   = false
@@ -99,4 +110,3 @@ output "rds_endpoint" {
   value       = aws_db_instance.clm_rds.endpoint
   description = "High Availability PostgreSQL Primary Endpoint"
 }
-

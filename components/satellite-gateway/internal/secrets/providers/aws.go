@@ -68,6 +68,7 @@ func (s *AWSSecretsManager) Store(ctx context.Context, req *core.StoreSecretRequ
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G117 -- AWS Secrets Manager encrypts this payload at rest; the configured KMS key is applied when present.
 	data, err := json.Marshal(req.Secret)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling secret: %w", err)
@@ -156,6 +157,7 @@ func (s *AWSSecretsManager) Update(ctx context.Context, ref *core.SecretRef, req
 	if req == nil || req.Secret == nil {
 		return nil, fmt.Errorf("secret request and secret payload are required")
 	}
+	// #nosec G117 -- AWS Secrets Manager encrypts this payload at rest; the existing secret retains its KMS configuration.
 	data, err := json.Marshal(req.Secret)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling secret: %w", err)
