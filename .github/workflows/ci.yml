@@ -187,7 +187,7 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -f scripts/setup_ci_postgres_roles.sql
 
-      - name: Apply Migrations as Migration Owner (Table Ownership: clm_table_owner)
+      - name: "Apply Migrations as Migration Owner (Table Ownership: clm_table_owner)"
         env:
           PGHOST: 127.0.0.1
           PGPORT: 5432
