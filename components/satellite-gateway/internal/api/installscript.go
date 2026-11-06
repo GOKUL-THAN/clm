@@ -20,6 +20,12 @@ import (
 // secret on first contact, so the short-lived token does not need to persist.
 func vsatelliteInstallScript(gatewayURL, token, gatewayName string) string {
 	coordinatorURL := coordinatorEndpoint(gatewayURL)
+	gatewayName = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, gatewayName)
 
 	return fmt.Sprintf(`#!/bin/sh
 # CLM vSatellite agent installer
@@ -29,9 +35,9 @@ func vsatelliteInstallScript(gatewayURL, token, gatewayName string) string {
 # if the local credential is missing.
 set -eu
 
-GATEWAY_URL="%s"
-COORDINATOR_URL="%s"
-ENROL_TOKEN="%s"
+GATEWAY_URL=%s
+COORDINATOR_URL=%s
+ENROL_TOKEN=%s
 INSTALL_DIR="/opt/clm-vsatellite"
 CONF_DIR="/etc/clm"
 CRED_FILE="$CONF_DIR/vsatellite.cred"
@@ -187,7 +193,7 @@ else
 fi
 
 log "done. The agent appears in the gateway portal under vSatellites within ~30s."
-`, gatewayName, gatewayURL, coordinatorURL, token)
+`, gatewayName, shellSingleQuote(gatewayURL), shellSingleQuote(coordinatorURL), shellSingleQuote(token))
 }
 
 // coordinatorEndpoint derives the agent-facing coordinator URL from the portal

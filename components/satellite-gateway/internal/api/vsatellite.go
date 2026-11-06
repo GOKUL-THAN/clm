@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -101,6 +102,16 @@ func (s *Server) handleEnrolVSatellite(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	base := strings.TrimSpace(req.GatewayURL)
+	if base == "" {
+		base = s.portalBaseURL(r)
+	}
+	var err error
+	base, err = validatedGatewayURL(base)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "gateway_url must be an absolute HTTP(S) URL without credentials, query or fragment")
+		return
+	}
 	if len(req.Capabilities) == 0 {
 		req.Capabilities = []string{"scan_network", "deploy_linux"}
 	}
@@ -113,11 +124,7 @@ func (s *Server) handleEnrolVSatellite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := strings.TrimSuffix(strings.TrimSpace(req.GatewayURL), "/")
-	if base == "" {
-		base = s.portalBaseURL(r)
-	}
-	installURL := fmt.Sprintf("%s/api/v1/vsatellites/install.sh?token=%s", base, enrolment.Token)
+	installURL := fmt.Sprintf("%s/api/v1/vsatellites/install.sh?token=%s", base, url.QueryEscape(enrolment.Token))
 
 	s.logger.Info("vSatellite enrolment issued",
 		zap.String("name", req.Name),
@@ -130,8 +137,7 @@ func (s *Server) handleEnrolVSatellite(w http.ResponseWriter, r *http.Request) {
 		"token_prefix": enrolment.TokenPrefix,
 		"expires_at":   enrolment.ExpiresAt,
 		"install_url":  installURL,
-		"install_command": fmt.Sprintf(
-			"curl -fsSL '%s' | sudo bash", installURL),
+		"install_command": fmt.Sprintf("curl -fsSL -- %s | sudo bash", shellSingleQuote(installURL)),
 		"note": "The token is single use and is shown only now. Run the command on " +
 			"the target host; it detects the distribution, installs the agent and " +
 			"registers it with this gateway.",
@@ -162,10 +168,15 @@ func (s *Server) handleVSatelliteInstallScript(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	gatewayURL, err := validatedGatewayURL(s.portalBaseURL(r))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "request host must resolve to an absolute HTTP(S) gateway URL")
+		return
+	}
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(vsatelliteInstallScript(s.portalBaseURL(r), token, s.satelliteName)))
+	_, _ = w.Write([]byte(vsatelliteInstallScript(gatewayURL, token, s.satelliteName)))
 }
 
 // handleDispatchVSatelliteCommand queues work for one agent.
@@ -282,4 +293,29 @@ func (s *Server) portalBaseURL(r *http.Request) string {
 		host = r.Host
 	}
 	return scheme + "://" + host
+}
+
+func validatedGatewayURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	for _, r := range raw {
+		if r <= 0x20 || r == 0x7f {
+			return "", fmt.Errorf("gateway URL contains a control character or space")
+		}
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse gateway URL: %w", err)
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		parsed.Host == "" || parsed.User != nil || parsed.Opaque != "" ||
+		parsed.ForceQuery || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("gateway URL must be an absolute HTTP(S) URL without credentials, query or fragment")
+	}
+	return strings.TrimSuffix(parsed.String(), "/"), nil
+}
+
+func shellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
