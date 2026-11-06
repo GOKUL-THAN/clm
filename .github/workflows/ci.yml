@@ -223,12 +223,24 @@ jobs:
           docker build -t clm-server:ci -f components/saas-control-plane/deploy/Dockerfile.server components/saas-control-plane
           bash .github/scripts/prepare-go-module.sh components/satellite-gateway "$RUNNER_TEMP/gateway-image"
           docker build -t clm-satellite:ci -f "$RUNNER_TEMP/gateway-image/deploy/Dockerfile.satellite" "$RUNNER_TEMP/gateway-image"
+          docker build -t clm-vsatellite:ci -f components/vsatellite/deploy/Dockerfile .
+      - name: Require non-root runtime users
+        run: |
+          for image in clm-server:ci clm-satellite:ci clm-vsatellite:ci; do
+            image_user=$(docker image inspect --format '{{.Config.User}}' "$image")
+            if [[ -z "$image_user" || "$image_user" =~ ^(root|0)(:|$) ]]; then
+              echo "Image $image has no non-root runtime user configured." >&2
+              exit 1
+            fi
+          done
       - name: Scan images with Trivy 0.58.2
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.2 image \
             --exit-code 1 --severity CRITICAL clm-server:ci
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.2 image \
             --exit-code 1 --severity CRITICAL clm-satellite:ci
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.2 image \
+            --exit-code 1 --severity CRITICAL clm-vsatellite:ci
 
   postgres-rls-test:
     name: PostgreSQL 15 RLS and Immutable Audit Verification
