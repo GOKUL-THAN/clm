@@ -101,11 +101,11 @@ func (m *Manager) RetrieveField(ctx context.Context, ref *core.SecretRef, field 
 
 // CertArtifacts holds raw cert material passed to the configured secret store.
 type CertArtifacts struct {
-	PrivateKey  []byte             // PEM-encoded private key
-	CSR         []byte             // PEM-encoded CSR
-	Certificate []byte             // PEM-encoded leaf cert
-	Chain       []byte             // PEM-encoded intermediates
-	FullChain   []byte             // PEM-encoded cert + chain
-	PFX         []byte             // PKCS12 binary
+	PrivateKey  []byte // PEM-encoded private key
+	CSR         []byte // PEM-encoded CSR
+	Certificate []byte // PEM-encoded leaf cert
+	Chain       []byte // PEM-encoded intermediates
+	FullChain   []byte // PEM-encoded cert + chain
+	PFX         []byte // PKCS12 binary
 	Metadata    models.CertMetadata
 }

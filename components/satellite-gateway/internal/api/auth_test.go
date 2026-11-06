@@ -110,7 +110,7 @@ func TestAuthenticatorValidatesRS256RegisteredClaims(t *testing.T) {
 		},
 		{
 			name: "wrong issuer", issuer: "https://other.example.test/realms/clm",
-			audiences: jwt.ClaimStrings{audience},
+			audiences:  jwt.ClaimStrings{audience},
 			expiration: jwt.NewNumericDate(time.Now().Add(time.Hour)), wantErr: true,
 		},
 		{

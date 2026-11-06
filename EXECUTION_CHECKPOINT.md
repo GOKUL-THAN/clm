@@ -1,8 +1,55 @@
 # Execution Checkpoint
 
-**Checkpoint date:** 2026-11-05
-**Active scope:** Continue the master CLM engineering directive incrementally.
+**Checkpoint date:** 2026-11-06
+**Active scope:** CI and security hardening on `audit/phase0-ci-workflow`.
 **Production readiness:** Not established.
+
+## Supplemental checkpoint — 2026-11-06
+
+- Created audit branch `audit/phase0-ci-workflow` from `main` at `2ae097c`.
+- Removed the tracked binary AppleDouble path `.github/workflows/._ci.yml`
+  (`25b0abb`); GitHub had enumerated it as an invalid second workflow.
+- Fixed the actual workflow YAML parse error by quoting the step name containing
+  `Table Ownership: clm_table_owner` (`9e90667`).
+- Pushed the audit branch to `origin/audit/phase0-ci-workflow`. No merge to
+  `main` was performed.
+- Hardened vSatellite install-command generation and URL validation
+  (`a9003bd`), removed committed test-secret/password placeholders and
+  narrowed intentional private-key serialization findings (`d9d056b`), and
+  enforced gateway JWT expiry, issuer, and audience validation (`62b8ada`).
+- CI run `42151433656` completed on `62b8ada` with seven of eight jobs passing:
+  PostgreSQL 15 RLS, vSatellite Go, SaaS Go, syntax, filesystem/IaC/SBOM,
+  secret scan, and container scan passed. The gateway job stopped at its
+  formatting gate before gateway tests, build, and security scans could run.
+- Corrected the two reported formatting differences in
+  `components/satellite-gateway/internal/api/auth_test.go` and
+  `components/satellite-gateway/internal/secrets/store.go`; these local edits
+  are not yet pushed or CI-verified.
+- A full-history Gitleaks workflow change is also uncommitted and unverified.
+  Run `42151433656` used the earlier `--no-git` configuration and therefore
+  scanned the working tree, not Git history.
+- Re-ran `npm test`, `npm run test:lifecycle`, `npm run test:400`,
+  `npm run test:corporate`, `npm run test:workflows`, and `npm run test:global`;
+  all six commands exited 0. Registry and lifecycle checks remain script-level
+  evidence, not proof of persistent production workflows.
+- Local Node.js `v24.19.0` is available. Go, `psql`, and Docker were not found
+  on the current PowerShell `PATH`; previous Go/PostgreSQL evidence remains
+  historical and was not reproduced in this checkpoint.
+- Current structural count: 2,020 tracked paths, 319 of which use an
+  AppleDouble `._` filename prefix. Only the workflow sidecar was removed;
+  unrelated metadata, the edited root README, and untracked `CLM/` were left
+  untouched.
+- Worktree evidence and tracker documents are being updated with the current
+  terminal CI results. Root `README.md` edits and untracked `CLM/` remain
+  unstaged and preserved.
+
+The CI and frontend deployment results below are time-scoped. The prior
+2026-11-05 verification table records that day's status and is distinct from
+the completed CI run `42151433656` summarized above. The 2026-11-06 Vercel
+production deploy updated the Node.js demo portal only and did not deploy or
+validate Go services.
+
+## Verification recorded on 2026-11-05
 
 ## Last completed work
 
@@ -46,16 +93,19 @@ temporary app role; the live `NewDB` connection test passed. PostgreSQL 15 CI,
 race detection, external provider integrations, staging, and production were
 not verified.
 
-## Worktree state
+## Current worktree state
 
-Changes remain uncommitted. The pre-existing untracked `CLM\` directory was
-left untouched. Review `git status --short` before any future staging or
-cleanup.
+The Go formatting corrections, full-history Gitleaks workflow change, and
+evidence-document updates remain uncommitted. The root `README.md` has separate
+existing local edits, and untracked `CLM/` remains untouched. `git diff
+--check` passed after the formatting corrections and must be rerun before
+committing. Do not stage the root README or nested `CLM/` as part of the audit.
 
 ## Next actions
 
-1. Run the Go workflow on the supported PostgreSQL 15 CI service and execute
-   the configured static security/dependency scanners.
+1. Push the gateway formatting fix and full-history secret scan workflow; inspect
+   the complete CI result and any history-only secret findings without exposing
+   values or rewriting history without authorization.
 2. Broaden tenant-isolation tests to other tenant-owned repositories and API
    handlers.
 3. Execute authenticated API, provider, frontend, performance, recovery, and
