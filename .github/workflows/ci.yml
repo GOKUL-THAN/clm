@@ -141,7 +141,7 @@ jobs:
       - name: Check Terraform formatting
         run: |
           docker run --rm -v "$PWD:/work" -w /work hashicorp/terraform:1.10.5 \
-            fmt -check deploy/terraform/aws/main.tf deploy/terraform/azure/main.tf deploy/terraform/gcp/main.tf
+            fmt -check -diff deploy/terraform/aws/main.tf deploy/terraform/azure/main.tf deploy/terraform/gcp/main.tf
       - name: Validate cloud Terraform modules without remote state access
         run: |
           for module in deploy/terraform/aws deploy/terraform/azure deploy/terraform/gcp; do
