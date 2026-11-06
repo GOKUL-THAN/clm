@@ -1,5 +1,9 @@
 terraform {
   required_version = ">= 1.5.0"
+  backend "azurerm" {
+    use_azuread_auth = true
+  }
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -76,15 +80,15 @@ resource "azurerm_key_vault_key" "clm_signing_key" {
 
 # 3. Azure Database for PostgreSQL Flexible Server
 resource "azurerm_postgresql_flexible_server" "clm_pg" {
-  name                   = "psql-clm-prod-flexible"
-  resource_group_name    = azurerm_resource_group.clm_rg.name
-  location               = azurerm_resource_group.clm_rg.location
-  version                = "15"
-  administrator_login    = "clm_admin"
-  administrator_password = var.administrator_password
-  storage_mb             = 131072
-  sku_name               = "GP_Standard_D4ds_v4"
-  backup_retention_days  = 35
+  name                         = "psql-clm-prod-flexible"
+  resource_group_name          = azurerm_resource_group.clm_rg.name
+  location                     = azurerm_resource_group.clm_rg.location
+  version                      = "15"
+  administrator_login          = "clm_admin"
+  administrator_password       = var.administrator_password
+  storage_mb                   = 131072
+  sku_name                     = "GP_Standard_D4ds_v4"
+  backup_retention_days        = 35
   geo_redundant_backup_enabled = true
 
   high_availability {

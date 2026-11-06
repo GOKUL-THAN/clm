@@ -29,10 +29,14 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    # Allow mTLS gRPC uplink from Satellite Gateways
+    # Allow mTLS gRPC uplink only from gateway pods in the customer namespace.
     - from:
-        - ipBlock:
-            cidr: 0.0.0.0/0 # or customer VPC CIDR range
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: clm-in-vpc
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: clm-satellite-gateway
       ports:
         - protocol: TCP
           port: 9090
@@ -78,4 +82,3 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-

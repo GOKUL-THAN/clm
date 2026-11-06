@@ -108,7 +108,48 @@ jobs:
             /work/components/satellite-gateway/configs/satellite-test.yaml \
             /work/components/saas-control-plane/deploy/docker-compose.yml \
             /work/components/saas-control-plane/deploy/docker-compose.test.yml \
+            /work/deploy/k8s/network-policies.yaml \
+            /work/deploy/k8s/saas-control-plane-deployment.yaml \
+            /work/deploy/k8s/satellite-gateway-daemonset.yaml \
             /work/.github/workflows/ci.yml >/dev/null
+      - name: Check Kubernetes security invariants
+        run: |
+          if grep -R -nE 'cidr:[[:space:]]*(0\.0\.0\.0/0|::/0)' deploy/k8s; then
+            echo "Kubernetes policies must not allow unrestricted network ranges."
+            exit 1
+          fi
+          docker run --rm -v "$PWD:/work" mikefarah/yq:4.44.6 \
+            eval --exit-status \
+            'select(.kind == "NetworkPolicy" and .metadata.name == "allow-control-plane-ingress") | .spec.ingress[] | select(.ports[0].port == 9090) | .from[] | select(.namespaceSelector.matchLabels."kubernetes.io/metadata.name" == "clm-in-vpc" and .podSelector.matchLabels."app.kubernetes.io/name" == "clm-satellite-gateway")' \
+            /work/deploy/k8s/network-policies.yaml >/dev/null
+          docker run --rm -v "$PWD:/work" mikefarah/yq:4.44.6 \
+            eval --exit-status \
+            'select(.kind == "Deployment" and .metadata.name == "clm-saas-control-plane") | .spec.template.spec.securityContext.runAsNonRoot == true and .spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation == false and .spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem == true' \
+            /work/deploy/k8s/saas-control-plane-deployment.yaml >/dev/null
+          docker run --rm -v "$PWD:/work" mikefarah/yq:4.44.6 \
+            eval --exit-status \
+            'select(.kind == "Deployment" and .metadata.name == "clm-customer-satellite-gateway") | .spec.template.spec.securityContext.runAsNonRoot == true and .spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation == false and .spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem == true' \
+            /work/deploy/k8s/satellite-gateway-daemonset.yaml >/dev/null
+
+  terraform:
+    name: Terraform formatting and validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check Terraform formatting
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work hashicorp/terraform:1.10.5 \
+            fmt -check deploy/terraform/aws/main.tf deploy/terraform/azure/main.tf deploy/terraform/gcp/main.tf
+      - name: Validate cloud Terraform modules without remote state access
+        run: |
+          for module in deploy/terraform/aws deploy/terraform/azure deploy/terraform/gcp; do
+            docker run --rm -v "$PWD:/work" -w "/work/$module" hashicorp/terraform:1.10.5 \
+              init -backend=false -input=false -no-color
+            docker run --rm -v "$PWD:/work" -w "/work/$module" hashicorp/terraform:1.10.5 \
+              validate -no-color
+          done
 
   secrets:
     name: Secret scan

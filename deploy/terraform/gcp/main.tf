@@ -1,5 +1,7 @@
 terraform {
   required_version = ">= 1.5.0"
+  backend "gcs" {}
+
   required_providers {
     google = {
       source  = "hashicorp/google"
@@ -58,7 +60,7 @@ resource "google_sql_database_instance" "clm_db" {
     }
 
     ip_configuration {
-      ipv4_enabled    = false
+      ipv4_enabled     = false
       private_network = "projects/${var.project_id}/global/networks/clm-vpc"
       require_ssl     = true
     }
@@ -66,4 +68,3 @@ resource "google_sql_database_instance" "clm_db" {
 
   deletion_protection = true
 }
-
