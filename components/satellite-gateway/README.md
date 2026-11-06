@@ -124,8 +124,8 @@ The API accepts two token types:
 
 | Type | Verification |
 |------|-------------|
-| Keycloak RS256 | Fetched from the realm JWKS (`CLM_JWKS_URL`, defaults to `<saas_endpoint>/auth/realms/clm/protocol/openid-connect/certs`), cached with a 1-minute refresh floor on unknown key IDs |
-| Internal HS256 | Shared secret via `CLM_JWT_SECRET` |
+| Keycloak RS256 | Fetched from the realm JWKS (`CLM_JWKS_URL`, defaults to `<saas_endpoint>/auth/realms/clm/protocol/openid-connect/certs`); requires the configured external issuer and audience and an expiration |
+| Internal HS256 | Shared secret via `CLM_JWT_SECRET`; requires the configured internal issuer and audience and an expiration |
 
 Roles are read from the token's top-level `roles` claim (this realm's shape) or `realm_access.roles`, with Keycloak's internal roles filtered out. Because both portals use the same realm, a token issued to `clm-admin-portal` is accepted here too — that is intentional SSO.
 
@@ -611,6 +611,10 @@ Enrolment tokens are single use, expire, and can be revoked while unused. `insta
 | `CLM_SATELLITE_CONFIG` | `configs/satellite.yaml` | Config path |
 | `CLM_SATELLITE_TOKEN` | — | Bearer token presented to the SaaS control plane |
 | `CLM_JWT_SECRET` | — | HS256 secret for internal tokens |
+| `CLM_JWT_ISSUER` | `clm-server` | Expected issuer for internal HS256 tokens |
+| `CLM_JWT_AUDIENCE` | `clm-api` | Expected audience for internal HS256 tokens |
+| `CLM_EXTERNAL_JWT_ISSUER` | `<saas_endpoint>/auth/realms/clm` | Expected issuer for Keycloak RS256 tokens |
+| `CLM_EXTERNAL_JWT_AUDIENCE` | `clm-api` | Expected audience for Keycloak RS256 tokens |
 | `CLM_GATEWAY_API_ADDR` | `:8080` | Portal API listen address |
 | `CLM_JWKS_URL` | derived from `saas_endpoint` | Keycloak JWKS for RS256 verification |
 

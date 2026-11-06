@@ -412,12 +412,33 @@ func main() {
 		jwksURL = strings.TrimSuffix(cfg.SaaSEndpoint, "/") +
 			"/auth/realms/clm/protocol/openid-connect/certs"
 	}
+	internalIssuer := os.Getenv("CLM_JWT_ISSUER")
+	if internalIssuer == "" {
+		internalIssuer = "clm-server"
+	}
+	internalAudience := os.Getenv("CLM_JWT_AUDIENCE")
+	if internalAudience == "" {
+		internalAudience = "clm-api"
+	}
+	externalIssuer := os.Getenv("CLM_EXTERNAL_JWT_ISSUER")
+	if externalIssuer == "" {
+		externalIssuer = strings.TrimSuffix(cfg.SaaSEndpoint, "/") + "/auth/realms/clm"
+	}
+	externalAudience := os.Getenv("CLM_EXTERNAL_JWT_AUDIENCE")
+	if externalAudience == "" {
+		externalAudience = "clm-api"
+	}
 	portalAPI := api.NewServer(api.Options{
 		SatelliteID:   cfg.ID,
 		SatelliteName: cfg.Name,
 		SaaSEndpoint:  cfg.SaaSEndpoint,
 		Version:       satelliteVersion,
-		Auth:          api.NewAuthenticator(os.Getenv("CLM_JWT_SECRET"), jwksURL, logger),
+		Auth: api.NewAuthenticator(os.Getenv("CLM_JWT_SECRET"), jwksURL, api.TokenValidationPolicy{
+			InternalIssuer:   internalIssuer,
+			InternalAudience: internalAudience,
+			ExternalIssuer:   externalIssuer,
+			ExternalAudience: externalAudience,
+		}, logger),
 		Scanner:       scanner,
 		DNSScanner:    dnsScanner,
 		ACME:          acmeManager,

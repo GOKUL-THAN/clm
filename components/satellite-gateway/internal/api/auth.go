@@ -63,9 +63,13 @@ func isGlobalAdmin(role string) bool {
 
 // Authenticator validates bearer tokens from the Gateway Portal.
 type Authenticator struct {
-	hmacSecret []byte
-	jwksURL    string
-	logger     *zap.Logger
+	hmacSecret       []byte
+	jwksURL          string
+	internalIssuer   string
+	internalAudience string
+	externalIssuer   string
+	externalAudience string
+	logger           *zap.Logger
 
 	mu        sync.RWMutex
 	keys      map[string]*rsa.PublicKey
@@ -73,22 +77,33 @@ type Authenticator struct {
 	http      *http.Client
 }
 
-// NewAuthenticator builds a validator that accepts Keycloak RS256 tokens
-// (verified against the realm's JWKS) and internal HS256 tokens.
-func NewAuthenticator(hmacSecret, jwksURL string, logger *zap.Logger) *Authenticator {
+// TokenValidationPolicy binds accepted tokens to their intended issuer and API.
+type TokenValidationPolicy struct {
+	InternalIssuer   string
+	InternalAudience string
+	ExternalIssuer   string
+	ExternalAudience string
+}
+
+// NewAuthenticator builds a validator for HS256 and JWKS-verified RS256 tokens.
+func NewAuthenticator(hmacSecret, jwksURL string, policy TokenValidationPolicy, logger *zap.Logger) *Authenticator {
 	return &Authenticator{
-		hmacSecret: []byte(hmacSecret),
-		jwksURL:    jwksURL,
-		logger:     logger,
-		keys:       make(map[string]*rsa.PublicKey),
-		http:       &http.Client{Timeout: 10 * time.Second},
+		hmacSecret:       []byte(hmacSecret),
+		jwksURL:          jwksURL,
+		internalIssuer:   policy.InternalIssuer,
+		internalAudience: policy.InternalAudience,
+		externalIssuer:   policy.ExternalIssuer,
+		externalAudience: policy.ExternalAudience,
+		logger:           logger,
+		keys:             make(map[string]*rsa.PublicKey),
+		http:             &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 // Parse validates a raw token string and returns its claims.
 func (a *Authenticator) Parse(raw string) (*Claims, error) {
 	claims := &Claims{}
-	_, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (interface{}, error) {
 		switch t.Method.Alg() {
 		case "HS256":
 			if len(a.hmacSecret) == 0 {
@@ -101,11 +116,33 @@ func (a *Authenticator) Parse(raw string) (*Claims, error) {
 		default:
 			return nil, fmt.Errorf("unexpected signing algorithm: %s", t.Method.Alg())
 		}
-	})
+	}, jwt.WithValidMethods([]string{"HS256", "RS256"}), jwt.WithExpirationRequired(), jwt.WithIssuedAt())
 	if err != nil {
 		return nil, err
 	}
+	if token == nil || !token.Valid {
+		return nil, fmt.Errorf("invalid token")
+	}
+	expectedIssuer, expectedAudience := a.internalIssuer, a.internalAudience
+	if token.Method.Alg() == "RS256" {
+		expectedIssuer, expectedAudience = a.externalIssuer, a.externalAudience
+	}
+	if expectedIssuer == "" || claims.Issuer != expectedIssuer {
+		return nil, fmt.Errorf("token issuer is missing or not trusted")
+	}
+	if expectedAudience == "" || !hasAudience(claims.Audience, expectedAudience) {
+		return nil, fmt.Errorf("token audience is missing or not trusted")
+	}
 	return claims, nil
+}
+
+func hasAudience(audiences jwt.ClaimStrings, expected string) bool {
+	for _, audience := range audiences {
+		if audience == expected {
+			return true
+		}
+	}
+	return false
 }
 
 // rsaKey returns the realm signing key for kid, refreshing the JWKS at most

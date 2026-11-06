@@ -46,7 +46,11 @@ jobs:
           fi
           [[ -z "$files" ]] && exit 0
           unformatted=$(printf '%s\n' "$files" | xargs gofmt -l)
-          test -z "$unformatted" || { printf '%s\n' "$unformatted"; exit 1; }
+          if [[ -n "$unformatted" ]]; then
+            printf 'Go files need gofmt:\n%s\n' "$unformatted"
+            printf '%s\n' "$unformatted" | xargs gofmt -d
+            exit 1
+          fi
       - name: Prepare monorepo module
         run: |
           bash .github/scripts/prepare-go-module.sh '${{ matrix.module }}' "$RUNNER_TEMP/clm-module"

@@ -99,7 +99,7 @@ func (m *Manager) RetrieveField(ctx context.Context, ref *core.SecretRef, field 
 	return base64.StdEncoding.DecodeString(string(encoded))
 }
 
-// CertArtifacts holds all raw (non-encoded) cert artifacts.
+// CertArtifacts holds raw cert material passed to the configured secret store.
 type CertArtifacts struct {
 	PrivateKey  []byte             // PEM-encoded private key
 	CSR         []byte             // PEM-encoded CSR

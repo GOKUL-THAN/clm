@@ -23,9 +23,10 @@ variable "resource_group_name" {
 }
 
 variable "administrator_password" {
-  type      = string
-  sensitive = true
-  nullable  = false
+  description = "PostgreSQL administrator password; supply securely and protect Terraform state."
+  type        = string
+  sensitive   = true
+  nullable    = false
 
   validation {
     condition     = length(var.administrator_password) >= 16 && length(var.administrator_password) <= 128

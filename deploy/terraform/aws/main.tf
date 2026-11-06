@@ -23,9 +23,10 @@ variable "environment" {
 }
 
 variable "db_password" {
-  type      = string
-  sensitive = true
-  nullable  = false
+  description = "PostgreSQL administrator password; supply securely and protect Terraform state."
+  type        = string
+  sensitive   = true
+  nullable    = false
 
   validation {
     condition     = length(var.db_password) >= 16 && length(var.db_password) <= 128
