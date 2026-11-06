@@ -21,13 +21,19 @@
   PostgreSQL 15 RLS, vSatellite Go, SaaS Go, syntax, filesystem/IaC/SBOM,
   secret scan, and container scan passed. The gateway job stopped at its
   formatting gate before gateway tests, build, and security scans could run.
-- Corrected the two reported formatting differences in
-  `components/satellite-gateway/internal/api/auth_test.go` and
-  `components/satellite-gateway/internal/secrets/store.go`; these local edits
-  are not yet pushed or CI-verified.
-- A full-history Gitleaks workflow change is also uncommitted and unverified.
-  Run `42151433656` used the earlier `--no-git` configuration and therefore
-  scanned the working tree, not Git history.
+- Pushed commit `21f2e64`, which corrected the two reported formatting
+  differences, enabled full-history Gitleaks scanning, and recorded the
+  preceding CI evidence.
+- CI run `42152346744` completed with seven of eight jobs passing. Gateway Go
+  formatting, vet, tests, race detector, build, Gosec, and dependency scan
+  passed; SaaS and vSatellite Go jobs, PostgreSQL 15 RLS, syntax, filesystem/
+  IaC/SBOM, and container scan also passed.
+- The full-history Gitleaks job reported six detections in earlier commits:
+  removed test-only signing literals, replaced Terraform password placeholders,
+  and a rephrased prose false positive. Values were not copied into this record.
+  Added exact fingerprint entries to `.gitleaksignore` in the local worktree;
+  that narrow allowlist has not yet been pushed or validated.
+- No history rewrite, merge to `main`, or deployment was performed.
 - Re-ran `npm test`, `npm run test:lifecycle`, `npm run test:400`,
   `npm run test:corporate`, `npm run test:workflows`, and `npm run test:global`;
   all six commands exited 0. Registry and lifecycle checks remain script-level
@@ -95,17 +101,16 @@ not verified.
 
 ## Current worktree state
 
-The Go formatting corrections, full-history Gitleaks workflow change, and
-evidence-document updates remain uncommitted. The root `README.md` has separate
-existing local edits, and untracked `CLM/` remains untouched. `git diff
---check` passed after the formatting corrections and must be rerun before
+The only new uncommitted audit changes are `.gitleaksignore` and the latest
+evidence-document updates. The root `README.md` has separate existing local
+edits, and untracked `CLM/` remains untouched. Run `git diff --check` before
 committing. Do not stage the root README or nested `CLM/` as part of the audit.
 
 ## Next actions
 
-1. Push the gateway formatting fix and full-history secret scan workflow; inspect
-   the complete CI result and any history-only secret findings without exposing
-   values or rewriting history without authorization.
+1. Verify the six-entry Gitleaks ignore list against the completed scan and
+   rerun CI; keep the history scan enabled and avoid rewriting history absent
+   authorization.
 2. Broaden tenant-isolation tests to other tenant-owned repositories and API
    handlers.
 3. Execute authenticated API, provider, frontend, performance, recovery, and

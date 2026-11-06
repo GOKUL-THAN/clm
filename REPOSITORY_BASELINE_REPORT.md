@@ -80,12 +80,19 @@ GitHub Actions run `42151433656` tested commit `62b8ada` and completed with
 | Container image scan | PASS | Both configured images built and the critical-severity scan completed |
 | Satellite gateway Go | FAIL | Formatting gate stopped the job before gateway vet/tests/build/security scans; it identified formatting differences in `internal/api/auth_test.go` and `internal/secrets/store.go` |
 
-Those two Go formatting differences have been corrected in the local worktree
-but have not yet been validated by a subsequent CI run. The gateway JWT tests
-therefore have not yet run in CI. A full-history Gitleaks workflow adjustment
-is also pending validation; it fetches complete history and removes `--no-git`.
-No deployment was performed, and these CI results do not establish production
-readiness.
+Those two Go formatting differences were corrected in commit `21f2e64` and
+validated by its CI run. The gateway JWT tests ran successfully. A
+full-history Gitleaks workflow adjustment was also pushed in that commit. Its
+CI run `42152346744` passed the
+gateway formatting, vet, tests, race detector, build, Gosec, and dependency
+scan, along with the other non-secret-scan jobs. The full-history secret scan
+reported six detections, all in earlier commits: test-only signing literals,
+Terraform password placeholders since replaced with validated variables, and
+a prose false positive since rephrased. No detected value is reproduced here.
+Six exact Gitleaks fingerprints have been added to `.gitleaksignore` for these
+reviewed historical false positives; the full-history scan must pass again
+before the secret-scan gate is considered verified. No Git history rewrite or
+deployment was performed, and production readiness is not established.
 
 ## Product and architecture verification
 
