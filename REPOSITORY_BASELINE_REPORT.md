@@ -89,10 +89,11 @@ scan, along with the other non-secret-scan jobs. The full-history secret scan
 reported six detections, all in earlier commits: test-only signing literals,
 Terraform password placeholders since replaced with validated variables, and
 a prose false positive since rephrased. No detected value is reproduced here.
-Six exact Gitleaks fingerprints have been added to `.gitleaksignore` for these
-reviewed historical false positives; the full-history scan must pass again
-before the secret-scan gate is considered verified. No Git history rewrite or
-deployment was performed, and production readiness is not established.
+Six exact Gitleaks fingerprints were added to `.gitleaksignore` for these
+reviewed historical false positives. Final CI run `42152893086`, on commit
+`01e3ec7`, passed all eight jobs, including the full-history secret scan. No
+Git history rewrite, merge to `main`, or deployment was performed, and
+production readiness is not established.
 
 ## Product and architecture verification
 
@@ -112,14 +113,11 @@ staging readiness. Those statements conflict with the active
 
 ## Open baseline work
 
-1. Push and verify the gateway formatting corrections and full-history secret
-   scan configuration; investigate any history-only findings without exposing
-   secret values or rewriting history without authorization.
-2. Reconcile stale reports against present source and reproducible evidence,
+1. Reconcile stale reports against present source and reproducible evidence,
    retaining historical reports but clearly marking unsupported claims.
-3. Inventory the 319 remaining AppleDouble paths and determine which are
+2. Inventory the 319 remaining AppleDouble paths and determine which are
    metadata artifacts before proposing any cleanup.
-4. Complete module dependency, API-to-UI, migration-to-runtime, and trust-boundary
+3. Complete module dependency, API-to-UI, migration-to-runtime, and trust-boundary
    inventories.
-5. Re-run Go, PostgreSQL, container, integration, and security checks in
+4. Re-run Go, PostgreSQL, container, integration, and security checks in
    environments that provide the required toolchains and isolated dependencies.

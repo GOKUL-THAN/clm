@@ -31,8 +31,9 @@
 - The full-history Gitleaks job reported six detections in earlier commits:
   removed test-only signing literals, replaced Terraform password placeholders,
   and a rephrased prose false positive. Values were not copied into this record.
-  Added exact fingerprint entries to `.gitleaksignore` in the local worktree;
-  that narrow allowlist has not yet been pushed or validated.
+- Added six exact historical fingerprints to `.gitleaksignore` in commit
+  `01e3ec7`; CI run `42152893086` then passed all eight jobs, including the
+  full-history secret scan.
 - No history rewrite, merge to `main`, or deployment was performed.
 - Re-ran `npm test`, `npm run test:lifecycle`, `npm run test:400`,
   `npm run test:corporate`, `npm run test:workflows`, and `npm run test:global`;
@@ -101,20 +102,17 @@ not verified.
 
 ## Current worktree state
 
-The only new uncommitted audit changes are `.gitleaksignore` and the latest
-evidence-document updates. The root `README.md` has separate existing local
-edits, and untracked `CLM/` remains untouched. Run `git diff --check` before
-committing. Do not stage the root README or nested `CLM/` as part of the audit.
+The latest evidence-document updates remain uncommitted. The root `README.md`
+has separate existing local edits, and untracked `CLM/` remains untouched. Run
+`git diff --check` before committing. Do not stage the root README or nested
+`CLM/` as part of the audit.
 
 ## Next actions
 
-1. Verify the six-entry Gitleaks ignore list against the completed scan and
-   rerun CI; keep the history scan enabled and avoid rewriting history absent
-   authorization.
-2. Broaden tenant-isolation tests to other tenant-owned repositories and API
+1. Broaden tenant-isolation tests to other tenant-owned repositories and API
    handlers.
-3. Execute authenticated API, provider, frontend, performance, recovery, and
+2. Execute authenticated API, provider, frontend, performance, recovery, and
    staging checks where suitable credentials and environments are available.
-4. Continue remaining phases in `MASTER_REQUIREMENT_TRACKER.md`; do not
+3. Continue remaining phases in `MASTER_REQUIREMENT_TRACKER.md`; do not
    declare production readiness until every applicable release gate has
    evidence.
