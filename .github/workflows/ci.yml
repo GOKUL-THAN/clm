@@ -130,6 +130,22 @@ jobs:
             eval --exit-status \
             'select(.kind == "Deployment" and .metadata.name == "clm-customer-satellite-gateway") | .spec.template.spec.securityContext.runAsNonRoot == true and .spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation == false and .spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem == true' \
             /work/deploy/k8s/satellite-gateway-daemonset.yaml >/dev/null
+          docker run --rm -v "$PWD:/work" mikefarah/yq:4.44.6 \
+            eval --exit-status \
+            'select(.kind == "ServiceAccount" and .metadata.name == "clm-control-plane-sa" and .metadata.namespace == "clm-production") | .automountServiceAccountToken == false' \
+            /work/deploy/k8s/saas-control-plane-deployment.yaml >/dev/null
+          docker run --rm -v "$PWD:/work" mikefarah/yq:4.44.6 \
+            eval --exit-status \
+            'select(.kind == "Deployment" and .metadata.name == "clm-saas-control-plane") | .spec.template.spec.serviceAccountName == "clm-control-plane-sa" and .spec.template.spec.automountServiceAccountToken == false' \
+            /work/deploy/k8s/saas-control-plane-deployment.yaml >/dev/null
+          docker run --rm -v "$PWD:/work" mikefarah/yq:4.44.6 \
+            eval --exit-status \
+            'select(.kind == "ServiceAccount" and .metadata.name == "clm-satellite-sa" and .metadata.namespace == "clm-in-vpc") | .automountServiceAccountToken == false' \
+            /work/deploy/k8s/satellite-gateway-daemonset.yaml >/dev/null
+          docker run --rm -v "$PWD:/work" mikefarah/yq:4.44.6 \
+            eval --exit-status \
+            'select(.kind == "Deployment" and .metadata.name == "clm-customer-satellite-gateway") | .spec.template.spec.serviceAccountName == "clm-satellite-sa" and .spec.template.spec.automountServiceAccountToken == false' \
+            /work/deploy/k8s/satellite-gateway-daemonset.yaml >/dev/null
 
   terraform:
     name: Terraform formatting and validation

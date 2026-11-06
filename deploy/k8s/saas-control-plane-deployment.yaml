@@ -7,6 +7,13 @@ metadata:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clm-control-plane-sa
+  namespace: clm-production
+automountServiceAccountToken: false
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,6 +43,7 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: clm-control-plane-sa
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -130,4 +138,3 @@ spec:
       targetPort: grpc-mtls
   selector:
     app.kubernetes.io/name: clm-control-plane
-
