@@ -665,9 +665,124 @@ let mockContractRequests = [
         estimated_value: 75000,
         currency: "USD",
         urgency: "high",
+        priority: "high",
+        classification: "commercial",
+        department: "Finance",
+        assigned_to: null,
+        sla_deadline: new Date(Date.now() + 18 * 3600000).toISOString(),
         business_justification: "Critical payment rail enablement for EMEA market launch in Q3.",
         status: "submitted",
-        created_at: new Date(Date.now() - 24 * 3600000).toISOString()
+        escalated: false,
+        escalated_to: null,
+        escalate_reason: null,
+        cancel_reason: null,
+        completed_at: null,
+        created_at: new Date(Date.now() - 24 * 3600000).toISOString(),
+        updated_at: new Date().toISOString()
+    },
+    {
+        id: "req-02",
+        tenant_id: "tenant-enterprise-uat",
+        request_number: "REQ-2026-00105",
+        title: "Cloud Infrastructure Master Services Agreement",
+        contract_type: "MSA",
+        counterparty_name: "HyperScale Cloud Inc",
+        counterparty_email: "contracts@hyperscale.io",
+        estimated_value: 450000,
+        currency: "USD",
+        urgency: "medium",
+        priority: "medium",
+        classification: "vendor",
+        department: "Operations",
+        assigned_to: "Sarah Mitchell",
+        sla_deadline: new Date(Date.now() + 3 * 86400000).toISOString(),
+        business_justification: "Renew and expand cloud hosting partnership with improved SLA terms.",
+        status: "in_progress",
+        escalated: false,
+        escalated_to: null,
+        escalate_reason: null,
+        cancel_reason: null,
+        completed_at: null,
+        created_at: new Date(Date.now() - 48 * 3600000).toISOString(),
+        updated_at: new Date().toISOString()
+    },
+    {
+        id: "req-03",
+        tenant_id: "tenant-enterprise-uat",
+        request_number: "REQ-2026-00106",
+        title: "Mutual NDA - Quantum Analytics Partnership",
+        contract_type: "NDA",
+        counterparty_name: "Quantum Analytics Ltd",
+        counterparty_email: "legal@quantumanalytics.com",
+        estimated_value: 0,
+        currency: "USD",
+        urgency: "low",
+        priority: "low",
+        classification: "commercial",
+        department: "R&D",
+        assigned_to: "James Carter",
+        sla_deadline: new Date(Date.now() - 6 * 3600000).toISOString(),
+        business_justification: "Standard mutual NDA for joint research evaluation phase.",
+        status: "completed",
+        escalated: false,
+        escalated_to: null,
+        escalate_reason: null,
+        cancel_reason: null,
+        completed_at: new Date(Date.now() - 2 * 3600000).toISOString(),
+        created_at: new Date(Date.now() - 72 * 3600000).toISOString(),
+        updated_at: new Date(Date.now() - 2 * 3600000).toISOString()
+    },
+    {
+        id: "req-04",
+        tenant_id: "tenant-enterprise-uat",
+        request_number: "REQ-2026-00107",
+        title: "Managed Security Services SLA",
+        contract_type: "SLA",
+        counterparty_name: "SentinelDefend Security",
+        counterparty_email: "psa@sentineldefend.com",
+        estimated_value: 120000,
+        currency: "USD",
+        urgency: "high",
+        priority: "high",
+        classification: "vendor",
+        department: "Security",
+        assigned_to: null,
+        sla_deadline: new Date(Date.now() + 6 * 3600000).toISOString(),
+        business_justification: "24/7 SOC services contract with defined incident response metrics.",
+        status: "submitted",
+        escalated: false,
+        escalated_to: null,
+        escalate_reason: null,
+        cancel_reason: null,
+        completed_at: null,
+        created_at: new Date(Date.now() - 12 * 3600000).toISOString(),
+        updated_at: new Date().toISOString()
+    },
+    {
+        id: "req-05",
+        tenant_id: "tenant-enterprise-uat",
+        request_number: "REQ-2026-00108",
+        title: "Data Processing Addendum for EU Operations",
+        contract_type: "Vendor",
+        counterparty_name: "DataFlow Systems",
+        counterparty_email: "dpa@dataflow.systems",
+        estimated_value: 35000,
+        currency: "USD",
+        urgency: "medium",
+        priority: "high",
+        classification: "compliance",
+        department: "Legal",
+        assigned_to: "Priya Nair",
+        sla_deadline: new Date(Date.now() + 20 * 3600000).toISOString(),
+        business_justification: "GDPR-compliant DPA required before EU customer data processing begins.",
+        status: "in_progress",
+        escalated: true,
+        escalated_to: "General Counsel",
+        escalate_reason: "Compliance deadline approaching; requires senior review.",
+        cancel_reason: null,
+        completed_at: null,
+        created_at: new Date(Date.now() - 30 * 3600000).toISOString(),
+        updated_at: new Date().toISOString()
     }
 ];
 
@@ -2085,6 +2200,8 @@ function handleMockAPI(req, res) {
             req.on('end', () => {
                 let input = {};
                 try { input = JSON.parse(body); } catch(e) {}
+                var intakePriority = input.priority || (input.urgency === 'high' || input.urgency === 'critical' ? 'high' : (input.urgency === 'low' ? 'low' : 'medium'));
+                var slaHours = intakePriority === 'high' ? 48 : (intakePriority === 'low' ? 168 : 72);
                 const newReq = {
                     id: "req-" + Math.floor(Math.random() * 899 + 100),
                     tenant_id: "tenant-enterprise-uat",
@@ -2096,9 +2213,20 @@ function handleMockAPI(req, res) {
                     estimated_value: Number(input.estimated_value) || 0,
                     currency: input.currency || "USD",
                     urgency: input.urgency || "medium",
-                    business_justification: input.business_justification || "",
+                    priority: intakePriority,
+                    classification: input.classification || "commercial",
+                    department: input.department || "Operations",
+                    assigned_to: input.assigned_to || null,
+                    sla_deadline: input.sla_deadline || new Date(Date.now() + slaHours * 3600000).toISOString(),
+                    business_justification: input.business_justification || input.purpose || input.service_scope || input.deliverables || input.goods_services || input.service_description || "",
                     status: "submitted",
-                    created_at: new Date().toISOString()
+                    escalated: false,
+                    escalated_to: null,
+                    escalate_reason: null,
+                    cancel_reason: null,
+                    completed_at: null,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
                 };
                 mockContractRequests.unshift(newReq);
                 res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -4594,6 +4722,367 @@ function handleMockAPI(req, res) {
             res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
             res.end(JSON.stringify({ report_type: 'clm_portfolio_audit', generated_at: new Date().toISOString(), contracts: mockContracts, total: mockContracts.length }));
         }
+        return true;
+    }
+
+    // ====================================================================
+    // CONTRACT INTAKE MANAGEMENT (Features 123-138)
+    // Ordering: specific sub-resource routes before generic /:id routes.
+    // ====================================================================
+
+    // 1. GET /api/v1/contract-requests/forms/:type — dynamic form definition
+    if (pathname.match(/^\/api\/v1\/contract-requests\/forms\/[^\/]+$/) && req.method === 'GET') {
+        var formType = pathname.split('/')[5];
+        var formDefs = {
+            nda: {
+                type: 'nda',
+                label: 'Non-Disclosure Agreement (NDA)',
+                fields: [
+                    { name: 'title', label: 'Agreement Title', type: 'text', required: true, placeholder: 'e.g. Mutual NDA with Partner X' },
+                    { name: 'counterparty_name', label: 'Counterparty Name', type: 'text', required: true },
+                    { name: 'counterparty_email', label: 'Counterparty Email', type: 'email', required: true },
+                    { name: 'nda_type', label: 'NDA Type', type: 'select', required: true, options: ['Mutual', 'One-Way'] },
+                    { name: 'effective_date', label: 'Effective Date', type: 'date', required: true },
+                    { name: 'term_months', label: 'Term (Months)', type: 'number', required: true, default: 36 },
+                    { name: 'purpose', label: 'Purpose of Disclosure', type: 'textarea', required: true },
+                    { name: 'jurisdiction', label: 'Governing Law Jurisdiction', type: 'text', required: false }
+                ]
+            },
+            msa: {
+                type: 'msa',
+                label: 'Master Services Agreement (MSA)',
+                fields: [
+                    { name: 'title', label: 'Agreement Title', type: 'text', required: true },
+                    { name: 'counterparty_name', label: 'Counterparty Name', type: 'text', required: true },
+                    { name: 'counterparty_email', label: 'Counterparty Email', type: 'email', required: true },
+                    { name: 'estimated_value', label: 'Estimated Annual Value (USD)', type: 'number', required: true },
+                    { name: 'term_months', label: 'Term (Months)', type: 'number', required: true, default: 12 },
+                    { name: 'payment_terms', label: 'Payment Terms', type: 'text', required: true, default: 'Net 30' },
+                    { name: 'service_scope', label: 'Scope of Services', type: 'textarea', required: true },
+                    { name: 'liability_cap', label: 'Liability Cap (Months of Fees)', type: 'number', required: false, default: 12 },
+                    { name: 'jurisdiction', label: 'Governing Law Jurisdiction', type: 'text', required: false }
+                ]
+            },
+            sowa: {
+                type: 'sowa',
+                label: 'Statement of Work (SOW)',
+                fields: [
+                    { name: 'title', label: 'SOW Title', type: 'text', required: true },
+                    { name: 'counterparty_name', label: 'Counterparty Name', type: 'text', required: true },
+                    { name: 'parent_msa', label: 'Parent MSA Reference', type: 'text', required: false },
+                    { name: 'estimated_value', label: 'Estimated Value (USD)', type: 'number', required: true },
+                    { name: 'start_date', label: 'Start Date', type: 'date', required: true },
+                    { name: 'end_date', label: 'End Date', type: 'date', required: true },
+                    { name: 'deliverables', label: 'Key Deliverables', type: 'textarea', required: true },
+                    { name: 'milestones', label: 'Milestone Schedule', type: 'textarea', required: false }
+                ]
+            },
+            sla: {
+                type: 'sla',
+                label: 'Service Level Agreement (SLA)',
+                fields: [
+                    { name: 'title', label: 'SLA Title', type: 'text', required: true },
+                    { name: 'counterparty_name', label: 'Counterparty Name', type: 'text', required: true },
+                    { name: 'service_description', label: 'Service Description', type: 'textarea', required: true },
+                    { name: 'uptime_target', label: 'Uptime Target (%)', type: 'number', required: true, default: 99.9 },
+                    { name: 'response_time_critical', label: 'Response Time - Critical (mins)', type: 'number', required: true, default: 15 },
+                    { name: 'resolution_time_critical', label: 'Resolution Time - Critical (hrs)', type: 'number', required: true, default: 4 },
+                    { name: 'penalty_clause', label: 'Service Credit / Penalty Clause', type: 'textarea', required: false }
+                ]
+            },
+            vendor: {
+                type: 'vendor',
+                label: 'Vendor / Supplier Agreement',
+                fields: [
+                    { name: 'title', label: 'Agreement Title', type: 'text', required: true },
+                    { name: 'counterparty_name', label: 'Vendor Name', type: 'text', required: true },
+                    { name: 'counterparty_email', label: 'Vendor Contact Email', type: 'email', required: true },
+                    { name: 'estimated_value', label: 'Estimated Value (USD)', type: 'number', required: true },
+                    { name: 'goods_services', label: 'Goods / Services Description', type: 'textarea', required: true },
+                    { name: 'insurance_required', label: 'Insurance Required', type: 'select', required: true, options: ['Yes', 'No'] },
+                    { name: 'background_check', label: 'Background Check Required', type: 'select', required: false, options: ['Yes', 'No'] },
+                    { name: 'term_months', label: 'Term (Months)', type: 'number', required: false, default: 12 }
+                ]
+            }
+        };
+        var form = formDefs[formType] || {
+            type: formType,
+            label: formType.toUpperCase() + ' Contract Request',
+            fields: [
+                { name: 'title', label: 'Agreement Title', type: 'text', required: true },
+                { name: 'counterparty_name', label: 'Counterparty Name', type: 'text', required: true },
+                { name: 'counterparty_email', label: 'Counterparty Email', type: 'email', required: false },
+                { name: 'estimated_value', label: 'Estimated Value (USD)', type: 'number', required: false },
+                { name: 'business_justification', label: 'Business Justification', type: 'textarea', required: true }
+            ]
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ form: form }));
+        return true;
+    }
+
+    // 2. GET /api/v1/contract-requests/queue — prioritized queue with filters, sorted by SLA deadline
+    if (pathname === '/api/v1/contract-requests/queue' && req.method === 'GET') {
+        var statusFilter = parsed.searchParams.get('status');
+        var priorityFilter = parsed.searchParams.get('priority');
+        var assigneeFilter = parsed.searchParams.get('assignee');
+        var queue = mockContractRequests.filter(function(r) {
+            if (statusFilter && r.status !== statusFilter) return false;
+            if (priorityFilter && r.priority !== priorityFilter) return false;
+            if (assigneeFilter && r.assigned_to !== assigneeFilter) return false;
+            return true;
+        });
+        queue.sort(function(a, b) {
+            var da = new Date(a.sla_deadline || a.created_at).getTime();
+            var db = new Date(b.sla_deadline || b.created_at).getTime();
+            return da - db;
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ requests: queue, count: queue.length }));
+        return true;
+    }
+
+    // 3. GET /api/v1/contract-requests/stats — SLA tracking stats
+    if (pathname === '/api/v1/contract-requests/stats' && req.method === 'GET') {
+        var intakeNow = Date.now();
+        var total = mockContractRequests.length;
+        var pending = mockContractRequests.filter(function(r) { return r.status === 'submitted'; }).length;
+        var in_progress = mockContractRequests.filter(function(r) { return r.status === 'in_progress'; }).length;
+        var completed = mockContractRequests.filter(function(r) { return r.status === 'completed'; }).length;
+        var sla_breached = 0;
+        var sla_at_risk = 0;
+        var resolutionHours = [];
+        for (var si = 0; si < mockContractRequests.length; si++) {
+            var sr = mockContractRequests[si];
+            if (sr.sla_deadline && sr.status !== 'completed' && sr.status !== 'cancelled') {
+                var sdl = new Date(sr.sla_deadline).getTime();
+                if (sdl < intakeNow) {
+                    sla_breached++;
+                } else if (sdl - intakeNow < 24 * 3600000) {
+                    sla_at_risk++;
+                }
+            }
+            if (sr.status === 'completed' && sr.completed_at && sr.created_at) {
+                var shrs = (new Date(sr.completed_at).getTime() - new Date(sr.created_at).getTime()) / 3600000;
+                if (shrs >= 0) resolutionHours.push(shrs);
+            }
+        }
+        var avg_resolution_hours = resolutionHours.length > 0
+            ? Math.round((resolutionHours.reduce(function(a, b) { return a + b; }, 0) / resolutionHours.length) * 100) / 100
+            : 0;
+        var sla_eligible = pending + in_progress;
+        var sla_compliance_rate = sla_eligible > 0
+            ? Math.round(((sla_eligible - sla_breached) / sla_eligible) * 10000) / 100
+            : 100;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            total: total,
+            pending: pending,
+            in_progress: in_progress,
+            completed: completed,
+            sla_breached: sla_breached,
+            sla_at_risk: sla_at_risk,
+            avg_resolution_hours: avg_resolution_hours,
+            sla_compliance_rate: sla_compliance_rate
+        }));
+        return true;
+    }
+
+    // 4. POST /api/v1/contract-requests/check-duplicate — check for duplicates by title/counterparty
+    if (pathname === '/api/v1/contract-requests/check-duplicate' && req.method === 'POST') {
+        var dupBody = '';
+        req.on('data', function(chunk) { dupBody += chunk; });
+        req.on('end', function() {
+            var input = {};
+            try { input = JSON.parse(dupBody); } catch(e) {}
+            var title = (input.title || '').toLowerCase().trim();
+            var party = (input.counterparty_name || '').toLowerCase().trim();
+            var duplicates = mockContractRequests.filter(function(r) {
+                var rTitle = (r.title || '').toLowerCase();
+                var rParty = (r.counterparty_name || '').toLowerCase();
+                var titleMatch = title && rTitle.indexOf(title) !== -1;
+                var partyMatch = party && rParty.indexOf(party) !== -1;
+                return titleMatch || partyMatch;
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                is_duplicate: duplicates.length > 0,
+                duplicates: duplicates,
+                count: duplicates.length
+            }));
+        });
+        return true;
+    }
+
+    // 5. POST /api/v1/contract-requests/validate — validate fields, return errors array
+    if (pathname === '/api/v1/contract-requests/validate' && req.method === 'POST') {
+        var valBody = '';
+        req.on('data', function(chunk) { valBody += chunk; });
+        req.on('end', function() {
+            var input = {};
+            try { input = JSON.parse(valBody); } catch(e) {}
+            var errors = [];
+            if (!input.title || !String(input.title).trim()) {
+                errors.push({ field: 'title', message: 'Title is required.' });
+            }
+            if (!input.counterparty_name || !String(input.counterparty_name).trim()) {
+                errors.push({ field: 'counterparty_name', message: 'Counterparty name is required.' });
+            }
+            if (input.counterparty_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.counterparty_email)) {
+                errors.push({ field: 'counterparty_email', message: 'Counterparty email is not a valid format.' });
+            }
+            if (input.estimated_value !== undefined && input.estimated_value !== null && input.estimated_value !== '') {
+                if (isNaN(Number(input.estimated_value)) || Number(input.estimated_value) < 0) {
+                    errors.push({ field: 'estimated_value', message: 'Estimated value must be a non-negative number.' });
+                }
+            }
+            var validTypes = ['NDA', 'MSA', 'SOW', 'SLA', 'Vendor', 'nda', 'msa', 'sowa', 'sla', 'vendor'];
+            if (input.contract_type && validTypes.indexOf(input.contract_type) === -1) {
+                errors.push({ field: 'contract_type', message: 'Contract type must be one of: NDA, MSA, SOW, SLA, Vendor.' });
+            }
+            var validPriorities = ['high', 'medium', 'low'];
+            if (input.priority && validPriorities.indexOf(input.priority) === -1) {
+                errors.push({ field: 'priority', message: 'Priority must be one of: high, medium, low.' });
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ valid: errors.length === 0, errors: errors }));
+        });
+        return true;
+    }
+
+    // 6. POST /api/v1/contract-requests/:id/assign — assign request to user, set status to in_progress
+    if (pathname.match(/^\/api\/v1\/contract-requests\/[^\/]+\/assign$/) && req.method === 'POST') {
+        var assignId = pathname.split('/')[4];
+        var assignItem = mockContractRequests.find(function(r) { return r.id === assignId; });
+        var assignBody = '';
+        req.on('data', function(chunk) { assignBody += chunk; });
+        req.on('end', function() {
+            var input = {};
+            try { input = JSON.parse(assignBody); } catch(e) {}
+            if (!assignItem) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Request not found' }));
+                return;
+            }
+            assignItem.assigned_to = input.assigned_to || input.user || assignItem.assigned_to;
+            assignItem.status = 'in_progress';
+            assignItem.updated_at = new Date().toISOString();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ request: assignItem, message: 'Request assigned successfully' }));
+        });
+        return true;
+    }
+
+    // 7. POST /api/v1/contract-requests/:id/escalate — escalate with reason and escalate_to
+    if (pathname.match(/^\/api\/v1\/contract-requests\/[^\/]+\/escalate$/) && req.method === 'POST') {
+        var escId = pathname.split('/')[4];
+        var escItem = mockContractRequests.find(function(r) { return r.id === escId; });
+        var escBody = '';
+        req.on('data', function(chunk) { escBody += chunk; });
+        req.on('end', function() {
+            var input = {};
+            try { input = JSON.parse(escBody); } catch(e) {}
+            if (!escItem) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Request not found' }));
+                return;
+            }
+            escItem.escalated = true;
+            escItem.escalated_to = input.escalate_to || 'General Counsel';
+            escItem.escalate_reason = input.reason || 'Escalation requested';
+            escItem.priority = 'high';
+            escItem.updated_at = new Date().toISOString();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ request: escItem, message: 'Request escalated to ' + escItem.escalated_to }));
+        });
+        return true;
+    }
+
+    // 8. POST /api/v1/contract-requests/:id/cancel — cancel with reason, set status to cancelled
+    if (pathname.match(/^\/api\/v1\/contract-requests\/[^\/]+\/cancel$/) && req.method === 'POST') {
+        var cancelId = pathname.split('/')[4];
+        var cancelItem = mockContractRequests.find(function(r) { return r.id === cancelId; });
+        var cancelBody = '';
+        req.on('data', function(chunk) { cancelBody += chunk; });
+        req.on('end', function() {
+            var input = {};
+            try { input = JSON.parse(cancelBody); } catch(e) {}
+            if (!cancelItem) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Request not found' }));
+                return;
+            }
+            cancelItem.status = 'cancelled';
+            cancelItem.cancel_reason = input.reason || 'Cancelled by user';
+            cancelItem.updated_at = new Date().toISOString();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ request: cancelItem, message: 'Request cancelled' }));
+        });
+        return true;
+    }
+
+    // 9. POST /api/v1/contract-requests/:id/reassign — reassign to different user
+    if (pathname.match(/^\/api\/v1\/contract-requests\/[^\/]+\/reassign$/) && req.method === 'POST') {
+        var reassId = pathname.split('/')[4];
+        var reassItem = mockContractRequests.find(function(r) { return r.id === reassId; });
+        var reassBody = '';
+        req.on('data', function(chunk) { reassBody += chunk; });
+        req.on('end', function() {
+            var input = {};
+            try { input = JSON.parse(reassBody); } catch(e) {}
+            if (!reassItem) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Request not found' }));
+                return;
+            }
+            reassItem.assigned_to = input.assigned_to || input.user || reassItem.assigned_to;
+            reassItem.updated_at = new Date().toISOString();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ request: reassItem, message: 'Request reassigned to ' + reassItem.assigned_to }));
+        });
+        return true;
+    }
+
+    // 10. GET /api/v1/contract-requests/:id — single request detail
+    if (pathname.match(/^\/api\/v1\/contract-requests\/[^\/]+$/) && req.method === 'GET') {
+        var detailId = pathname.split('/')[4];
+        var detailItem = mockContractRequests.find(function(r) { return r.id === detailId; });
+        if (!detailItem) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Request not found' }));
+        } else {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ request: detailItem }));
+        }
+        return true;
+    }
+
+    // 11. PATCH /api/v1/contract-requests/:id — update priority/status/classification/assigned_to/sla_deadline
+    if (pathname.match(/^\/api\/v1\/contract-requests\/[^\/]+$/) && req.method === 'PATCH') {
+        var patchId = pathname.split('/')[4];
+        var patchItem = mockContractRequests.find(function(r) { return r.id === patchId; });
+        var patchBody = '';
+        req.on('data', function(chunk) { patchBody += chunk; });
+        req.on('end', function() {
+            var input = {};
+            try { input = JSON.parse(patchBody); } catch(e) {}
+            if (!patchItem) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Request not found' }));
+                return;
+            }
+            if (input.priority !== undefined) patchItem.priority = input.priority;
+            if (input.status !== undefined) patchItem.status = input.status;
+            if (input.classification !== undefined) patchItem.classification = input.classification;
+            if (input.assigned_to !== undefined) patchItem.assigned_to = input.assigned_to;
+            if (input.sla_deadline !== undefined) patchItem.sla_deadline = input.sla_deadline;
+            if (input.status === 'completed' && !patchItem.completed_at) {
+                patchItem.completed_at = new Date().toISOString();
+            }
+            patchItem.updated_at = new Date().toISOString();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ request: patchItem, message: 'Request updated successfully' }));
+        });
         return true;
     }
 

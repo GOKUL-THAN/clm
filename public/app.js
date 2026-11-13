@@ -348,6 +348,9 @@ function apiPut(path, body) {
 function apiDelete(path) {
     return fetch(API + path, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } }).then(parseApiResponse);
 }
+function apiPatch(path, body) {
+    return fetch(API + path, { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(parseApiResponse);
+}
 
 function handleSessionExpired() {
     logout();
@@ -4440,8 +4443,31 @@ function loadContractRequests() {
                     <h3 style="margin-bottom:0.25rem">Contract Intake & Self-Service Request Portal</h3>
                     <p style="color:var(--muted);font-size:0.85rem">Submit, triage, validate, and convert business contract requests into legal drafting workflows.</p>
                 </div>
-                <button class="btn btn-primary" onclick="openNewRequestModal()">+ Submit Contract Request</button>
+                <button class="btn btn-primary" onclick="openDynamicRequestForm()">+ New Request</button>
             </div>
+        </div>
+
+        <div id="intake-stats-bar" class="card" style="margin-bottom:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:stretch">
+            <p style="color:var(--muted);font-size:0.85rem;align-self:center">Loading SLA stats...</p>
+        </div>
+
+        <div class="card" style="margin-bottom:1rem;display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+            <strong style="font-size:0.85rem">Filters:</strong>
+            <select id="intake-filter-status" onchange="reloadIntakeQueue()" style="padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem">
+                <option value="">All Statuses</option>
+                <option value="submitted">Submitted</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="converted">Converted</option>
+            </select>
+            <select id="intake-filter-priority" onchange="reloadIntakeQueue()" style="padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem">
+                <option value="">All Priorities</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+            </select>
+            <input id="intake-filter-assignee" type="text" placeholder="Filter by assignee..." oninput="reloadIntakeQueue()" style="padding:0.4rem;border:1px solid var(--border);border-radius:0.375rem;min-width:180px">
         </div>
 
         <div class="card">
@@ -4451,122 +4477,294 @@ function loadContractRequests() {
         </div>
     `;
 
-    apiGet('/api/v1/contract-requests').then(res => {
-        const list = res.requests || [];
-        const container = document.getElementById('requests-table-container');
+    apiGet('/api/v1/contract-requests/stats').then(res => {
+        renderIntakeStats(res);
+    }).catch(() => {});
+
+    reloadIntakeQueue();
+}
+
+function renderIntakeStats(res) {
+    var bar = document.getElementById('intake-stats-bar');
+    if (!bar) return;
+    var statBox = function(label, value, bg) {
+        return '<div style="flex:1;min-width:110px;text-align:center;padding:0.55rem 0.4rem;border-radius:0.5rem;background:' + bg + '">' +
+            '<div style="font-size:1.35rem;font-weight:700">' + esc(value) + '</div>' +
+            '<div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase">' + esc(label) + '</div></div>';
+    };
+    bar.innerHTML =
+        statBox('Total', res.total || 0, '#f1f5f9') +
+        statBox('Pending', res.pending || 0, '#fef9c3') +
+        statBox('In Progress', res.in_progress || 0, '#dbeafe') +
+        statBox('Completed', res.completed || 0, '#dcfce7') +
+        statBox('SLA Breached', res.sla_breached || 0, '#fee2e2') +
+        statBox('SLA At Risk', res.sla_at_risk || 0, '#ffedd5') +
+        statBox('Avg Resolve (h)', res.avg_resolution_hours || 0, '#f1f5f9') +
+        statBox('SLA Compliance %', res.sla_compliance_rate || 100, '#dcfce7');
+}
+
+function reloadIntakeQueue() {
+    var status = (document.getElementById('intake-filter-status') || {}).value || '';
+    var priority = (document.getElementById('intake-filter-priority') || {}).value || '';
+    var assignee = (document.getElementById('intake-filter-assignee') || {}).value || '';
+    var qs = [];
+    if (status) qs.push('status=' + encodeURIComponent(status));
+    if (priority) qs.push('priority=' + encodeURIComponent(priority));
+    if (assignee) qs.push('assignee=' + encodeURIComponent(assignee));
+    var url = '/api/v1/contract-requests/queue' + (qs.length ? '?' + qs.join('&') : '');
+
+    apiGet(url).then(res => {
+        var list = res.requests || [];
+        var container = document.getElementById('requests-table-container');
+        if (!container) return;
         if (list.length === 0) {
-            container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">No pending contract intake requests.</p>';
+            container.innerHTML = '<p style="color:var(--muted);padding:1rem 0">No contract intake requests match the current filters.</p>';
             return;
         }
 
-        let rows = list.map(r => {
-            const urgencyBadge = r.urgency === 'high' || r.urgency === 'critical' ? 'badge-danger' : 'badge-warning';
-            return `
-                <tr>
-                    <td style="font-weight:600;color:var(--primary)">${esc(r.request_number)}</td>
-                    <td>
-                        <div style="font-weight:600">${esc(r.title)}</div>
-                        <div style="font-size:0.75rem;color:var(--muted)">${esc(r.counterparty_name)} | Est: $${Number(r.estimated_value || 0).toLocaleString()}</div>
-                    </td>
-                    <td><span class="badge" style="background:#e2e8f0;color:#334155">${esc(r.contract_type)}</span></td>
-                    <td><span class="badge ${urgencyBadge}">${esc(r.urgency || 'medium')}</span></td>
-                    <td>${esc(r.department || 'Operations')}</td>
-                    <td><span class="badge badge-info">${esc(r.status || 'submitted')}</span></td>
-                    <td>
-                        <div style="display:flex;gap:0.35rem">
-                            <button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem" onclick="convertRequestToContract('${r.id}')">Convert to Contract</button>
-                            <button class="btn" style="background:#cbd5e1;padding:0.25rem 0.5rem;font-size:0.75rem" onclick="alert('Business Justification: ' + '${esc(r.business_justification || 'Standard contract request.')}')">View Details</button>
-                        </div>
-                    </td>
-                </tr>
-            `;
+        var priorityBadge = function(p) {
+            var cls = p === 'high' ? 'badge-danger' : (p === 'medium' ? 'badge-warning' : 'badge-success');
+            return '<span class="badge ' + cls + '">' + esc(p || 'medium') + '</span>';
+        };
+        var statusBadge = function(s) {
+            var cls = s === 'completed' ? 'badge-success' : (s === 'cancelled' ? 'badge-warning' : (s === 'in_progress' ? 'badge-info' : 'badge'));
+            return '<span class="badge ' + cls + '">' + esc(s || 'submitted') + '</span>';
+        };
+        var slaCountdown = function(deadline, status) {
+            if (!deadline || status === 'completed' || status === 'cancelled') return '<span style="color:var(--muted)">—</span>';
+            var ms = new Date(deadline).getTime() - Date.now();
+            if (ms < 0) {
+                var overH = Math.round(Math.abs(ms) / 3600000);
+                return '<span style="color:#dc2626;font-weight:600">Overdue ' + overH + 'h</span>';
+            }
+            var d = Math.floor(ms / 86400000);
+            var h = Math.floor((ms % 86400000) / 3600000);
+            var txt = (d > 0 ? d + 'd ' : '') + h + 'h left';
+            var col = ms < 86400000 ? '#ea580c' : '#16a34a';
+            return '<span style="color:' + col + ';font-weight:600">' + txt + '</span>';
+        };
+
+        var rows = list.map(function(r) {
+            var assigneeDisplay = r.assigned_to ? esc(r.assigned_to) : '<span style="color:var(--muted)">Unassigned</span>';
+            var escNote = r.escalated ? ' <span class="badge badge-danger" style="font-size:0.65rem">ESC</span>' : '';
+            return '<tr>' +
+                '<td><div style="font-weight:600">' + esc(r.title) + '</div>' +
+                '<div style="font-size:0.72rem;color:var(--muted)">' + esc(r.request_number) + ' &middot; ' + esc(r.counterparty_name) + escNote + '</div></td>' +
+                '<td><span class="badge" style="background:#e2e8f0;color:#334155">' + esc(r.contract_type) + '</span></td>' +
+                '<td>' + priorityBadge(r.priority) + '</td>' +
+                '<td>' + statusBadge(r.status) + '</td>' +
+                '<td>' + assigneeDisplay + '</td>' +
+                '<td>' + slaCountdown(r.sla_deadline, r.status) + '</td>' +
+                '<td><div style="display:flex;gap:0.3rem;flex-wrap:wrap">' +
+                    '<button class="btn btn-primary" style="padding:0.2rem 0.4rem;font-size:0.72rem" onclick="assignRequest(\'' + esc(r.id) + '\')">Assign</button>' +
+                    '<button class="btn" style="background:#f59e0b;color:#fff;padding:0.2rem 0.4rem;font-size:0.72rem" onclick="escalateRequest(\'' + esc(r.id) + '\')">Escalate</button>' +
+                    '<button class="btn" style="background:#cbd5e1;padding:0.2rem 0.4rem;font-size:0.72rem" onclick="cancelRequest(\'' + esc(r.id) + '\')">Cancel</button>' +
+                    '<button class="btn" style="background:#6366f1;color:#fff;padding:0.2rem 0.4rem;font-size:0.72rem" onclick="convertRequestToContract(\'' + esc(r.id) + '\')">Convert</button>' +
+                '</div></td>' +
+            '</tr>';
         }).join('');
 
-        container.innerHTML = `
-            <table>
-                <thead>
-                    <tr>
-                        <th>Request #</th>
-                        <th>Title & Counterparty</th>
-                        <th>Type</th>
-                        <th>Urgency</th>
-                        <th>Department</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-            </table>
-        `;
+        container.innerHTML =
+            '<table><thead><tr>' +
+            '<th>Title</th><th>Type</th><th>Priority</th><th>Status</th><th>Assignee</th><th>SLA Deadline</th><th>Actions</th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table>';
     }).catch(e => {
-        document.getElementById('requests-table-container').innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
+        var container = document.getElementById('requests-table-container');
+        if (container) container.innerHTML = '<p style="color:var(--danger)">' + esc(e.message) + '</p>';
     });
 }
 
-function openNewRequestModal() {
+function assignRequest(reqId) {
     showModal(`
-        <h3>Submit Business Contract Request</h3>
-        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Initiate intake with SLA tracking and automated legal triage.</p>
-        
-        <div class="form-group"><label>Contract Project Title</label><input type="text" id="req-title" placeholder="e.g. Global Payments Rail Partner Agreement"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-            <div class="form-group"><label>Contract Type</label>
-                <select id="req-type" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
-                    <option value="MSA">MSA</option>
-                    <option value="NDA">NDA</option>
-                    <option value="SOW">SOW</option>
-                    <option value="SLA">SLA</option>
-                    <option value="Vendor">Vendor</option>
-                </select>
-            </div>
-            <div class="form-group"><label>Counterparty Name</label><input type="text" id="req-party" placeholder="Counterparty Corp"></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-            <div class="form-group"><label>Estimated Contract Value (USD)</label><input type="number" id="req-val" placeholder="75000"></div>
-            <div class="form-group"><label>Urgency Level</label>
-                <select id="req-urgency" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
-                    <option value="medium">Medium (Standard SLA)</option>
-                    <option value="high">High (48hr Turnaround)</option>
-                    <option value="critical">Critical (24hr Urgent)</option>
-                </select>
-            </div>
-        </div>
-        <div class="form-group"><label>Business Justification & Scope</label>
-            <textarea id="req-justification" rows="3" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.85rem" placeholder="Provide business goals, key deliverables, and commercial rationale..."></textarea>
-        </div>
-
+        <h3>Assign Request</h3>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Assign this request to a team member. The status will change to In Progress.</p>
+        <div class="form-group"><label>Assign To</label><input type="text" id="assign-user" placeholder="e.g. Sarah Mitchell" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"></div>
         <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
             <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="submitContractRequest()">Submit Request</button>
+            <button class="btn btn-primary" onclick="confirmAssign('${reqId}')">Assign</button>
         </div>
     `);
 }
 
-function submitContractRequest() {
-    const title = (document.getElementById('req-title').value || '').trim();
-    const type = document.getElementById('req-type').value;
-    const party = (document.getElementById('req-party').value || '').trim();
-    const val = Number(document.getElementById('req-val').value) || 0;
-    const urgency = document.getElementById('req-urgency').value;
-    const just = (document.getElementById('req-justification').value || '').trim();
-
-    if (!title || !party) {
-        alert('Title and Counterparty are required.');
-        return;
-    }
-
-    apiPost('/api/v1/contract-requests', {
-        title: title,
-        contract_type: type,
-        counterparty_name: party,
-        estimated_value: val,
-        urgency: urgency,
-        business_justification: just
-    }).then(res => {
-        alert('Request ' + res.request.request_number + ' submitted for legal triage!');
+function confirmAssign(reqId) {
+    var user = (document.getElementById('assign-user').value || '').trim();
+    if (!user) { alert('Please enter an assignee name.'); return; }
+    apiPost('/api/v1/contract-requests/' + reqId + '/assign', { assigned_to: user }).then(function() {
+        alert('Request assigned to ' + user + '.');
         closeModal();
         loadContractRequests();
-    }).catch(e => alert('Failed to submit: ' + e.message));
+    }).catch(e => alert('Assign failed: ' + e.message));
+}
+
+function escalateRequest(reqId) {
+    showModal(`
+        <h3>Escalate Request</h3>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Escalate this request to senior legal staff. Priority will be set to high.</p>
+        <div class="form-group"><label>Escalate To</label><input type="text" id="esc-to" placeholder="e.g. General Counsel" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"></div>
+        <div class="form-group"><label>Reason</label><textarea id="esc-reason" rows="2" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.85rem" placeholder="Reason for escalation..."></textarea></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" style="background:#f59e0b" onclick="confirmEscalate('${reqId}')">Escalate</button>
+        </div>
+    `);
+}
+
+function confirmEscalate(reqId) {
+    var to = (document.getElementById('esc-to').value || '').trim() || 'General Counsel';
+    var reason = (document.getElementById('esc-reason').value || '').trim() || 'Escalation requested';
+    apiPost('/api/v1/contract-requests/' + reqId + '/escalate', { escalate_to: to, reason: reason }).then(function(res) {
+        alert('Request escalated to ' + res.request.escalated_to + '.');
+        closeModal();
+        loadContractRequests();
+    }).catch(e => alert('Escalation failed: ' + e.message));
+}
+
+function cancelRequest(reqId) {
+    showModal(`
+        <h3>Cancel Request</h3>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Cancel this contract request. This action sets the status to cancelled.</p>
+        <div class="form-group"><label>Cancellation Reason</label><textarea id="cancel-reason" rows="2" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.85rem" placeholder="Reason for cancellation..."></textarea></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" style="background:#dc2626" onclick="confirmCancel('${reqId}')">Confirm Cancel</button>
+        </div>
+    `);
+}
+
+function confirmCancel(reqId) {
+    var reason = (document.getElementById('cancel-reason').value || '').trim() || 'Cancelled by user';
+    apiPost('/api/v1/contract-requests/' + reqId + '/cancel', { reason: reason }).then(function() {
+        alert('Request cancelled.');
+        closeModal();
+        loadContractRequests();
+    }).catch(e => alert('Cancel failed: ' + e.message));
+}
+
+function reassignRequest(reqId) {
+    showModal(`
+        <h3>Reassign Request</h3>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Reassign this request to a different team member.</p>
+        <div class="form-group"><label>New Assignee</label><input type="text" id="reass-user" placeholder="e.g. Priya Nair" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="confirmReassign('${reqId}')">Reassign</button>
+        </div>
+    `);
+}
+
+function confirmReassign(reqId) {
+    var user = (document.getElementById('reass-user').value || '').trim();
+    if (!user) { alert('Please enter a new assignee name.'); return; }
+    apiPost('/api/v1/contract-requests/' + reqId + '/reassign', { assigned_to: user }).then(function() {
+        alert('Request reassigned to ' + user + '.');
+        closeModal();
+        loadContractRequests();
+    }).catch(e => alert('Reassign failed: ' + e.message));
+}
+
+function openDynamicRequestForm() {
+    showModal(`
+        <h3>Submit Contract Request</h3>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Select a contract type to load the dynamic intake form.</p>
+        <div class="form-group"><label>Contract Type</label>
+            <select id="dyn-form-type" onchange="loadDynamicFormFields()" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+                <option value="">— Select type —</option>
+                <option value="nda">NDA</option>
+                <option value="msa">MSA</option>
+                <option value="sowa">SOW</option>
+                <option value="sla">SLA</option>
+                <option value="vendor">Vendor</option>
+            </select>
+        </div>
+        <div id="dyn-form-fields" style="margin-top:0.75rem"></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" id="dyn-submit-btn" style="display:none" onclick="submitDynamicRequest()">Submit Request</button>
+        </div>
+    `);
+}
+
+function loadDynamicFormFields() {
+    var type = document.getElementById('dyn-form-type').value;
+    var container = document.getElementById('dyn-form-fields');
+    var submitBtn = document.getElementById('dyn-submit-btn');
+    if (!type) {
+        container.innerHTML = '';
+        if (submitBtn) submitBtn.style.display = 'none';
+        return;
+    }
+    container.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">Loading form...</p>';
+    if (submitBtn) submitBtn.style.display = 'none';
+    apiGet('/api/v1/contract-requests/forms/' + encodeURIComponent(type)).then(function(res) {
+        var form = res.form || {};
+        var fields = form.fields || [];
+        var html = '<p style="font-weight:600;margin-bottom:0.5rem">' + esc(form.label || type) + '</p>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">';
+        fields.forEach(function(f) {
+            var required = f.required ? ' <span style="color:#dc2626">*</span>' : '';
+            var wide = f.type === 'textarea' ? ';grid-column:1/3' : '';
+            html += '<div class="form-group" style="' + wide + '"><label>' + esc(f.label) + required + '</label>';
+            var fieldId = 'dyn-' + esc(f.name);
+            if (f.type === 'select') {
+                html += '<select id="' + fieldId + '" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">';
+                (f.options || []).forEach(function(opt) {
+                    html += '<option value="' + esc(opt) + '">' + esc(opt) + '</option>';
+                });
+                html += '</select>';
+            } else if (f.type === 'textarea') {
+                html += '<textarea id="' + fieldId + '" rows="2" placeholder="' + esc(f.placeholder || '') + '" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem;font-size:0.85rem"></textarea>';
+            } else {
+                var def = f.default !== undefined ? f.default : '';
+                html += '<input type="' + esc(f.type || 'text') + '" id="' + fieldId + '" placeholder="' + esc(f.placeholder || '') + '" value="' + esc(def) + '" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+        if (submitBtn) submitBtn.style.display = 'inline-block';
+    }).catch(e => {
+        container.innerHTML = '<p style="color:var(--danger)">Failed to load form: ' + esc(e.message) + '</p>';
+    });
+}
+
+function submitDynamicRequest() {
+    var type = document.getElementById('dyn-form-type').value;
+    if (!type) { alert('Please select a contract type.'); return; }
+    var typeMap = { nda: 'NDA', msa: 'MSA', sowa: 'SOW', sla: 'SLA', vendor: 'Vendor' };
+    var payload = { contract_type: typeMap[type] || type.toUpperCase(), priority: 'medium', urgency: 'medium' };
+    var fieldEls = document.querySelectorAll('[id^="dyn-"]');
+    fieldEls.forEach(function(field) {
+        var name = field.id.replace('dyn-', '');
+        var val = field.value;
+        if (field.tagName === 'INPUT' && field.type === 'number') {
+            val = val === '' ? 0 : Number(val);
+        }
+        payload[name] = val;
+    });
+    if (!payload.business_justification) {
+        payload.business_justification = payload.purpose || payload.service_scope || payload.deliverables || payload.goods_services || payload.service_description || '';
+    }
+
+    apiPost('/api/v1/contract-requests/validate', payload).then(function(valRes) {
+        if (!valRes.valid) {
+            var msgs = valRes.errors.map(function(e) { return e.message; }).join('\n');
+            alert('Validation failed:\n' + msgs);
+            return;
+        }
+        apiPost('/api/v1/contract-requests/check-duplicate', {
+            title: payload.title,
+            counterparty_name: payload.counterparty_name
+        }).then(function(dupRes) {
+            if (dupRes.is_duplicate && !confirm('A similar request already exists. Submit anyway?')) {
+                return;
+            }
+            apiPost('/api/v1/contract-requests', payload).then(function(subRes) {
+                alert('Request ' + subRes.request.request_number + ' submitted for legal triage!');
+                closeModal();
+                loadContractRequests();
+            }).catch(e => alert('Submit failed: ' + e.message));
+        }).catch(e => alert('Duplicate check failed: ' + e.message));
+    }).catch(e => alert('Validation failed: ' + e.message));
 }
 
 function convertRequestToContract(reqId) {
