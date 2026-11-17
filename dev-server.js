@@ -798,6 +798,13 @@ let mockFolders = [
   {id:'folder-003',name:'SOW',parent:'folder-root',path:'/Contracts/SOW',document_count:1}
 ];
 
+let mockMilestones = [
+  {id:'ms-001',contract_id:'cnt-002',title:'Project Kickoff',due_date:new Date(Date.now()+7*86400000).toISOString(),amount:50000,currency:'USD',status:'pending',payment_status:'unpaid'},
+  {id:'ms-002',contract_id:'cnt-002',title:'Design Review Complete',due_date:new Date(Date.now()+30*86400000).toISOString(),amount:100000,currency:'USD',status:'pending',payment_status:'unpaid'},
+  {id:'ms-003',contract_id:'cnt-002',title:'UAT Sign-off',due_date:new Date(Date.now()+60*86400000).toISOString(),amount:100000,currency:'USD',status:'pending',payment_status:'unpaid'},
+  {id:'ms-004',contract_id:'cnt-002',title:'Production Go-Live',due_date:new Date(Date.now()+120*86400000).toISOString(),amount:100000,currency:'USD',status:'pending',payment_status:'unpaid'}
+];
+
 let mockTemplates = [
     {
         id: "tpl-01",
@@ -5594,6 +5601,209 @@ function handleMockAPI(req, res) {
         var altClsId = pathname.split('/')[4];
         res.writeHead(200, {'Content-Type':'application/json'});
         res.end(JSON.stringify({clause_id:altClsId, alternatives:[{text:'Customer shall pay all invoiced amounts within thirty (30) days of invoice receipt.',risk_level:'standard',source:'Standard Playbook'},{text:'Customer shall pay all invoiced amounts within forty-five (45) days of invoice receipt.',risk_level:'elevated',source:'Negotiated Fallback'},{text:'Customer shall pay within sixty (60) days, subject to prior approval.',risk_level:'high',source:'Exception Only'}]}));
+        return true;
+    }
+
+    // ===========================================================================
+    // FINANCIAL MANAGEMENT ENDPOINTS (features 202-220)
+    // ===========================================================================
+
+    // GET /api/v1/financials/pricing-schedule (must be before /financials/pricing)
+    if (pathname === '/api/v1/financials/pricing-schedule' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({schedules:[{period:'2026-Q1',base_price:87500,adjustments:[]},{period:'2026-Q2',base_price:91875,adjustments:[{type:'escalation',pct:5}]}]}));
+        return true;
+    }
+
+    // GET /api/v1/financials/pricing
+    if (pathname === '/api/v1/financials/pricing' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({tiers:[{product:'Cloud Compute',tiers:[{min_qty:0,max_qty:100,unit_price:0.12},{min_qty:101,max_qty:500,unit_price:0.10},{min_qty:501,max_qty:9999,unit_price:0.08}]},{product:'Premium Support',tiers:[{min_qty:0,max_qty:9999,unit_price:5000}]}]}));
+        return true;
+    }
+
+    // POST /api/v1/financials/price-escalation
+    if (pathname === '/api/v1/financials/price-escalation' && req.method === 'POST') {
+        var peBody = '';
+        req.on('data', function(c){peBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(peBody);}catch(e){}
+            var base = input.base_price || 87500;
+            var rate = input.escalation_rate || 5;
+            var newPrice = base * (1 + rate / 100);
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({original_price:base, new_price:Math.round(newPrice*100)/100, escalation_rate:rate, effective_date:input.effective_date||new Date().toISOString()}));
+        });
+        return true;
+    }
+
+    // POST /api/v1/financials/discount
+    if (pathname === '/api/v1/financials/discount' && req.method === 'POST') {
+        var discBody = '';
+        req.on('data', function(c){discBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(discBody);}catch(e){}
+            var amt = input.amount || 100000;
+            var pct = input.discount_pct || 10;
+            var discAmt = amt * pct / 100;
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({original_amount:amt, discount_pct:pct, discount_amount:discAmt, final_amount:amt*(1-pct/100), approved_by:'approver@enterprise.internal'}));
+        });
+        return true;
+    }
+
+    // POST /api/v1/financials/rebate
+    if (pathname === '/api/v1/financials/rebate' && req.method === 'POST') {
+        var rebBody = '';
+        req.on('data', function(c){rebBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(rebBody);}catch(e){}
+            var spend = input.spend || 500000;
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({contract_id:input.contract_id, spend:spend, rebate_tier:'Tier-2', rebate_pct:3, rebate_amount:spend*0.03, payable_at:'Q4 2026'}));
+        });
+        return true;
+    }
+
+    // GET /api/v1/financials/tax
+    if (pathname === '/api/v1/financials/tax' && req.method === 'GET') {
+        var taxQ = new URL(req.url, 'http://localhost').searchParams.get('jurisdiction') || 'US';
+        var taxRate = taxQ === 'EU' ? 0.20 : taxQ === 'IN' ? 0.18 : taxQ === 'US' ? 0.085 : 0;
+        var taxDesc = taxQ === 'EU' ? 'VAT' : taxQ === 'IN' ? 'GST' : taxQ === 'US' ? 'State tax' : 'No tax';
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({jurisdiction:taxQ, rate:taxRate, description:taxDesc}));
+        return true;
+    }
+
+    // GET /api/v1/financials/currency-exchange
+    if (pathname === '/api/v1/financials/currency-exchange' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({base:'USD', rates:{EUR:0.92,GBP:0.79,INR:83.42,SGD:1.35,AUD:1.54,JPY:149.8}, updated_at:new Date().toISOString()}));
+        return true;
+    }
+
+    // POST /api/v1/financials/revenue-recognition
+    if (pathname === '/api/v1/financials/revenue-recognition' && req.method === 'POST') {
+        var rrBody = '';
+        req.on('data', function(c){rrBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(rrBody);}catch(e){}
+            var total = input.total_value || 350000;
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({contract_id:input.contract_id, total_value:total, schedule:[{period:'2026-Q1',amount:total/4},{period:'2026-Q2',amount:total/4},{period:'2026-Q3',amount:total/4},{period:'2026-Q4',amount:total/4}], method:'straight_line', start_date:input.start_date||new Date().toISOString()}));
+        });
+        return true;
+    }
+
+    // GET /api/v1/financials/milestone-payment
+    if (pathname === '/api/v1/financials/milestone-payment' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({milestones:mockMilestones, total:mockMilestones.length, total_amount:mockMilestones.reduce(function(a,m){return a+m.amount;},0)}));
+        return true;
+    }
+
+    // POST /api/v1/financials/milestone-payment
+    if (pathname === '/api/v1/financials/milestone-payment' && req.method === 'POST') {
+        var mpBody = '';
+        req.on('data', function(c){mpBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(mpBody);}catch(e){}
+            var ms = mockMilestones.find(function(m){return m.id === input.milestone_id;});
+            if (!ms) { res.writeHead(404,{'Content-Type':'application/json'}); res.end(JSON.stringify({error:'Milestone not found'})); return; }
+            if (input.action === 'pay') { ms.payment_status = 'paid'; ms.status = 'completed'; }
+            else if (input.action === 'schedule') { ms.payment_status = 'scheduled'; }
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify(ms));
+        });
+        return true;
+    }
+
+    // GET /api/v1/financials/invoice-matching
+    if (pathname === '/api/v1/financials/invoice-matching' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({invoices:[{invoice_id:'INV-2026-001',po_id:'PO-2026-9022',contract_id:'cnt-001',invoice_amount:87500,po_amount:87500,variance:0,status:'matched'},{invoice_id:'INV-2026-002',po_id:'PO-2026-9023',contract_id:'cnt-002',invoice_amount:52000,po_amount:50000,variance:2000,status:'review_required'}]}));
+        return true;
+    }
+
+    // GET /api/v1/financials/commitments
+    if (pathname === '/api/v1/financials/commitments' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({total_committed:mockContracts.reduce(function(a,c){return a+(c.total_value||0);},0), by_department:[{department:'IT',committed:450000},{department:'Operations',committed:280000},{department:'Finance',committed:120000}], unbilled:356250, next_30_days:87500}));
+        return true;
+    }
+
+    // POST /api/v1/financials/cost-forecast
+    if (pathname === '/api/v1/financials/cost-forecast' && req.method === 'POST') {
+        var cfBody = '';
+        req.on('data', function(c){cfBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(cfBody);}catch(e){}
+            var cs = input.current_spend || 210000;
+            var projected = cs * 4.2;
+            var variance = input.budget ? (projected - input.budget) : 12000;
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({contract_id:input.contract_id, forecast_period:'2026', current_spend:cs, projected_total:projected, variance_from_budget:variance, confidence:0.87}));
+        });
+        return true;
+    }
+
+    // GET /api/v1/financials/profitability
+    if (pathname === '/api/v1/financials/profitability' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({contracts:mockContracts.slice(0,3).map(function(c){return {contract_id:c.id,title:c.title,revenue:c.total_value||0,cost:Math.round((c.total_value||0)*0.65),gross_profit:Math.round((c.total_value||0)*0.35),margin_pct:35};}), total_revenue:mockContracts.reduce(function(a,c){return a+(c.total_value||0);},0), avg_margin:35}));
+        return true;
+    }
+
+    // POST /api/v1/financials/budget-allocation
+    if (pathname === '/api/v1/financials/budget-allocation' && req.method === 'POST') {
+        var baBody = '';
+        req.on('data', function(c){baBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(baBody);}catch(e){}
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({department:input.department||'IT', allocated:input.amount||500000, currency:'USD', period:input.period||'2026', breakdown:[{category:'Software Licenses',amount:200000},{category:'Cloud Infrastructure',amount:150000},{category:'Professional Services',amount:100000},{category:'Support & Maintenance',amount:50000}]}));
+        });
+        return true;
+    }
+
+    // POST /api/v1/financials/reconciliation
+    if (pathname === '/api/v1/financials/reconciliation' && req.method === 'POST') {
+        var recBody = '';
+        req.on('data', function(c){recBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(recBody);}catch(e){}
+            var invAmt = input.invoice_amount || 87500;
+            var cntAmt = input.contract_amount || 87500;
+            var variance = Math.abs(invAmt - cntAmt);
+            var withinTol = variance < 500;
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({status:withinTol?'matched':'review_required', invoice_amount:invAmt, contract_amount:cntAmt, variance:variance, within_tolerance:withinTol}));
+        });
+        return true;
+    }
+
+    // GET /api/v1/financials/variance
+    if (pathname === '/api/v1/financials/variance' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({budget_vs_actual:[{department:'IT',budget:500000,actual:432000,variance:-68000,variance_pct:-13.6},{department:'Operations',budget:300000,actual:287500,variance:-12500,variance_pct:-4.2},{department:'Finance',budget:200000,actual:218000,variance:18000,variance_pct:9}], total_budget:1000000, total_actual:937500}));
+        return true;
+    }
+
+    // GET /api/v1/financials/forecasting
+    if (pathname === '/api/v1/financials/forecasting' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({forecast:[{quarter:'Q1 2026',projected:210000,confidence:0.95},{quarter:'Q2 2026',projected:225000,confidence:0.88},{quarter:'Q3 2026',projected:240000,confidence:0.78},{quarter:'Q4 2026',projected:252000,confidence:0.65}], annual_projected:927000, trend:'increasing', growth_rate_pct:5}));
+        return true;
+    }
+
+    // POST /api/v1/financials/cost-optimization
+    if (pathname === '/api/v1/financials/cost-optimization' && req.method === 'POST') {
+        var coBody = '';
+        req.on('data', function(c){coBody += c;});
+        req.on('end', function(){
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({recommendations:[{title:'Consolidate Cloud Vendors',potential_saving:45000,effort:'Medium',timeline:'Q2 2026'},{title:'Renegotiate Support SLAs',potential_saving:28000,effort:'Low',timeline:'Q1 2026'},{title:'Volume Discount Activation',potential_saving:35000,effort:'Low',timeline:'Q1 2026'}], total_potential_saving:108000}));
+        });
         return true;
     }
 

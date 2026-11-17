@@ -5974,62 +5974,172 @@ function loadContractFinancials() {
         <div class="card" style="margin-bottom:1rem">
             <div style="display:flex;justify-content:space-between;align-items:center">
                 <div>
-                    <h3 style="margin-bottom:0.25rem">Contract Financial Terms & Three-Way Invoice Matching</h3>
-                    <p style="color:var(--muted);font-size:0.85rem">Real-time spend verification, milestone releases, and revenue leakage detection.</p>
+                    <h3 style="margin-bottom:0.25rem">Financial Management</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Pricing, milestones, reconciliation, forecasting, variance analysis, and cost optimization.</p>
                 </div>
                 <button class="btn btn-primary" onclick="runThreeWayMatch()">Run 3-Way Match Audit</button>
             </div>
         </div>
-
-        <div class="card">
-            <div id="financials-table-container">
-                <p style="color:var(--muted);font-size:0.85rem">Loading financial schedules...</p>
+        <div class="card" style="padding:0">
+            <div style="display:flex;border-bottom:1px solid var(--border);overflow-x:auto">
+                ${['Pricing','Milestones','Reconciliation','Forecasting','Variance','Optimization'].map((t,i) =>
+                    `<button id="fin-tab-${i}" onclick="switchFinTab(${i},'${t.toLowerCase()}')"
+                        style="padding:0.75rem 1.25rem;border:none;background:${i===0?'var(--primary)':'transparent'};color:${i===0?'#fff':'var(--text)'};font-weight:600;cursor:pointer;white-space:nowrap;font-size:0.85rem">${t}</button>`
+                ).join('')}
+            </div>
+            <div id="fin-tab-content" style="padding:1.25rem">
+                <p style="color:var(--muted);font-size:0.85rem">Loading...</p>
             </div>
         </div>
     `;
+    loadFinTab('pricing');
+}
 
-    apiGet('/api/v1/financials').then(res => {
-        const list = res.financials || [];
-        const container = document.getElementById('financials-table-container');
-        if (list.length === 0) {
-            container.innerHTML = '<p style="color:var(--muted)">No financial schedules recorded.</p>';
-            return;
-        }
+function switchFinTab(idx, name) {
+    ['Pricing','Milestones','Reconciliation','Forecasting','Variance','Optimization'].forEach((_,i) => {
+        const btn = document.getElementById('fin-tab-' + i);
+        if (btn) { btn.style.background = i === idx ? 'var(--primary)' : 'transparent'; btn.style.color = i === idx ? '#fff' : 'var(--text)'; }
+    });
+    loadFinTab(name);
+}
 
-        let rows = list.map(f => {
-            const matchBadge = f.three_way_match === 'verified' ? '<span class="badge badge-active">3-Way Verified</span>' : '<span class="badge badge-warning">Unmatched</span>';
-            const leakageBadge = f.leakage_risk === 'low' ? '<span style="color:var(--success);font-weight:600">Low Leakage</span>' : '<span style="color:var(--danger);font-weight:600">Review Leakage</span>';
-
-            return `
-                <tr>
-                    <td style="font-weight:600">${esc(f.contract_id)}</td>
-                    <td>${esc(f.pricing_model)}</td>
-                    <td style="font-weight:600">$${Number(f.total_committed).toLocaleString()}</td>
-                    <td style="color:var(--primary);font-weight:600">$${Number(f.billed_to_date).toLocaleString()}</td>
-                    <td style="font-weight:600">$${Number(f.remaining_balance).toLocaleString()}</td>
-                    <td>${matchBadge}</td>
-                    <td>${leakageBadge}</td>
-                </tr>
-            `;
-        }).join('');
-
-        container.innerHTML = `
-            <table>
-                <thead>
+function loadFinTab(name) {
+    const c = document.getElementById('fin-tab-content');
+    c.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">Loading...</p>';
+    if (name === 'pricing') {
+        apiGet('/api/v1/financials/pricing').then(res => {
+            const tiers = res.tiers || [];
+            c.innerHTML = tiers.map(p => `
+                <div style="margin-bottom:1.5rem">
+                    <h4 style="margin-bottom:0.5rem">${esc(p.product)}</h4>
+                    <table><thead><tr><th>Min Qty</th><th>Max Qty</th><th>Unit Price (USD)</th></tr></thead>
+                    <tbody>${(p.tiers||[]).map(t => `<tr><td>${t.min_qty}</td><td>${t.max_qty}</td><td>$${t.unit_price}</td></tr>`).join('')}</tbody></table>
+                </div>`).join('');
+        }).catch(e => { c.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; });
+    } else if (name === 'milestones') {
+        apiGet('/api/v1/financials/milestone-payment').then(res => {
+            const ms = res.milestones || [];
+            const totalAmt = res.total_amount || 0;
+            c.innerHTML = `
+                <p style="margin-bottom:0.75rem;font-size:0.85rem;color:var(--muted)">Total milestone value: <strong>$${totalAmt.toLocaleString()}</strong></p>
+                <table><thead><tr><th>ID</th><th>Title</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Payment</th><th>Action</th></tr></thead>
+                <tbody>${ms.map(m => `
                     <tr>
-                        <th>Contract Ref</th>
-                        <th>Pricing Model</th>
-                        <th>Total Committed</th>
-                        <th>Billed To Date</th>
-                        <th>Remaining Commitment</th>
-                        <th>PO / Invoice Match</th>
-                        <th>Value Leakage Risk</th>
-                    </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-            </table>
-        `;
-    }).catch(e => container.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`);
+                        <td style="font-size:0.8rem">${esc(m.id)}</td>
+                        <td style="font-weight:600">${esc(m.title)}</td>
+                        <td>${new Date(m.due_date).toLocaleDateString()}</td>
+                        <td style="font-weight:600">$${Number(m.amount).toLocaleString()}</td>
+                        <td><span class="badge ${m.status==='completed'?'badge-active':'badge-warning'}">${esc(m.status)}</span></td>
+                        <td><span class="badge ${m.payment_status==='paid'?'badge-active':m.payment_status==='scheduled'?'badge-info':'badge-warning'}">${esc(m.payment_status)}</span></td>
+                        <td>${m.payment_status!=='paid' ? `<button class="btn btn-primary" style="font-size:0.75rem;padding:0.25rem 0.6rem" onclick="payMilestone('${m.id}')">Pay</button>` : '<span style="color:var(--success)">✓ Paid</span>'}</td>
+                    </tr>`).join('')}
+                </tbody></table>`;
+        }).catch(e => { c.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; });
+    } else if (name === 'reconciliation') {
+        apiGet('/api/v1/financials/invoice-matching').then(res => {
+            const invs = res.invoices || [];
+            c.innerHTML = `
+                <table><thead><tr><th>Invoice ID</th><th>PO ID</th><th>Contract</th><th>Invoice Amt</th><th>PO Amt</th><th>Variance</th><th>Status</th></tr></thead>
+                <tbody>${invs.map(inv => `
+                    <tr>
+                        <td style="font-weight:600">${esc(inv.invoice_id)}</td>
+                        <td>${esc(inv.po_id)}</td>
+                        <td>${esc(inv.contract_id)}</td>
+                        <td>$${Number(inv.invoice_amount).toLocaleString()}</td>
+                        <td>$${Number(inv.po_amount).toLocaleString()}</td>
+                        <td style="color:${inv.variance>0?'var(--danger)':'var(--success)'}">$${inv.variance.toLocaleString()}</td>
+                        <td><span class="badge ${inv.status==='matched'?'badge-active':'badge-warning'}">${esc(inv.status)}</span></td>
+                    </tr>`).join('')}
+                </tbody></table>`;
+        }).catch(e => { c.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; });
+    } else if (name === 'forecasting') {
+        apiGet('/api/v1/financials/forecasting').then(res => {
+            const forecast = res.forecast || [];
+            c.innerHTML = `
+                <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+                    <div class="card" style="flex:1;min-width:140px;text-align:center">
+                        <div style="font-size:1.4rem;font-weight:700;color:var(--primary)">$${Number(res.annual_projected||0).toLocaleString()}</div>
+                        <div style="font-size:0.8rem;color:var(--muted)">Annual Projected</div>
+                    </div>
+                    <div class="card" style="flex:1;min-width:140px;text-align:center">
+                        <div style="font-size:1.4rem;font-weight:700;color:var(--success)">${esc(res.trend||'')}</div>
+                        <div style="font-size:0.8rem;color:var(--muted)">Trend</div>
+                    </div>
+                    <div class="card" style="flex:1;min-width:140px;text-align:center">
+                        <div style="font-size:1.4rem;font-weight:700;color:var(--primary)">${res.growth_rate_pct||0}%</div>
+                        <div style="font-size:0.8rem;color:var(--muted)">Growth Rate</div>
+                    </div>
+                </div>
+                <table><thead><tr><th>Quarter</th><th>Projected Spend</th><th>Confidence</th></tr></thead>
+                <tbody>${forecast.map(f => `
+                    <tr>
+                        <td style="font-weight:600">${esc(f.quarter)}</td>
+                        <td>$${Number(f.projected).toLocaleString()}</td>
+                        <td>${Math.round((f.confidence||0)*100)}%</td>
+                    </tr>`).join('')}
+                </tbody></table>`;
+        }).catch(e => { c.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; });
+    } else if (name === 'variance') {
+        apiGet('/api/v1/financials/variance').then(res => {
+            const rows = res.budget_vs_actual || [];
+            c.innerHTML = `
+                <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+                    <div class="card" style="flex:1;min-width:140px;text-align:center">
+                        <div style="font-size:1.4rem;font-weight:700;color:var(--primary)">$${Number(res.total_budget||0).toLocaleString()}</div>
+                        <div style="font-size:0.8rem;color:var(--muted)">Total Budget</div>
+                    </div>
+                    <div class="card" style="flex:1;min-width:140px;text-align:center">
+                        <div style="font-size:1.4rem;font-weight:700;color:var(--success)">$${Number(res.total_actual||0).toLocaleString()}</div>
+                        <div style="font-size:0.8rem;color:var(--muted)">Total Actual</div>
+                    </div>
+                </div>
+                <table><thead><tr><th>Department</th><th>Budget</th><th>Actual</th><th>Variance</th><th>Variance %</th></tr></thead>
+                <tbody>${rows.map(r => `
+                    <tr>
+                        <td style="font-weight:600">${esc(r.department)}</td>
+                        <td>$${Number(r.budget).toLocaleString()}</td>
+                        <td>$${Number(r.actual).toLocaleString()}</td>
+                        <td style="color:${r.variance>0?'var(--danger)':'var(--success)'}">$${Number(r.variance).toLocaleString()}</td>
+                        <td style="color:${r.variance_pct>0?'var(--danger)':'var(--success)'}">${r.variance_pct}%</td>
+                    </tr>`).join('')}
+                </tbody></table>`;
+        }).catch(e => { c.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; });
+    } else if (name === 'optimization') {
+        apiPost('/api/v1/financials/cost-optimization', {}).then(res => {
+            const recs = res.recommendations || [];
+            c.innerHTML = `
+                <p style="margin-bottom:1rem;font-size:0.85rem;color:var(--muted)">Total potential savings: <strong style="color:var(--success)">$${Number(res.total_potential_saving||0).toLocaleString()}</strong></p>
+                <div style="display:flex;flex-direction:column;gap:0.75rem">
+                ${recs.map(r => `
+                    <div class="card" style="border-left:4px solid var(--success);padding:1rem">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem">
+                            <div>
+                                <div style="font-weight:700;margin-bottom:0.25rem">${esc(r.title)}</div>
+                                <div style="font-size:0.8rem;color:var(--muted)">Effort: ${esc(r.effort)} &nbsp;|&nbsp; Timeline: ${esc(r.timeline)}</div>
+                            </div>
+                            <div style="font-size:1.2rem;font-weight:700;color:var(--success)">Save $${Number(r.potential_saving).toLocaleString()}</div>
+                        </div>
+                    </div>`).join('')}
+                </div>`;
+        }).catch(e => { c.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; });
+    }
+}
+
+function payMilestone(milestoneId) {
+    apiPost('/api/v1/financials/milestone-payment', {milestone_id: milestoneId, action: 'pay'}).then(ms => {
+        showModal(`
+            <h3>Milestone Payment Processed</h3>
+            <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem">Payment for <strong>${esc(ms.title)}</strong> has been recorded.</p>
+            <div class="card" style="background:#f8fafc;font-size:0.85rem">
+                <div><strong>Milestone:</strong> ${esc(ms.title)}</div>
+                <div><strong>Amount:</strong> $${Number(ms.amount).toLocaleString()} ${esc(ms.currency)}</div>
+                <div><strong>Status:</strong> ${esc(ms.payment_status)}</div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:1rem">
+                <button class="btn btn-primary" onclick="closeModal();switchFinTab(1,'milestones')">Close & Refresh</button>
+            </div>
+        `);
+    }).catch(e => alert('Error processing payment: ' + e.message));
 }
 
 function runThreeWayMatch() {
