@@ -5807,6 +5807,317 @@ function handleMockAPI(req, res) {
         return true;
     }
 
+    // ===========================================================================
+    // TASK 5 — OBLIGATION & PERFORMANCE MANAGEMENT (15 endpoints, features 221-239)
+    // ===========================================================================
+
+    // POST /api/v1/obligations/extract  — sub-path BEFORE generic obligation routes
+    if (pathname === '/api/v1/obligations/extract' && req.method === 'POST') {
+        var extBody = '';
+        req.on('data', function(c) { extBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(extBody); } catch(e) {}
+            var contractId = input.contract_id || 'cnt-001';
+            var targetContract = mockContracts.find(function(c) { return c.id === contractId; });
+            var content = input.content || (targetContract ? targetContract.content_body : '');
+            var categories = ['Regulatory', 'Operational', 'Financial'];
+            var parties = ['counterparty', 'internal', 'both'];
+            var titles = [
+                'Quarterly Compliance Report Submission',
+                'Annual Security Audit Delivery',
+                'Monthly SLA Performance Review'
+            ];
+            var extracted = titles.map(function(title, i) {
+                return {
+                    id: 'obl-ext-' + i,
+                    title: title,
+                    category: categories[i % categories.length],
+                    party_responsible: parties[i % parties.length],
+                    due_date: new Date(Date.now() + (30 + i * 30) * 86400000).toISOString(),
+                    recurrence: i === 0 ? 'quarterly' : i === 1 ? 'annual' : 'monthly',
+                    status: 'pending'
+                };
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ contract_id: contractId, extracted_obligations: extracted, count: extracted.length }));
+        });
+        return true;
+    }
+
+    // GET /api/v1/obligations/calendar  — sub-path before generic obligation routes
+    if (pathname === '/api/v1/obligations/calendar' && req.method === 'GET') {
+        var calYear = parseInt(parsed.searchParams.get('year') || new Date().getFullYear(), 10);
+        var calMonth = parseInt(parsed.searchParams.get('month') || (new Date().getMonth() + 1), 10);
+        var weeks = [];
+        var daysInMonth = new Date(calYear, calMonth, 0).getDate();
+        var weekMap = {};
+        for (var d = 1; d <= daysInMonth; d++) {
+            var dateObj = new Date(calYear, calMonth - 1, d);
+            var weekNum = Math.ceil(d / 7);
+            var dateStr = calYear + '-' + String(calMonth).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            var dayObligations = mockObligations.filter(function(o) {
+                var due = new Date(o.due_date);
+                return due.getFullYear() === calYear && (due.getMonth() + 1) === calMonth && due.getDate() === d;
+            });
+            if (!weekMap[weekNum]) weekMap[weekNum] = { week: weekNum, days: [] };
+            weekMap[weekNum].days.push({ date: dateStr, obligations: dayObligations });
+        }
+        for (var w = 1; w <= 5; w++) {
+            if (weekMap[w]) weeks.push(weekMap[w]);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ year: calYear, month: calMonth, weeks: weeks }));
+        return true;
+    }
+
+    // GET /api/v1/obligations/breaches  — sub-path before generic obligation routes
+    if (pathname === '/api/v1/obligations/breaches' && req.method === 'GET') {
+        var breaches = mockObligations.filter(function(o) { return o.status === 'overdue'; });
+        var severityBreakdown = { critical: 0, high: 0, medium: 0 };
+        breaches.forEach(function(b) {
+            var daysOverdue = Math.floor((Date.now() - new Date(b.due_date).getTime()) / 86400000);
+            if (daysOverdue > 30) severityBreakdown.critical++;
+            else if (daysOverdue > 14) severityBreakdown.high++;
+            else severityBreakdown.medium++;
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ breaches: breaches, count: breaches.length, severity_breakdown: severityBreakdown }));
+        return true;
+    }
+
+    // GET /api/v1/obligations/performance-guarantees  — sub-path before generic routes
+    if (pathname === '/api/v1/obligations/performance-guarantees' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ guarantees: [
+            { id: 'pg-001', contract_id: 'cnt-ops-01', metric: 'Uptime', target: '99.999%', measurement_period: 'monthly', penalty_pct: 10, status: 'compliant' },
+            { id: 'pg-002', contract_id: 'cnt-001', metric: 'API Response Time', target: '<200ms p99', measurement_period: 'daily', penalty_pct: 5, status: 'compliant' }
+        ]}));
+        return true;
+    }
+
+    // GET /api/v1/obligations/value-realization  — sub-path before generic routes
+    if (pathname === '/api/v1/obligations/value-realization' && req.method === 'GET') {
+        var totalContracted = mockContracts.reduce(function(acc, c) { return acc + (c.total_value || 0); }, 0);
+        var valueRealized = totalContracted * 0.72;
+        var byContract = mockContracts.map(function(c) {
+            return {
+                contract_id: c.id,
+                title: c.title,
+                value: c.total_value || 0,
+                realized: (c.total_value || 0) * 0.72,
+                rate: 72
+            };
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            total_contracted: totalContracted,
+            value_realized: valueRealized,
+            realization_rate: 72,
+            gap: totalContracted * 0.28,
+            by_contract: byContract
+        }));
+        return true;
+    }
+
+    // POST /api/v1/obligations/post-execution-compliance  — sub-path before generic routes
+    if (pathname === '/api/v1/obligations/post-execution-compliance' && req.method === 'POST') {
+        var pecBody = '';
+        req.on('data', function(c) { pecBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(pecBody); } catch(e) {}
+            var contractId = input.contract_id || 'cnt-001';
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                contract_id: contractId,
+                compliance_checks: [
+                    { check: 'Payment Terms Honored', status: 'pass' },
+                    { check: 'SLA Targets Met', status: 'pass' },
+                    { check: 'Deliverables Accepted', status: 'pass' },
+                    { check: 'Insurance Current', status: 'warning', note: 'Expires in 15 days' }
+                ],
+                overall: 'pass with 1 warning',
+                checked_at: new Date().toISOString()
+            }));
+        });
+        return true;
+    }
+
+    // POST /api/v1/obligations/:id/assign
+    if (pathname.match(/^\/api\/v1\/obligations\/[^\/]+\/assign$/) && req.method === 'POST') {
+        var oblAssignId = pathname.split('/')[4];
+        var assignBody = '';
+        req.on('data', function(c) { assignBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(assignBody); } catch(e) {}
+            var obl = mockObligations.find(function(o) { return o.id === oblAssignId; });
+            if (obl) obl.assigned_to = input.assigned_to || 'admin@enterprise.internal';
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                obligation_id: oblAssignId,
+                assigned_to: input.assigned_to || 'admin@enterprise.internal',
+                assigned_at: new Date().toISOString()
+            }));
+        });
+        return true;
+    }
+
+    // POST /api/v1/obligations/:id/dependencies
+    if (pathname.match(/^\/api\/v1\/obligations\/[^\/]+\/dependencies$/) && req.method === 'POST') {
+        var oblDepId = pathname.split('/')[4];
+        var depBody = '';
+        req.on('data', function(c) { depBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(depBody); } catch(e) {}
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                obligation_id: oblDepId,
+                dependencies: input.depends_on || [],
+                updated: true
+            }));
+        });
+        return true;
+    }
+
+    // POST /api/v1/obligations/:id/evidence
+    if (pathname.match(/^\/api\/v1\/obligations\/[^\/]+\/evidence$/) && req.method === 'POST') {
+        var oblEvidId = pathname.split('/')[4];
+        var evidBody = '';
+        req.on('data', function(c) { evidBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(evidBody); } catch(e) {}
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                obligation_id: oblEvidId,
+                evidence: {
+                    id: 'ev-' + Date.now(),
+                    type: input.evidence_type || 'document',
+                    description: input.description || '',
+                    file_name: input.file_name || 'evidence.pdf',
+                    uploaded_at: new Date().toISOString(),
+                    uploaded_by: 'admin@enterprise.internal'
+                }
+            }));
+        });
+        return true;
+    }
+
+    // POST /api/v1/obligations/:id/verify
+    if (pathname.match(/^\/api\/v1\/obligations\/[^\/]+\/verify$/) && req.method === 'POST') {
+        var oblVerifyId = pathname.split('/')[4];
+        var verifyBody = '';
+        req.on('data', function(c) { verifyBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(verifyBody); } catch(e) {}
+            var obl = mockObligations.find(function(o) { return o.id === oblVerifyId; });
+            if (obl) obl.status = 'fulfilled';
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                obligation_id: oblVerifyId,
+                verified: true,
+                verified_by: input.verified_by || 'admin@enterprise.internal',
+                verified_at: new Date().toISOString()
+            }));
+        });
+        return true;
+    }
+
+    // GET /api/v1/milestones
+    if (pathname === '/api/v1/milestones' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ milestones: mockMilestones, count: mockMilestones.length }));
+        return true;
+    }
+
+    // POST /api/v1/milestones
+    if (pathname === '/api/v1/milestones' && req.method === 'POST') {
+        var msBody = '';
+        req.on('data', function(c) { msBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(msBody); } catch(e) {}
+            var newMs = {
+                id: 'ms-' + Date.now(),
+                contract_id: input.contract_id || 'cnt-001',
+                title: input.title || 'New Milestone',
+                due_date: input.due_date || new Date(Date.now() + 30 * 86400000).toISOString(),
+                amount: Number(input.amount) || 0,
+                currency: input.currency || 'USD',
+                status: 'pending',
+                payment_status: 'unpaid'
+            };
+            mockMilestones.push(newMs);
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ milestone: newMs }));
+        });
+        return true;
+    }
+
+    // POST /api/v1/milestones/:id/accept
+    if (pathname.match(/^\/api\/v1\/milestones\/[^\/]+\/accept$/) && req.method === 'POST') {
+        var msAcceptId = pathname.split('/')[4];
+        var msAcceptBody = '';
+        req.on('data', function(c) { msAcceptBody += c; });
+        req.on('end', function() {
+            var ms = mockMilestones.find(function(m) { return m.id === msAcceptId; });
+            if (ms) {
+                ms.status = 'accepted';
+                ms.payment_status = 'invoiced';
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ milestone: ms || { id: msAcceptId, status: 'accepted', payment_status: 'invoiced' } }));
+        });
+        return true;
+    }
+
+    // GET /api/v1/kpis
+    if (pathname === '/api/v1/kpis' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            kpis: [
+                { name: 'SLA Compliance Rate', value: 98.4, unit: '%', trend: 'stable', target: 99.0 },
+                { name: 'Avg Resolution Time', value: 4.2, unit: 'hours', trend: 'improving', target: 4.0 },
+                { name: 'Obligation Fulfillment Rate', value: 94.5, unit: '%', trend: 'improving', target: 95.0 },
+                { name: 'On-Time Delivery', value: 87.3, unit: '%', trend: 'declining', target: 90.0 }
+            ],
+            last_updated: new Date().toISOString()
+        }));
+        return true;
+    }
+
+    // POST /api/v1/service-credits
+    if (pathname === '/api/v1/service-credits' && req.method === 'POST') {
+        var scBody = '';
+        req.on('data', function(c) { scBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(scBody); } catch(e) {}
+            var slaTarget = Number(input.sla_target) || 99.9;
+            var actualUptime = Number(input.actual_uptime) || 99.5;
+            var contractValue = Number(input.contract_value) || 100000;
+            var downtimePct = slaTarget - actualUptime;
+            var creditAmount = contractValue * Math.max(0, downtimePct) / 100 * 2;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                contract_id: input.contract_id || 'cnt-001',
+                sla_target: slaTarget,
+                actual_uptime: actualUptime,
+                downtime_pct: downtimePct,
+                credit_amount: creditAmount,
+                currency: 'USD',
+                period: 'monthly'
+            }));
+        });
+        return true;
+    }
+
+    // GET /api/v1/warranties
+    if (pathname === '/api/v1/warranties' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ warranties: [
+            { id: 'war-001', contract_id: 'cnt-mfg-01', type: 'Silicon Defect Replacement', duration_years: 5, coverage: 'Manufacturing defects', expiry: new Date(Date.now() + 1800 * 86400000).toISOString(), status: 'active' },
+            { id: 'war-002', contract_id: 'cnt-ops-01', type: 'Equipment Hardware', duration_years: 3, coverage: 'Power and cooling equipment', expiry: new Date(Date.now() + 900 * 86400000).toISOString(), status: 'active' }
+        ]}));
+        return true;
+    }
+
     return false;
 }
 

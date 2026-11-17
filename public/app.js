@@ -5427,11 +5427,32 @@ function loadContractObligations() {
 
         <div class="card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-                <h3 style="font-size:1rem">Post-Execution Obligation & Deliverable Calendar</h3>
+                <h3 style="font-size:1rem">Post-Execution Obligation & Deliverable Management</h3>
                 <button class="btn btn-primary" onclick="openNewObligationModal()">+ Log New Obligation</button>
             </div>
-            <div id="obligations-table-container">
-                <p style="color:var(--muted);font-size:0.85rem">Loading deliverables...</p>
+            <!-- Tab navigation -->
+            <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:1rem">
+                <button id="obl-tab-obligations" class="btn" style="border-radius:0.375rem 0.375rem 0 0;border-bottom:3px solid var(--primary);background:#f0f4ff;color:var(--primary);font-weight:600;padding:0.5rem 1.25rem" onclick="oblSwitchTab('obligations')">Obligations</button>
+                <button id="obl-tab-calendar" class="btn" style="border-radius:0.375rem 0.375rem 0 0;border-bottom:3px solid transparent;background:transparent;color:var(--muted);padding:0.5rem 1.25rem" onclick="oblSwitchTab('calendar')">Calendar</button>
+                <button id="obl-tab-performance" class="btn" style="border-radius:0.375rem 0.375rem 0 0;border-bottom:3px solid transparent;background:transparent;color:var(--muted);padding:0.5rem 1.25rem" onclick="oblSwitchTab('performance')">Performance</button>
+            </div>
+            <!-- Tab: Obligations -->
+            <div id="obl-panel-obligations">
+                <div id="obligations-table-container">
+                    <p style="color:var(--muted);font-size:0.85rem">Loading deliverables...</p>
+                </div>
+            </div>
+            <!-- Tab: Calendar -->
+            <div id="obl-panel-calendar" style="display:none">
+                <div id="obligations-calendar-container">
+                    <p style="color:var(--muted);font-size:0.85rem">Loading calendar...</p>
+                </div>
+            </div>
+            <!-- Tab: Performance -->
+            <div id="obl-panel-performance" style="display:none">
+                <div id="obligations-performance-container">
+                    <p style="color:var(--muted);font-size:0.85rem">Loading performance data...</p>
+                </div>
             </div>
         </div>
     `;
@@ -5444,16 +5465,40 @@ function loadContractObligations() {
         document.getElementById('obl-m-rate').textContent = (s.compliance_rate || 100).toFixed(1) + '%';
     }).catch(console.error);
 
+    oblLoadObligationsTab();
+}
+
+function oblSwitchTab(tab) {
+    ['obligations', 'calendar', 'performance'].forEach(t => {
+        const btn = document.getElementById('obl-tab-' + t);
+        const panel = document.getElementById('obl-panel-' + t);
+        if (!btn || !panel) return;
+        const active = t === tab;
+        btn.style.borderBottom = active ? '3px solid var(--primary)' : '3px solid transparent';
+        btn.style.background = active ? '#f0f4ff' : 'transparent';
+        btn.style.color = active ? 'var(--primary)' : 'var(--muted)';
+        btn.style.fontWeight = active ? '600' : 'normal';
+        panel.style.display = active ? '' : 'none';
+    });
+    if (tab === 'calendar') oblLoadCalendarTab();
+    if (tab === 'performance') oblLoadPerformanceTab();
+}
+
+function oblLoadObligationsTab() {
+    const container = document.getElementById('obligations-table-container');
+    if (!container) return;
     apiGet('/api/v1/obligations').then(res => {
         const list = res.obligations || [];
-        const container = document.getElementById('obligations-table-container');
         if (list.length === 0) {
             container.innerHTML = '<p style="color:var(--muted)">No post-execution obligations found.</p>';
             return;
         }
-
         let rows = list.map(o => {
             const statusBadge = o.status === 'fulfilled' ? 'badge-active' : o.status === 'overdue' ? 'badge-danger' : 'badge-warning';
+            const verifyBtn = o.status !== 'fulfilled'
+                ? `<button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem;margin-right:0.25rem" onclick="verifyObligation('${o.id}')">Verify</button>`
+                : '<span style="color:var(--success);font-size:0.8rem">Complete</span>';
+            const evidBtn = `<button class="btn" style="padding:0.25rem 0.5rem;font-size:0.75rem;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0" onclick="addObligationEvidence('${o.id}')">Add Evidence</button>`;
             return `
                 <tr>
                     <td>
@@ -5465,13 +5510,10 @@ function loadContractObligations() {
                     <td style="font-weight:600">${new Date(o.due_date).toLocaleDateString()}</td>
                     <td>${esc(o.recurrence)}</td>
                     <td><span class="badge ${statusBadge}">${esc(o.status)}</span></td>
-                    <td>
-                        ${o.status !== 'fulfilled' ? `<button class="btn btn-primary" style="padding:0.25rem 0.5rem;font-size:0.75rem" onclick="fulfillObligation('${o.id}')">Fulfill</button>` : '<span style="color:var(--success);font-size:0.8rem">Complete</span>'}
-                    </td>
+                    <td>${verifyBtn}${evidBtn}</td>
                 </tr>
             `;
         }).join('');
-
         container.innerHTML = `
             <table>
                 <thead>
@@ -5482,13 +5524,157 @@ function loadContractObligations() {
                         <th>Due Date</th>
                         <th>Recurrence</th>
                         <th>Status</th>
-                        <th>Action</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
             </table>
         `;
-    }).catch(e => container.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`);
+    }).catch(e => { container.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`; });
+}
+
+function oblLoadCalendarTab() {
+    const container = document.getElementById('obligations-calendar-container');
+    if (!container) return;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    apiGet(`/api/v1/obligations/calendar?year=${year}&month=${month}`).then(data => {
+        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        let html = `<h4 style="margin-bottom:0.75rem">${monthNames[month-1]} ${year}</h4>`;
+        html += `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:0.75rem;text-align:center;margin-bottom:0.5rem">`;
+        ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => { html += `<div style="font-weight:600;color:var(--muted);padding:4px">${d}</div>`; });
+        html += `</div>`;
+        html += `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">`;
+        const firstDay = new Date(year, month - 1, 1).getDay();
+        for (let i = 0; i < firstDay; i++) {
+            html += `<div style="min-height:48px;background:#f8fafc;border-radius:4px"></div>`;
+        }
+        const allDays = {};
+        (data.weeks || []).forEach(w => { (w.days || []).forEach(d => { allDays[d.date] = d.obligations || []; }); });
+        const daysInMonth = new Date(year, month, 0).getDate();
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = year + '-' + String(month).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+            const obls = allDays[dateStr] || [];
+            const isToday = d === now.getDate();
+            const dotColors = { fulfilled: '#22c55e', overdue: '#ef4444', in_progress: '#f59e0b', pending: '#3b82f6' };
+            let dots = obls.map(o => `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColors[o.status]||'#64748b'};margin:1px" title="${esc(o.title)}"></span>`).join('');
+            html += `<div style="min-height:48px;background:${isToday?'#eff6ff':'#f8fafc'};border-radius:4px;padding:4px;border:${isToday?'2px solid var(--primary)':'1px solid var(--border)'}">
+                <div style="font-size:0.8rem;font-weight:${isToday?'700':'400'};color:${isToday?'var(--primary)':'inherit'}">${d}</div>
+                <div>${dots}</div>
+            </div>`;
+        }
+        html += `</div>`;
+        html += `<div style="margin-top:0.75rem;display:flex;gap:1rem;font-size:0.75rem">
+            <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:4px"></span>Fulfilled</span>
+            <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-right:4px"></span>Overdue</span>
+            <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:4px"></span>In Progress</span>
+            <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3b82f6;margin-right:4px"></span>Pending</span>
+        </div>`;
+        container.innerHTML = html;
+    }).catch(e => { container.innerHTML = `<p style="color:var(--danger)">Calendar error: ${esc(e.message)}</p>`; });
+}
+
+function oblLoadPerformanceTab() {
+    const container = document.getElementById('obligations-performance-container');
+    if (!container) return;
+    container.innerHTML = '<p style="color:var(--muted);font-size:0.85rem">Loading performance data...</p>';
+    Promise.all([
+        apiGet('/api/v1/kpis'),
+        apiGet('/api/v1/warranties'),
+        apiGet('/api/v1/obligations/performance-guarantees'),
+        apiGet('/api/v1/obligations/value-realization')
+    ]).then(([kpiData, warData, pgData, vrData]) => {
+        const trendIcon = t => t === 'improving' ? '▲' : t === 'declining' ? '▼' : '—';
+        const trendColor = t => t === 'improving' ? '#22c55e' : t === 'declining' ? '#ef4444' : '#64748b';
+
+        // KPI tiles
+        let kpiHtml = `<h4 style="margin-bottom:0.75rem">KPI Summary</h4>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;margin-bottom:1.25rem">`;
+        (kpiData.kpis || []).forEach(k => {
+            const pct = Math.min(100, (k.value / k.target) * 100);
+            kpiHtml += `<div style="background:#f8fafc;border:1px solid var(--border);border-radius:0.5rem;padding:0.75rem">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="font-size:0.8rem;color:var(--muted)">${esc(k.name)}</span>
+                    <span style="font-size:0.75rem;color:${trendColor(k.trend)}">${trendIcon(k.trend)} ${esc(k.trend)}</span>
+                </div>
+                <div style="font-size:1.5rem;font-weight:700;color:var(--primary)">${k.value}${esc(k.unit)}</div>
+                <div style="font-size:0.75rem;color:var(--muted)">Target: ${k.target}${esc(k.unit)}</div>
+                <div style="background:#e2e8f0;border-radius:4px;height:6px;margin-top:4px">
+                    <div style="background:${pct>=100?'#22c55e':'#3b82f6'};height:6px;border-radius:4px;width:${Math.min(100,pct).toFixed(0)}%"></div>
+                </div>
+            </div>`;
+        });
+        kpiHtml += `</div>`;
+
+        // Warranties table
+        let warHtml = `<h4 style="margin-bottom:0.5rem">Active Warranties</h4>
+        <table style="margin-bottom:1.25rem"><thead><tr><th>Type</th><th>Contract</th><th>Coverage</th><th>Duration</th><th>Expiry</th><th>Status</th></tr></thead><tbody>`;
+        (warData.warranties || []).forEach(w => {
+            warHtml += `<tr>
+                <td style="font-weight:600">${esc(w.type)}</td>
+                <td>${esc(w.contract_id)}</td>
+                <td>${esc(w.coverage)}</td>
+                <td>${w.duration_years} yr</td>
+                <td>${new Date(w.expiry).toLocaleDateString()}</td>
+                <td><span class="badge badge-active">${esc(w.status)}</span></td>
+            </tr>`;
+        });
+        warHtml += `</tbody></table>`;
+
+        // Performance guarantees table
+        let pgHtml = `<h4 style="margin-bottom:0.5rem">Performance Guarantees</h4>
+        <table style="margin-bottom:1.25rem"><thead><tr><th>Metric</th><th>Contract</th><th>Target</th><th>Period</th><th>Penalty %</th><th>Status</th></tr></thead><tbody>`;
+        (pgData.guarantees || []).forEach(g => {
+            pgHtml += `<tr>
+                <td style="font-weight:600">${esc(g.metric)}</td>
+                <td>${esc(g.contract_id)}</td>
+                <td>${esc(g.target)}</td>
+                <td>${esc(g.measurement_period)}</td>
+                <td>${g.penalty_pct}%</td>
+                <td><span class="badge badge-active">${esc(g.status)}</span></td>
+            </tr>`;
+        });
+        pgHtml += `</tbody></table>`;
+
+        // Value realization bar
+        const vrRate = vrData.realization_rate || 72;
+        let vrHtml = `<h4 style="margin-bottom:0.5rem">Value Realization</h4>
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem">
+            <div style="flex:1;background:#e2e8f0;border-radius:6px;height:18px">
+                <div style="background:#22c55e;height:18px;border-radius:6px;width:${vrRate}%"></div>
+            </div>
+            <span style="font-weight:700;font-size:1rem;color:#22c55e">${vrRate}%</span>
+        </div>
+        <div style="display:flex;gap:2rem;font-size:0.8rem;color:var(--muted)">
+            <span>Contracted: <b style="color:var(--text)">$${((vrData.total_contracted||0)/1e6).toFixed(2)}M</b></span>
+            <span>Realized: <b style="color:#22c55e">$${((vrData.value_realized||0)/1e6).toFixed(2)}M</b></span>
+            <span>Gap: <b style="color:#ef4444">$${((vrData.gap||0)/1e6).toFixed(2)}M</b></span>
+        </div>`;
+
+        container.innerHTML = kpiHtml + warHtml + pgHtml + vrHtml;
+    }).catch(e => { container.innerHTML = `<p style="color:var(--danger)">Performance data error: ${esc(e.message)}</p>`; });
+}
+
+function verifyObligation(oblId) {
+    if (!confirm('Verify and mark this obligation as fulfilled?')) return;
+    apiPost('/api/v1/obligations/' + oblId + '/verify', { verified_by: 'admin@enterprise.internal' }).then(() => {
+        alert('Obligation verified and marked fulfilled!');
+        oblLoadObligationsTab();
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+function addObligationEvidence(oblId) {
+    const desc = prompt('Enter evidence description (or cancel to abort):');
+    if (!desc) return;
+    const fileName = prompt('File name (e.g. audit-report.pdf):', 'evidence.pdf') || 'evidence.pdf';
+    apiPost('/api/v1/obligations/' + oblId + '/evidence', {
+        evidence_type: 'document',
+        description: desc,
+        file_name: fileName
+    }).then(r => {
+        alert('Evidence uploaded: ' + r.evidence.id);
+    }).catch(e => alert('Error: ' + e.message));
 }
 
 function fulfillObligation(oblId) {
