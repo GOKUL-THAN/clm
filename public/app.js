@@ -316,6 +316,7 @@ function navigate(page) {
         case 'counterparty-portal': loadCounterpartyPortal(); break;
         case 'sourcing-converter': loadSourcingConverter(); break;
         case 'termination-runbook': loadTerminationRunbook(); break;
+        case 'documents': loadDocuments(); break;
         case '400-features': load400FeaturesExplorer(); break;
         case 'sdlc-workflows': loadSDLCWorkflows(); break;
     }
@@ -4917,6 +4918,225 @@ function generateAssembledDoc(tplId) {
     }).then(res => {
         document.getElementById('asm-output').value = res.content_body;
     }).catch(e => alert('Assembly error: ' + e.message));
+}
+
+
+// --- Document Intelligence Page ---
+function loadDocuments() {
+    const el = document.getElementById('content-area');
+    document.getElementById('page-title').textContent = 'Document Intelligence';
+    el.innerHTML = `
+        <div class="card" style="margin-bottom:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="margin-bottom:0.25rem">Document Intelligence & Repository</h3>
+                    <p style="color:var(--muted);font-size:0.85rem">Upload, classify, extract, search, and manage all contract documents with OCR and AI-powered intelligence.</p>
+                </div>
+                <button class="btn btn-primary" onclick="showUploadDocModal()">+ Upload Document</button>
+            </div>
+        </div>
+        <div style="display:grid;grid-template-columns:220px 1fr;gap:1rem">
+            <div class="card" style="height:fit-content">
+                <h4 style="font-size:0.9rem;margin-bottom:0.75rem">📁 Folders</h4>
+                <div id="doc-folder-tree"><p style="color:var(--muted);font-size:0.8rem">Loading...</p></div>
+                <div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.75rem">
+                    <input id="doc-new-folder" placeholder="New folder name" style="width:100%;padding:0.35rem;border:1px solid var(--border);border-radius:0.3rem;font-size:0.8rem;margin-bottom:0.35rem">
+                    <button class="btn" style="width:100%;font-size:0.75rem" onclick="createFolder()">+ Create Folder</button>
+                </div>
+            </div>
+            <div>
+                <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+                    <input id="doc-search" type="text" placeholder="Search documents..." style="flex:1;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem" oninput="searchDocuments()">
+                    <select id="doc-folder-filter" onchange="loadDocumentList()" style="padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem">
+                        <option value="">All Folders</option>
+                    </select>
+                </div>
+                <div class="card" id="doc-list-container">
+                    <p style="color:var(--muted)">Loading documents...</p>
+                </div>
+            </div>
+        </div>
+        <div id="doc-detail-panel" style="display:none"></div>
+    `;
+    loadDocumentFolders();
+    loadDocumentList();
+}
+
+function loadDocumentFolders() {
+    apiGet('/api/v1/documents/folders').then(d => {
+        const tree = document.getElementById('doc-folder-tree');
+        const sel = document.getElementById('doc-folder-filter');
+        if (!tree || !d.folders) return;
+        tree.innerHTML = d.folders.map(f =>
+            `<div style="padding:0.3rem 0.5rem;cursor:pointer;border-radius:0.25rem;font-size:0.82rem" onclick="filterByFolder('${esc(f.path)}')" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">${f.parent?'&nbsp;&nbsp;📂':'📁'} ${esc(f.name)} <span style="color:var(--muted)">(${f.document_count})</span></div>`
+        ).join('');
+        if (sel) d.folders.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.path; opt.textContent = f.path;
+            sel.appendChild(opt);
+        });
+    }).catch(() => {});
+}
+
+function filterByFolder(path) {
+    const sel = document.getElementById('doc-folder-filter');
+    if (sel) sel.value = path;
+    loadDocumentList();
+}
+
+function loadDocumentList() {
+    const folder = (document.getElementById('doc-folder-filter') || {}).value || '';
+    const url = '/api/v1/documents' + (folder ? '?folder=' + encodeURIComponent(folder) : '');
+    apiGet(url).then(d => renderDocumentTable(d.documents || [])).catch(e => {
+        const c = document.getElementById('doc-list-container');
+        if (c) c.innerHTML = `<p style="color:var(--danger)">${esc(e.message)}</p>`;
+    });
+}
+
+function searchDocuments() {
+    const q = (document.getElementById('doc-search') || {}).value || '';
+    if (!q.trim()) { loadDocumentList(); return; }
+    apiGet('/api/v1/documents/search?q=' + encodeURIComponent(q)).then(d => renderDocumentTable(d.results || [])).catch(() => {});
+}
+
+function renderDocumentTable(docs) {
+    const c = document.getElementById('doc-list-container');
+    if (!c) return;
+    if (!docs.length) { c.innerHTML = '<p style="color:var(--muted)">No documents found.</p>'; return; }
+    const typeIcon = t => t === 'pdf' ? '📄' : t === 'docx' ? '📝' : t === 'xlsx' ? '📊' : '📎';
+    const rows = docs.map(d => `<tr>
+        <td><span style="font-size:1.1rem">${typeIcon(d.type)}</span> <strong>${esc(d.title)}</strong><br><span style="font-size:0.72rem;color:var(--muted)">${esc(d.folder)}</span></td>
+        <td><span class="badge" style="background:#e0f2fe;color:#0369a1">${esc(d.classification||'—')}</span></td>
+        <td>${(d.tags||[]).map(t => `<span class="badge" style="background:#f1f5f9;color:#334155;margin-right:2px">${esc(t)}</span>`).join('')}</td>
+        <td style="font-size:0.8rem">v${d.version||1}</td>
+        <td style="font-size:0.8rem">${Math.round((d.size||0)/1024)}KB</td>
+        <td style="font-size:0.75rem;color:var(--muted)">${new Date(d.uploaded_at).toLocaleDateString()}</td>
+        <td style="white-space:nowrap">
+            <button class="btn" style="background:#e2e8f0;font-size:0.72rem;padding:0.15rem 0.35rem" onclick="showDocDetail('${esc(d.id)}')">View</button>
+            <button class="btn" style="background:#dbeafe;color:#1d4ed8;font-size:0.72rem;padding:0.15rem 0.35rem" onclick="runDocOCR('${esc(d.id)}')">OCR</button>
+            <button class="btn" style="background:#dcfce7;color:#15803d;font-size:0.72rem;padding:0.15rem 0.35rem" onclick="runDocExtract('${esc(d.id)}')">Extract</button>
+        </td>
+    </tr>`).join('');
+    c.innerHTML = `<table><thead><tr><th>Title</th><th>Classification</th><th>Tags</th><th>Ver</th><th>Size</th><th>Uploaded</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function showDocDetail(docId) {
+    apiGet('/api/v1/documents/' + docId).then(d => {
+        const panel = document.getElementById('doc-detail-panel');
+        if (!panel) return;
+        panel.style.display = 'block';
+        panel.innerHTML = `<div class="card" style="margin-top:1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                <h3>${esc(d.title)}</h3>
+                <button class="btn" style="background:#e2e8f0" onclick="document.getElementById('doc-detail-panel').style.display='none'">✕ Close</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:0.85rem">
+                <div><strong>Classification:</strong> ${esc(d.classification||'—')}</div>
+                <div><strong>Folder:</strong> ${esc(d.folder||'—')}</div>
+                <div><strong>Retention:</strong> ${esc(d.retention_policy||'—')}</div>
+                <div><strong>Watermark:</strong> ${esc(d.watermark||'None')}</div>
+                <div><strong>Archived:</strong> ${d.archived?'Yes':'No'}</div>
+                <div><strong>Annotations:</strong> ${(d.annotations||[]).length}</div>
+            </div>
+            ${d.content_summary ? `<div style="margin-top:0.75rem;padding:0.75rem;background:#f8fafc;border-radius:0.375rem;font-size:0.85rem"><strong>Summary:</strong> ${esc(d.content_summary)}</div>` : ''}
+            ${d.ocr_text ? `<div style="margin-top:0.75rem;padding:0.75rem;background:#f0fdf4;border-radius:0.375rem;font-size:0.82rem"><strong>OCR Text:</strong><br>${esc(d.ocr_text)}</div>` : ''}
+            <div style="display:flex;gap:0.5rem;margin-top:1rem;flex-wrap:wrap">
+                <button class="btn btn-primary" style="font-size:0.8rem" onclick="runDocOCR('${esc(d.id)}')">🔍 Process OCR</button>
+                <button class="btn" style="background:#dbeafe;color:#1d4ed8;font-size:0.8rem" onclick="runDocExtract('${esc(d.id)}')">📋 Extract Data</button>
+                <button class="btn" style="background:#dcfce7;color:#15803d;font-size:0.8rem" onclick="classifyDoc('${esc(d.id)}')">🏷️ Classify</button>
+                <button class="btn" style="background:#fef3c7;color:#92400e;font-size:0.8rem" onclick="watermarkDoc('${esc(d.id)}')">💧 Watermark</button>
+                <button class="btn" style="background:#fee2e2;color:#dc2626;font-size:0.8rem" onclick="archiveDoc('${esc(d.id)}')">🗄️ Archive</button>
+            </div>
+        </div>`;
+    }).catch(e => alert('Failed to load document: ' + e.message));
+}
+
+function runDocOCR(docId) {
+    apiPost('/api/v1/documents/' + docId + '/ocr', {}).then(d => {
+        alert('OCR Complete. Confidence: ' + (d.confidence*100).toFixed(0) + '%\n\n' + (d.ocr_text||'').substring(0, 200) + '...');
+        showDocDetail(docId);
+    }).catch(e => alert('OCR failed: ' + e.message));
+}
+
+function runDocExtract(docId) {
+    apiPost('/api/v1/documents/' + docId + '/extract', {}).then(d => {
+        const ex = d.extracted || {};
+        const parties = (ex.parties||[]).map(p => p.name + ' (' + p.role + ')').join(', ');
+        const amounts = (ex.amounts||[]).map(a => a.type + ': ' + (a.currency||'') + (a.value||a.value)).join(', ');
+        alert('Extraction Complete (Confidence: ' + (d.confidence*100).toFixed(0) + '%)\n\nParties: ' + parties + '\nAmounts: ' + amounts + '\nGoverning Law: ' + (ex.governing_law||'—'));
+    }).catch(e => alert('Extraction failed: ' + e.message));
+}
+
+function classifyDoc(docId) {
+    apiPost('/api/v1/documents/' + docId + '/classify', {}).then(d => {
+        alert('Classified as: ' + d.classification + ' (Confidence: ' + (d.confidence*100).toFixed(0) + '%)');
+        loadDocumentList();
+    }).catch(e => alert('Classification failed: ' + e.message));
+}
+
+function watermarkDoc(docId) {
+    const text = prompt('Enter watermark text:', 'CONFIDENTIAL');
+    if (!text) return;
+    apiPost('/api/v1/documents/' + docId + '/watermark', {text}).then(() => {
+        alert('Watermark applied: ' + text);
+        showDocDetail(docId);
+    }).catch(e => alert('Failed: ' + e.message));
+}
+
+function archiveDoc(docId) {
+    if (!confirm('Archive this document? It will be hidden from the main list.')) return;
+    apiPost('/api/v1/documents/' + docId + '/archive', {}).then(() => {
+        alert('Document archived.');
+        document.getElementById('doc-detail-panel').style.display = 'none';
+        loadDocumentList();
+    }).catch(e => alert('Failed: ' + e.message));
+}
+
+function showUploadDocModal() {
+    showModal(`
+        <h3>Upload Document</h3>
+        <div class="form-group"><label>Title</label><input id="udoc-title" placeholder="e.g. Cloud MSA v2.pdf" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+            <div class="form-group"><label>Type</label><select id="udoc-type" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"><option value="pdf">PDF</option><option value="docx">DOCX</option><option value="xlsx">XLSX</option></select></div>
+            <div class="form-group"><label>Folder</label><select id="udoc-folder" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"><option value="/Contracts">Contracts</option><option value="/Contracts/MSA">Contracts/MSA</option><option value="/Contracts/NDA">Contracts/NDA</option><option value="/Contracts/SOW">Contracts/SOW</option></select></div>
+            <div class="form-group"><label>Classification</label><select id="udoc-class" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"><option>Master Service Agreement</option><option>Non-Disclosure Agreement</option><option>Statement of Work</option><option>SLA</option><option>Vendor Agreement</option><option>Employment Contract</option></select></div>
+            <div class="form-group"><label>Retention Policy</label><select id="udoc-retention" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"><option value="3 years">3 years</option><option value="5 years">5 years</option><option value="7 years" selected>7 years</option><option value="10 years">10 years</option><option value="Permanent">Permanent</option></select></div>
+        </div>
+        <div class="form-group"><label>Tags (comma-separated)</label><input id="udoc-tags" placeholder="MSA, Enterprise, Production" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:0.375rem"></div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitDocUpload()">Upload</button>
+        </div>
+    `);
+}
+
+function submitDocUpload() {
+    const title = (document.getElementById('udoc-title').value || '').trim();
+    if (!title) { alert('Title is required.'); return; }
+    const tags = (document.getElementById('udoc-tags').value || '').split(',').map(t => t.trim()).filter(Boolean);
+    const payload = {
+        title, type: document.getElementById('udoc-type').value,
+        folder: document.getElementById('udoc-folder').value,
+        classification: document.getElementById('udoc-class').value,
+        retention_policy: document.getElementById('udoc-retention').value,
+        tags, size: Math.floor(Math.random()*200000+50000),
+        checksum: 'sha256:' + Date.now() + Math.random().toString(36).substring(2,8)
+    };
+    apiPost('/api/v1/documents/upload', payload).then(d => {
+        alert('Document "' + d.document.title + '" uploaded successfully!');
+        closeModal();
+        loadDocumentList();
+    }).catch(e => alert('Upload failed: ' + e.message));
+}
+
+function createFolder() {
+    const name = (document.getElementById('doc-new-folder').value || '').trim();
+    if (!name) { alert('Enter a folder name.'); return; }
+    apiPost('/api/v1/documents/folders', {name, parent:'folder-root', parent_path:'/Contracts'}).then(d => {
+        alert('Folder "' + d.folder.name + '" created.');
+        document.getElementById('doc-new-folder').value = '';
+        loadDocumentFolders();
+    }).catch(e => alert('Failed: ' + e.message));
 }
 
 // ------------------------------------------------------------------------------

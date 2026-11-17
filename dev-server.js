@@ -786,6 +786,18 @@ let mockContractRequests = [
     }
 ];
 
+let mockDocuments = [
+  {id:'doc-001',title:'Master Service Agreement v3.pdf',type:'pdf',folder:'/Contracts/MSA',size:245678,uploaded_by:'legal-lead@enterprise.internal',uploaded_at:new Date(Date.now()-86400000).toISOString(),version:3,tags:['MSA','Enterprise','Production'],classification:'Master Service Agreement',content_summary:'Standard MSA with mutual confidentiality, liability cap at 12 months fees, governed by Delaware law.',ocr_text:null,annotations:[],watermark:null,retention_policy:'7 years',archived:false,checksum:'sha256:a1b2c3',contract_id:'cnt-001'},
+  {id:'doc-002',title:'Mutual NDA - Apex Tech.pdf',type:'pdf',folder:'/Contracts/NDA',size:89234,uploaded_by:'procurement@enterprise.internal',uploaded_at:new Date(Date.now()-172800000).toISOString(),version:1,tags:['NDA','Apex Technologies','Mutual'],classification:'Non-Disclosure Agreement',content_summary:'Mutual NDA for technology evaluation, 2-year confidentiality period.',ocr_text:null,annotations:[],watermark:'CONFIDENTIAL',retention_policy:'5 years',archived:false,checksum:'sha256:b2c3d4',contract_id:'cnt-003'},
+  {id:'doc-003',title:'SOW - Cloud Migration.docx',type:'docx',folder:'/Contracts/SOW',size:156789,uploaded_by:'admin@enterprise.internal',uploaded_at:new Date(Date.now()-259200000).toISOString(),version:2,tags:['SOW','Cloud','Migration'],classification:'Statement of Work',content_summary:'SOW for AWS cloud migration, 4 milestones, total $350K, 6-month duration.',ocr_text:null,annotations:[],watermark:null,retention_policy:'3 years',archived:false,checksum:'sha256:c3d4e5',contract_id:'cnt-002'}
+];
+let mockFolders = [
+  {id:'folder-root',name:'Contracts',parent:null,path:'/Contracts',document_count:3},
+  {id:'folder-001',name:'MSA',parent:'folder-root',path:'/Contracts/MSA',document_count:1},
+  {id:'folder-002',name:'NDA',parent:'folder-root',path:'/Contracts/NDA',document_count:1},
+  {id:'folder-003',name:'SOW',parent:'folder-root',path:'/Contracts/SOW',document_count:1}
+];
+
 let mockTemplates = [
     {
         id: "tpl-01",
@@ -5083,6 +5095,255 @@ function handleMockAPI(req, res) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ request: patchItem, message: 'Request updated successfully' }));
         });
+        return true;
+    }
+
+    // === DOCUMENT INTELLIGENCE & MANAGEMENT (Features 85-88, 139-154, 321-340) ===
+
+    // GET /api/v1/documents - list with optional folder/tag/archived filters
+    if (pathname === '/api/v1/documents' && req.method === 'GET') {
+        var docFolder = parsed.searchParams.get('folder');
+        var docTag = parsed.searchParams.get('tag');
+        var showArchived = parsed.searchParams.get('archived') === 'true';
+        var docs = mockDocuments.filter(function(d) {
+            if (!showArchived && d.archived) return false;
+            if (docFolder && d.folder !== docFolder) return false;
+            if (docTag && d.tags.indexOf(docTag) === -1) return false;
+            return true;
+        });
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({documents:docs, total:docs.length}));
+        return true;
+    }
+
+    // GET /api/v1/documents/search - full-text search
+    if (pathname === '/api/v1/documents/search' && req.method === 'GET') {
+        var q = (parsed.searchParams.get('q') || '').toLowerCase().trim();
+        var results = q ? mockDocuments.filter(function(d) {
+            return (d.title||'').toLowerCase().indexOf(q) !== -1 ||
+                   (d.content_summary||'').toLowerCase().indexOf(q) !== -1 ||
+                   (d.classification||'').toLowerCase().indexOf(q) !== -1 ||
+                   d.tags.some(function(t){return t.toLowerCase().indexOf(q) !== -1;});
+        }) : mockDocuments.filter(function(d){return !d.archived;});
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({results:results, total:results.length, query:q}));
+        return true;
+    }
+
+    // GET /api/v1/documents/folders - folder hierarchy
+    if (pathname === '/api/v1/documents/folders' && req.method === 'GET') {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({folders:mockFolders, total:mockFolders.length}));
+        return true;
+    }
+
+    // POST /api/v1/documents/folders - create folder
+    if (pathname === '/api/v1/documents/folders' && req.method === 'POST') {
+        var folderBody = '';
+        req.on('data', function(c){folderBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(folderBody);}catch(e){}
+            var parentPath = input.parent_path || '/Contracts';
+            var newFolder = {id:'folder-'+Date.now(), name:input.name||'New Folder', parent:input.parent||'folder-root', path:parentPath+'/'+( input.name||'New Folder'), document_count:0};
+            mockFolders.push(newFolder);
+            res.writeHead(201, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({folder:newFolder}));
+        });
+        return true;
+    }
+
+    // POST /api/v1/documents/upload - upload with dedup
+    if (pathname === '/api/v1/documents/upload' && req.method === 'POST') {
+        var uploadBody = '';
+        req.on('data', function(c){uploadBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(uploadBody);}catch(e){}
+            var existing = mockDocuments.find(function(d){return d.checksum && d.checksum === input.checksum;});
+            if (existing) {
+                res.writeHead(409, {'Content-Type':'application/json'});
+                res.end(JSON.stringify({error:'Duplicate document detected', existing_id:existing.id, existing_title:existing.title}));
+                return;
+            }
+            var doc = {id:'doc-'+Date.now(), title:input.title||'Untitled', type:input.type||'pdf', folder:input.folder||'/Contracts', size:input.size||0, uploaded_by:input.uploaded_by||'admin@enterprise.internal', uploaded_at:new Date().toISOString(), version:1, tags:input.tags||[], classification:input.classification||'Unclassified', content_summary:input.content_summary||'', ocr_text:null, annotations:[], watermark:null, retention_policy:input.retention_policy||'7 years', archived:false, checksum:input.checksum||'sha256:'+Date.now(), contract_id:input.contract_id||null};
+            mockDocuments.push(doc);
+            res.writeHead(201, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({document:doc, dedup_checked:true}));
+        });
+        return true;
+    }
+
+    // GET /api/v1/documents/:id/versions - version history
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/versions$/) && req.method === 'GET') {
+        var vDocId = pathname.split('/')[4];
+        var vDoc = mockDocuments.find(function(d){return d.id===vDocId;}) || mockDocuments[0];
+        var versions = [];
+        for (var vi = 1; vi <= (vDoc.version||1); vi++) {
+            versions.push({version_number:vi, summary:vi===vDoc.version?'Current version':'Version '+vi, created_at:new Date(Date.now()-(vDoc.version-vi)*86400000).toISOString(), created_by:vDoc.uploaded_by, changes:vi===1?'Initial upload':'Updated terms and conditions'});
+        }
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({document_id:vDocId, versions:versions, current_version:vDoc.version}));
+        return true;
+    }
+
+    // POST /api/v1/documents/:id/ocr - mock OCR
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/ocr$/) && req.method === 'POST') {
+        var ocrDocId = pathname.split('/')[4];
+        var ocrDoc = mockDocuments.find(function(d){return d.id===ocrDocId;});
+        if (ocrDoc) ocrDoc.ocr_text = 'EXTRACTED TEXT (OCR): This ' + (ocrDoc.classification||'Agreement') + ' is entered into between Enterprise Corp ("Customer") and the counterparty ("Provider"). The term shall be as specified. Payment terms are Net 30. Limitation of liability capped at trailing 12 months fees. Governing law: Delaware, USA.';
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({processed:true, document_id:ocrDocId, ocr_text:ocrDoc?ocrDoc.ocr_text:'', confidence:0.97, pages:3, language:'en'}));
+        return true;
+    }
+
+    // POST /api/v1/documents/:id/extract - data extraction
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/extract$/) && req.method === 'POST') {
+        var exDocId = pathname.split('/')[4];
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({document_id:exDocId, extracted:{parties:[{name:'Enterprise Corp',role:'Customer'},{name:'Counterparty Ltd',role:'Provider'}], dates:[{type:'Effective Date',value:'2026-01-15'},{type:'Expiration',value:'2029-01-14'},{type:'Notice Period',value:'30 days'}], amounts:[{type:'Contract Value',value:350000,currency:'USD'},{type:'Payment Terms',value:'Net 30'},{type:'Liability Cap',value:420000,currency:'USD'}], jurisdictions:['Delaware, USA'], governing_law:'Delaware'}, confidence:0.94}));
+        return true;
+    }
+
+    // POST /api/v1/documents/:id/classify - auto-classification
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/classify$/) && req.method === 'POST') {
+        var clDocId = pathname.split('/')[4];
+        var clDoc = mockDocuments.find(function(d){return d.id===clDocId;});
+        var classification = clDoc ? clDoc.classification : 'Master Service Agreement';
+        if (clDoc) clDoc.classification = classification;
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({document_id:clDocId, classification:classification, confidence:0.96, categories:['Commercial','Service Agreement','Enterprise'], auto_tagged:['MSA','Commercial','Service']}));
+        return true;
+    }
+
+    // POST /api/v1/documents/:id/tag - add/remove tags
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/tag$/) && req.method === 'POST') {
+        var tagDocId = pathname.split('/')[4];
+        var tagBody = '';
+        req.on('data', function(c){tagBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(tagBody);}catch(e){}
+            var tagDoc = mockDocuments.find(function(d){return d.id===tagDocId;});
+            if (tagDoc) {
+                if (input.action === 'remove') {
+                    tagDoc.tags = tagDoc.tags.filter(function(t){return t !== input.tag;});
+                } else {
+                    if (tagDoc.tags.indexOf(input.tag) === -1) tagDoc.tags.push(input.tag);
+                }
+            }
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({document_id:tagDocId, tags:tagDoc?tagDoc.tags:[]}));
+        });
+        return true;
+    }
+
+    // POST /api/v1/documents/:id/annotate - add annotation
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/annotate$/) && req.method === 'POST') {
+        var annDocId = pathname.split('/')[4];
+        var annBody = '';
+        req.on('data', function(c){annBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(annBody);}catch(e){}
+            var annDoc = mockDocuments.find(function(d){return d.id===annDocId;});
+            var annotation = {id:'ann-'+Date.now(), author:input.author||'admin@enterprise.internal', text:input.text||'', page:input.page||1, created_at:new Date().toISOString()};
+            if (annDoc) annDoc.annotations.push(annotation);
+            res.writeHead(201, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({annotation:annotation, document_id:annDocId}));
+        });
+        return true;
+    }
+
+    // POST /api/v1/documents/:id/watermark - apply watermark
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/watermark$/) && req.method === 'POST') {
+        var wmDocId = pathname.split('/')[4];
+        var wmBody = '';
+        req.on('data', function(c){wmBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(wmBody);}catch(e){}
+            var wmDoc = mockDocuments.find(function(d){return d.id===wmDocId;});
+            if (wmDoc) wmDoc.watermark = input.text||'CONFIDENTIAL';
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({document_id:wmDocId, watermark:input.text||'CONFIDENTIAL', applied:true}));
+        });
+        return true;
+    }
+
+    // POST /api/v1/documents/:id/retention - set retention policy
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/retention$/) && req.method === 'POST') {
+        var retDocId = pathname.split('/')[4];
+        var retBody = '';
+        req.on('data', function(c){retBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(retBody);}catch(e){}
+            var retDoc = mockDocuments.find(function(d){return d.id===retDocId;});
+            if (retDoc) retDoc.retention_policy = input.policy||'7 years';
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({document_id:retDocId, retention_policy:input.policy||'7 years'}));
+        });
+        return true;
+    }
+
+    // POST /api/v1/documents/:id/archive - archive document
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+\/archive$/) && req.method === 'POST') {
+        var archDocId = pathname.split('/')[4];
+        var archDoc = mockDocuments.find(function(d){return d.id===archDocId;});
+        if (archDoc) archDoc.archived = true;
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({archived:true, document_id:archDocId, archived_at:new Date().toISOString()}));
+        return true;
+    }
+
+    // GET /api/v1/documents/:id - document detail (MUST be last of the /:id routes)
+    if (pathname.match(/^\/api\/v1\/documents\/[^\/]+$/) && req.method === 'GET') {
+        var getDocId = pathname.split('/').pop();
+        var getDoc = mockDocuments.find(function(d){return d.id===getDocId;});
+        if (!getDoc) {
+            res.writeHead(404, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({error:'Document not found'}));
+        } else {
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify(getDoc));
+        }
+        return true;
+    }
+
+    // POST /api/v1/templates/:id/approve - template approval
+    if (pathname.match(/^\/api\/v1\/templates\/[^\/]+\/approve$/) && req.method === 'POST') {
+        var tmplId = pathname.split('/')[4];
+        var tmplBody = '';
+        req.on('data', function(c){tmplBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(tmplBody);}catch(e){}
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({approved:true, template_id:tmplId, approved_by:input.approved_by||'admin@enterprise.internal', approved_at:new Date().toISOString(), version:'1.0', status:'approved'}));
+        });
+        return true;
+    }
+
+    // GET /api/v1/templates/:id/versions - template version governance
+    if (pathname.match(/^\/api\/v1\/templates\/[^\/]+\/versions$/) && req.method === 'GET') {
+        var tvTmplId = pathname.split('/')[4];
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({template_id:tvTmplId, versions:[{version:'2.0',status:'active',created_at:new Date(Date.now()-86400000).toISOString(),changes:'Updated liability cap to 12 months'},{version:'1.1',status:'archived',created_at:new Date(Date.now()-30*86400000).toISOString(),changes:'Added force majeure clause'},{version:'1.0',status:'archived',created_at:new Date(Date.now()-90*86400000).toISOString(),changes:'Initial template'}]}));
+        return true;
+    }
+
+    // POST /api/v1/clauses/:id/approve - clause approval
+    if (pathname.match(/^\/api\/v1\/clauses\/[^\/]+\/approve$/) && req.method === 'POST') {
+        var clsId = pathname.split('/')[4];
+        var clsBody = '';
+        req.on('data', function(c){clsBody += c;});
+        req.on('end', function(){
+            var input = {}; try{input=JSON.parse(clsBody);}catch(e){}
+            res.writeHead(200, {'Content-Type':'application/json'});
+            res.end(JSON.stringify({approved:true, clause_id:clsId, approved_by:input.approved_by||'legal-lead@enterprise.internal', approved_at:new Date().toISOString()}));
+        });
+        return true;
+    }
+
+    // GET /api/v1/clauses/:id/alternatives - clause alternatives
+    if (pathname.match(/^\/api\/v1\/clauses\/[^\/]+\/alternatives$/) && req.method === 'GET') {
+        var altClsId = pathname.split('/')[4];
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({clause_id:altClsId, alternatives:[{text:'Customer shall pay all invoiced amounts within thirty (30) days of invoice receipt.',risk_level:'standard',source:'Standard Playbook'},{text:'Customer shall pay all invoiced amounts within forty-five (45) days of invoice receipt.',risk_level:'elevated',source:'Negotiated Fallback'},{text:'Customer shall pay within sixty (60) days, subject to prior approval.',risk_level:'high',source:'Exception Only'}]}));
         return true;
     }
 
