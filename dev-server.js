@@ -2630,6 +2630,256 @@ function handleMockAPI(req, res) {
     }
 
     
+    // 8. Corporate Procurement & Supplier Lifecycle — sub-routes BEFORE generic handlers
+
+    // POST /api/v1/procurement/requisition
+    if (pathname === '/api/v1/procurement/requisition' && req.method === 'POST') {
+        var reqBody = '';
+        req.on('data', function(c) { reqBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(reqBody); } catch(e) {}
+            var requisition = {
+                id: 'req-' + Date.now(),
+                title: input.title || 'New Purchase Requisition',
+                department: input.department || 'Procurement',
+                amount: input.amount || 50000,
+                status: 'pending',
+                created_at: new Date().toISOString()
+            };
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(requisition));
+        });
+        return true;
+    }
+
+    // POST /api/v1/procurement/purchase-order
+    if (pathname === '/api/v1/procurement/purchase-order' && req.method === 'POST') {
+        var poBody = '';
+        req.on('data', function(c) { poBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(poBody); } catch(e) {}
+            var year = new Date().getFullYear();
+            var seq = String(Math.floor(Math.random() * 9000 + 1000)).padStart(4, '0');
+            var po = {
+                id: 'po-' + Date.now(),
+                po_number: 'PO-' + year + '-' + seq,
+                supplier_id: input.supplier_id || 'sup-01',
+                amount: input.amount || 100000,
+                status: 'pending'
+            };
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(po));
+        });
+        return true;
+    }
+
+    // POST /api/v1/suppliers/:id/prequalification
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/prequalification$/) && req.method === 'POST') {
+        var supId = pathname.split('/')[4];
+        var prqBody = '';
+        req.on('data', function(c) { prqBody += c; });
+        req.on('end', function() {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                supplier_id: supId,
+                qualified: true,
+                score: 87,
+                checks_passed: ['Financial Stability', 'Insurance', 'Legal', 'ISO'],
+                checks_failed: [],
+                evaluated_at: new Date().toISOString()
+            }));
+        });
+        return true;
+    }
+
+    // POST /api/v1/suppliers/:id/onboard
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/onboard$/) && req.method === 'POST') {
+        var supId = pathname.split('/')[4];
+        var obBody = '';
+        req.on('data', function(c) { obBody += c; });
+        req.on('end', function() {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                supplier_id: supId,
+                onboarded: true,
+                steps: [
+                    { step: 'Profile', status: 'completed' },
+                    { step: 'Prequalification', status: 'completed' },
+                    { step: 'Due Diligence', status: 'completed' },
+                    { step: 'Contract', status: 'completed' },
+                    { step: 'System Access', status: 'completed' }
+                ],
+                onboarded_at: new Date().toISOString()
+            }));
+        });
+        return true;
+    }
+
+    // POST /api/v1/suppliers/:id/offboard
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/offboard$/) && req.method === 'POST') {
+        var supId = pathname.split('/')[4];
+        var offBody = '';
+        req.on('data', function(c) { offBody += c; });
+        req.on('end', function() {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                supplier_id: supId,
+                offboarded: true,
+                steps: [
+                    { step: 'Contract Termination', status: 'completed' },
+                    { step: 'Access Revocation', status: 'completed' },
+                    { step: 'Data Return', status: 'completed' },
+                    { step: 'Final Settlement', status: 'completed' },
+                    { step: 'Archive', status: 'completed' }
+                ],
+                offboarded_at: new Date().toISOString()
+            }));
+        });
+        return true;
+    }
+
+    // GET /api/v1/suppliers/:id/scorecard
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/scorecard$/) && req.method === 'GET') {
+        var supId = pathname.split('/')[4];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            supplier_id: supId,
+            overall_score: 85,
+            grade: 'B+',
+            categories: [
+                { category: 'Quality', score: 88, weight: 25 },
+                { category: 'Delivery', score: 82, weight: 25 },
+                { category: 'Cost', score: 87, weight: 20 },
+                { category: 'Service', score: 85, weight: 15 },
+                { category: 'Compliance', score: 84, weight: 15 }
+            ],
+            trend: 'improving',
+            last_evaluated: new Date().toISOString()
+        }));
+        return true;
+    }
+
+    // POST /api/v1/suppliers/:id/performance-eval
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/performance-eval$/) && req.method === 'POST') {
+        var supId = pathname.split('/')[4];
+        var peBody = '';
+        req.on('data', function(c) { peBody += c; });
+        req.on('end', function() {
+            var input = {}; try { input = JSON.parse(peBody); } catch(e) {}
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                supplier_id: supId,
+                evaluation_id: 'eval-' + Date.now(),
+                scores: input.scores || { quality: 88, delivery: 82, cost: 87, service: 85, compliance: 84 },
+                overall_score: 85,
+                evaluator: input.evaluator || 'procurement@enterprise.internal',
+                evaluated_at: new Date().toISOString()
+            }));
+        });
+        return true;
+    }
+
+    // GET /api/v1/suppliers/:id/spend-analysis
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/spend-analysis$/) && req.method === 'GET') {
+        var supId = pathname.split('/')[4];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            supplier_id: supId,
+            total_spend: 850000,
+            by_category: [
+                { category: 'IT Services', amount: 450000, percentage: 53 },
+                { category: 'Cloud', amount: 280000, percentage: 33 },
+                { category: 'Professional', amount: 120000, percentage: 14 }
+            ],
+            by_period: [
+                { period: 'Q1 2026', amount: 210000 },
+                { period: 'Q2', amount: 195000 },
+                { period: 'Q3', amount: 230000 },
+                { period: 'Q4', amount: 215000 }
+            ],
+            yoy_change: '+12.5%'
+        }));
+        return true;
+    }
+
+    // GET /api/v1/suppliers/:id/insurance
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/insurance$/) && req.method === 'GET') {
+        var supId = pathname.split('/')[4];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            supplier_id: supId,
+            policies: [
+                { type: 'General Liability', provider: 'Allianz', coverage: 5000000, expiry: new Date(Date.now() + 45 * 86400000).toISOString(), status: 'active' },
+                { type: 'Professional Indemnity', provider: 'Allianz', coverage: 2000000, expiry: new Date(Date.now() + 120 * 86400000).toISOString(), status: 'active' },
+                { type: 'Workers Compensation', provider: 'AXA', coverage: 1000000, expiry: new Date(Date.now() + 15 * 86400000).toISOString(), status: 'expiring_soon' }
+            ]
+        }));
+        return true;
+    }
+
+    // GET /api/v1/suppliers/:id/licenses
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/licenses$/) && req.method === 'GET') {
+        var supId = pathname.split('/')[4];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            supplier_id: supId,
+            licenses: [
+                { type: 'ISO 27001', number: 'ISO-27001-2024-78921', issuer: 'BSI', expiry: new Date(Date.now() + 200 * 86400000).toISOString(), status: 'active' },
+                { type: 'SOC 2 Type II', number: 'SOC2-2026-4562', issuer: 'AICPA', expiry: new Date(Date.now() + 90 * 86400000).toISOString(), status: 'active' }
+            ]
+        }));
+        return true;
+    }
+
+    // GET /api/v1/suppliers/:id/certification-expiry
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/certification-expiry$/) && req.method === 'GET') {
+        var supId = pathname.split('/')[4];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            supplier_id: supId,
+            expiring_within_30_days: 1,
+            alerts: [
+                { cert: 'Workers Compensation', days_left: 15, severity: 'critical' },
+                { cert: 'SOC 2', days_left: 90, severity: 'warning' }
+            ]
+        }));
+        return true;
+    }
+
+    // GET /api/v1/suppliers/:id/diversity
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/diversity$/) && req.method === 'GET') {
+        var supId = pathname.split('/')[4];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            supplier_id: supId,
+            diversity_certified: true,
+            certifications: ['Minority Business Enterprise (MBE)', 'Small Business Enterprise (SBE)'],
+            certified_at: new Date(Date.now() - 180 * 86400000).toISOString(),
+            expiry: new Date(Date.now() + 185 * 86400000).toISOString()
+        }));
+        return true;
+    }
+
+    // GET /api/v1/suppliers/:id/risk-mapping
+    if (pathname.match(/^\/api\/v1\/suppliers\/[^\/]+\/risk-mapping$/) && req.method === 'GET') {
+        var supId = pathname.split('/')[4];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            supplier_id: supId,
+            risk_tier: 'Tier-1',
+            overall_risk: 'Low',
+            risk_score: 22,
+            categories: [
+                { category: 'Financial', score: 15, level: 'Low' },
+                { category: 'Operational', score: 28, level: 'Low' },
+                { category: 'Cyber', score: 35, level: 'Medium' },
+                { category: 'Compliance', score: 18, level: 'Low' }
+            ],
+            sub_tier_suppliers: 5
+        }));
+        return true;
+    }
+
     // 8. Corporate Procurement & Supplier Lifecycle
     if (pathname === '/api/v1/suppliers') {
         if (req.method === 'GET') {

@@ -5617,6 +5617,7 @@ function loadProcurementSuppliers() {
                     <td style="font-weight:600">$${Number(s.annual_spend || 0).toLocaleString()}</td>
                     <td>${certBadge}</td>
                     <td><span class="badge ${statusBadge}">${esc(s.onboarding_status)}</span></td>
+                    <td><button class="btn" style="padding:0.25rem 0.6rem;font-size:0.78rem" onclick="showSupplierDetail('${esc(s.id)}')">View Details</button></td>
                 </tr>
             `;
         }).join('');
@@ -5633,6 +5634,7 @@ function loadProcurementSuppliers() {
                         <th>Annual Spend</th>
                         <th>Insurance Cert</th>
                         <th>Status</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -5693,6 +5695,146 @@ function submitNewSupplier() {
         closeModal();
         loadProcurementSuppliers();
     }).catch(e => alert('Failed: ' + e.message));
+}
+
+function showSupplierDetail(supId) {
+    showModal('<p style="color:var(--muted);padding:1rem">Loading supplier details...</p>');
+    Promise.all([
+        apiGet('/api/v1/suppliers/' + supId + '/scorecard'),
+        apiGet('/api/v1/suppliers/' + supId + '/spend-analysis'),
+        apiGet('/api/v1/suppliers/' + supId + '/insurance'),
+        apiGet('/api/v1/suppliers/' + supId + '/licenses'),
+        apiGet('/api/v1/suppliers/' + supId + '/certification-expiry'),
+        apiGet('/api/v1/suppliers/' + supId + '/diversity'),
+        apiGet('/api/v1/suppliers/' + supId + '/risk-mapping')
+    ]).then(([scorecard, spend, insurance, licenses, certExpiry, diversity, risk]) => {
+        // Scorecard tab content
+        var scorecardHtml = `
+            <div style="margin-bottom:1rem">
+                <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
+                    <div style="font-size:2.5rem;font-weight:800;color:var(--primary)">${scorecard.overall_score}</div>
+                    <div>
+                        <div style="font-size:1.2rem;font-weight:700">${esc(scorecard.grade)}</div>
+                        <div style="font-size:0.8rem;color:var(--muted)">Trend: <span style="color:var(--success)">${esc(scorecard.trend)}</span></div>
+                    </div>
+                </div>
+                ${(scorecard.categories || []).map(c => `
+                    <div style="margin-bottom:0.6rem">
+                        <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.2rem">
+                            <span>${esc(c.category)}</span><span style="font-weight:600">${c.score}/100 (wt: ${c.weight}%)</span>
+                        </div>
+                        <div style="background:#e2e8f0;border-radius:4px;height:8px">
+                            <div style="background:var(--primary);width:${c.score}%;height:8px;border-radius:4px"></div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>`;
+
+        // Spend tab content
+        var spendHtml = `
+            <div style="margin-bottom:0.75rem">
+                <div style="font-size:1.5rem;font-weight:700">$${Number(spend.total_spend).toLocaleString()} <span style="font-size:0.85rem;color:var(--success)">${esc(spend.yoy_change)} YoY</span></div>
+            </div>
+            <table style="font-size:0.85rem">
+                <thead><tr><th>Category</th><th>Amount</th><th>%</th></tr></thead>
+                <tbody>
+                    ${(spend.by_category || []).map(c => `<tr><td>${esc(c.category)}</td><td>$${Number(c.amount).toLocaleString()}</td><td>${c.percentage}%</td></tr>`).join('')}
+                </tbody>
+            </table>
+            <div style="margin-top:1rem">
+                <div style="font-weight:600;margin-bottom:0.4rem;font-size:0.85rem">By Period</div>
+                ${(spend.by_period || []).map(p => `
+                    <div style="display:flex;justify-content:space-between;font-size:0.82rem;padding:0.2rem 0;border-bottom:1px solid var(--border)">
+                        <span>${esc(p.period)}</span><span style="font-weight:600">$${Number(p.amount).toLocaleString()}</span>
+                    </div>`).join('')}
+            </div>`;
+
+        // Compliance tab content (insurance + licenses)
+        function expiryBadge(expiry) {
+            var d = new Date(expiry);
+            var daysLeft = Math.round((d - Date.now()) / 86400000);
+            var style = daysLeft < 30 ? 'background:#fee2e2;color:#991b1b' : daysLeft < 90 ? 'background:#fef3c7;color:#92400e' : 'background:#dcfce7;color:#166534';
+            return '<span style="font-size:0.75rem;padding:0.15rem 0.4rem;border-radius:4px;' + style + '">' + (daysLeft < 0 ? 'Expired' : daysLeft + 'd left') + '</span>';
+        }
+        var complianceHtml = `
+            <div style="font-weight:600;margin-bottom:0.5rem">Insurance Policies</div>
+            ${(insurance.policies || []).map(p => `
+                <div style="border:1px solid var(--border);border-radius:6px;padding:0.6rem 0.75rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <div style="font-weight:600;font-size:0.9rem">${esc(p.type)}</div>
+                        <div style="font-size:0.78rem;color:var(--muted)">${esc(p.provider)} | Coverage: $${Number(p.coverage).toLocaleString()}</div>
+                    </div>
+                    <div style="text-align:right">${expiryBadge(p.expiry)}</div>
+                </div>`).join('')}
+            <div style="font-weight:600;margin-top:1rem;margin-bottom:0.5rem">Licenses & Certifications</div>
+            ${(licenses.licenses || []).map(l => `
+                <div style="border:1px solid var(--border);border-radius:6px;padding:0.6rem 0.75rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <div style="font-weight:600;font-size:0.9rem">${esc(l.type)}</div>
+                        <div style="font-size:0.78rem;color:var(--muted)">${esc(l.number)} | Issuer: ${esc(l.issuer)}</div>
+                    </div>
+                    <div style="text-align:right">${expiryBadge(l.expiry)}</div>
+                </div>`).join('')}`;
+
+        // Risk tab content
+        var riskColor = risk.overall_risk === 'Low' ? '#166534' : risk.overall_risk === 'Medium' ? '#92400e' : '#991b1b';
+        var riskBg = risk.overall_risk === 'Low' ? '#dcfce7' : risk.overall_risk === 'Medium' ? '#fef3c7' : '#fee2e2';
+        var riskHtml = `
+            <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
+                <span style="background:${riskBg};color:${riskColor};padding:0.4rem 0.9rem;border-radius:6px;font-weight:700;font-size:1rem">${esc(risk.risk_tier)}</span>
+                <div>
+                    <div style="font-weight:700">${esc(risk.overall_risk)} Risk</div>
+                    <div style="font-size:0.8rem;color:var(--muted)">Score: ${risk.risk_score} | Sub-tier suppliers: ${risk.sub_tier_suppliers}</div>
+                </div>
+            </div>
+            ${(risk.categories || []).map(c => {
+                var lvlColor = c.level === 'Low' ? 'var(--success)' : c.level === 'Medium' ? '#f59e0b' : 'var(--danger)';
+                return `<div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+                    <span>${esc(c.category)}</span>
+                    <span style="font-weight:600;color:${lvlColor}">${c.score} — ${esc(c.level)}</span>
+                </div>`;
+            }).join('')}`;
+
+        var diversityHtml = diversity.diversity_certified
+            ? `<div style="margin-top:0.75rem;font-size:0.85rem;color:var(--muted)">Diversity certified: ${(diversity.certifications || []).map(c => esc(c)).join(', ')}</div>`
+            : '';
+
+        var tabsHtml = `
+            <div style="display:flex;gap:0.5rem;margin-bottom:1rem;border-bottom:2px solid var(--border)">
+                <button onclick="sdTab(this,'sd-scorecard')" class="sd-tab-btn" style="padding:0.4rem 1rem;border:none;background:var(--primary);color:#fff;border-radius:4px 4px 0 0;cursor:pointer;font-weight:600">Scorecard</button>
+                <button onclick="sdTab(this,'sd-spend')" class="sd-tab-btn" style="padding:0.4rem 1rem;border:none;background:#e2e8f0;color:#374151;border-radius:4px 4px 0 0;cursor:pointer">Spend</button>
+                <button onclick="sdTab(this,'sd-compliance')" class="sd-tab-btn" style="padding:0.4rem 1rem;border:none;background:#e2e8f0;color:#374151;border-radius:4px 4px 0 0;cursor:pointer">Compliance</button>
+                <button onclick="sdTab(this,'sd-risk')" class="sd-tab-btn" style="padding:0.4rem 1rem;border:none;background:#e2e8f0;color:#374151;border-radius:4px 4px 0 0;cursor:pointer">Risk</button>
+            </div>
+            <div id="sd-scorecard" class="sd-tab-panel">${scorecardHtml}</div>
+            <div id="sd-spend" class="sd-tab-panel" style="display:none">${spendHtml}</div>
+            <div id="sd-compliance" class="sd-tab-panel" style="display:none">${complianceHtml}</div>
+            <div id="sd-risk" class="sd-tab-panel" style="display:none">${riskHtml}${diversityHtml}</div>
+        `;
+
+        showModal(`
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                <h3 style="margin:0">Supplier Detail — ${esc(supId)}</h3>
+                <button class="btn" style="background:#cbd5e1" onclick="closeModal()">Close</button>
+            </div>
+            ${tabsHtml}
+        `);
+    }).catch(e => {
+        showModal(`<p style="color:var(--danger);padding:1rem">Failed to load supplier details: ${esc(e.message)}</p>`);
+    });
+}
+
+function sdTab(btn, panelId) {
+    document.querySelectorAll('.sd-tab-btn').forEach(function(b) {
+        b.style.background = '#e2e8f0';
+        b.style.color = '#374151';
+        b.style.fontWeight = 'normal';
+    });
+    document.querySelectorAll('.sd-tab-panel').forEach(function(p) { p.style.display = 'none'; });
+    btn.style.background = 'var(--primary)';
+    btn.style.color = '#fff';
+    btn.style.fontWeight = '600';
+    document.getElementById(panelId).style.display = 'block';
 }
 
 // ------------------------------------------------------------------------------
