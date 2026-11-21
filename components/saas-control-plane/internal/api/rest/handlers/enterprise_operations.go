@@ -75,6 +75,11 @@ func (h *EnterpriseOperationsHandler) RaiseIncident(c *gin.Context) {
 }
 
 func (h *EnterpriseOperationsHandler) ResolveIncident(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tenant context required"})
+		return
+	}
 	idStr := c.Param("id")
 	incidentID, err := uuid.Parse(idStr)
 	if err != nil {
@@ -88,7 +93,7 @@ func (h *EnterpriseOperationsHandler) ResolveIncident(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&req)
 
-	resolved, err := h.itsmCtrl.ResolveIncident(c.Request.Context(), incidentID, req.RootCause, req.RemediationSteps)
+	resolved, err := h.itsmCtrl.ResolveIncident(c.Request.Context(), tenantID, incidentID, req.RootCause, req.RemediationSteps)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

@@ -42,6 +42,9 @@ func (s *Service) RegisterTenantSSO(tenantID uuid.UUID, cfg *SSOConfig) error {
 	if tenantID == uuid.Nil || cfg == nil {
 		return ErrProviderNotConfigured
 	}
+	if cfg.DefaultRole != "" && !isTenantScopedRole(cfg.DefaultRole) {
+		return fmt.Errorf("default role %q is not allowed for tenant SSO auto-provisioning", cfg.DefaultRole)
+	}
 	cfg.TenantID = tenantID
 	s.mu.Lock()
 	s.configs[tenantID] = cfg
@@ -208,6 +211,9 @@ func (s *Service) autoProvisionUser(ctx context.Context, tenantID uuid.UUID, sso
 	if role == "" {
 		role = models.RoleViewer
 	}
+	if !isTenantScopedRole(role) {
+		return nil, fmt.Errorf("default role %q is not allowed for tenant SSO auto-provisioning", role)
+	}
 
 	user := &models.User{
 		ID:           uuid.New(),
@@ -232,6 +238,22 @@ func (s *Service) autoProvisionUser(ctx context.Context, tenantID uuid.UUID, sso
 	)
 
 	return user, nil
+}
+
+func isTenantScopedRole(role models.UserRole) bool {
+	switch role {
+	case models.RoleTenantAdmin,
+		models.RoleCertManager,
+		models.RoleApprover,
+		models.RoleOperator,
+		models.RoleViewer,
+		models.RoleAuditor,
+		models.RoleFinance,
+		models.RoleServiceAcct:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) generateToken(user *models.User) (*models.TokenResponse, error) {

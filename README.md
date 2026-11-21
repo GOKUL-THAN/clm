@@ -2,7 +2,7 @@
 
 > **Version:** 4.1.0
 > **Live Demo:** [https://clm-website-1cc7.vercel.app/](https://clm-website-1cc7.vercel.app/)
-> **GitHub:** [https://github.com/GOKUL-THAN/cmd](https://github.com/GOKUL-THAN/cmd)
+> **GitHub:** [https://github.com/GOKUL-THAN/clm](https://github.com/GOKUL-THAN/clm)
 > **Status:** Demonstration / pre-production
 > **Architecture:** Zero-Trust Hybrid SaaS Control Plane + Customer In-VPC Satellite Gateway
 
@@ -62,7 +62,7 @@ The CLM repository is an enterprise Contract and Certificate Lifecycle Managemen
 ## 2. Quick Start
 
 ```bash
-git clone https://github.com/GOKUL-THAN/cmd.git
+git clone https://github.com/GOKUL-THAN/clm.git
 cd CLM
 npm start
 

@@ -211,8 +211,30 @@ func parseInventoryQuery(r *http.Request) inventoryQuery {
 
 // handleInventory returns the filtered inventory plus the facets.
 // GET /api/v1/inventory
+func tenantScopedCertificates(certs []*Certificate, tenantID string, globalAdmin bool) ([]*Certificate, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" && !globalAdmin {
+		return nil, errors.New("tenant context is required")
+	}
+	scoped := make([]*Certificate, 0, len(certs))
+	for _, cert := range certs {
+		if globalAdmin || cert.TenantID == tenantID {
+			scoped = append(scoped, cert)
+		}
+	}
+	return scoped, nil
+}
+
 func (s *Server) handleInventory(w http.ResponseWriter, r *http.Request) {
-	all := s.inventory.ListCerts()
+	allCerts := s.inventory.ListCerts()
+	claims := callerClaims(r)
+	tenantID := strings.TrimSpace(claims.TenantID)
+	globalAdmin := isGlobalAdmin(claims.EffectiveRole())
+	all, err := tenantScopedCertificates(allCerts, tenantID, globalAdmin)
+	if err != nil {
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
 	q := parseInventoryQuery(r)
 
 	matched := make([]*Certificate, 0, len(all))
@@ -265,6 +287,18 @@ func (s *Server) handleGetCertificate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		writeErr(w, http.StatusNotFound, "certificate not found")
 		return
+	}
+	claims := callerClaims(r)
+	tenantID := strings.TrimSpace(claims.TenantID)
+	if !isGlobalAdmin(claims.EffectiveRole()) {
+		if tenantID == "" {
+			writeErr(w, http.StatusForbidden, "tenant context is required")
+			return
+		}
+		if cert.TenantID != tenantID {
+			writeErr(w, http.StatusForbidden, "certificate is not owned by the authenticated tenant")
+			return
+		}
 	}
 
 	// Recompute the derived fields so a single-record fetch agrees with the list,

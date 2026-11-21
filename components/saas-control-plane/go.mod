@@ -1,6 +1,6 @@
 module github.com/m2p/clm/saas-control-plane
 
-go 1.26.0
+go 1.26.11
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.30.0
@@ -14,10 +14,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/lightsail v1.38.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.0
+	github.com/beevik/etree v1.8.1
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
+	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
 	go.uber.org/zap v1.27.0

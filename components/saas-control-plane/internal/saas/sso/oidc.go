@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +37,10 @@ func NewOIDCProvider(config *OIDCConfig, logger *zap.Logger) (*OIDCProvider, err
 	p := &OIDCProvider{
 		config:     config,
 		logger:     logger,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: newOIDCSafeHTTPClient(),
+	}
+	if err := validateOIDCServiceURL(config.Issuer); err != nil {
+		return nil, fmt.Errorf("invalid OIDC issuer: %w", err)
 	}
 
 	// Fetch OIDC discovery document
@@ -169,6 +174,96 @@ type userInfoResponse struct {
 	Name  string `json:"name"`
 }
 
+func newOIDCSafeHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			if ip := net.ParseIP(host); ip != nil {
+				if !isPublicIP(ip) {
+					return nil, fmt.Errorf("disallowed OIDC network address")
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			}
+			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+			if err != nil {
+				return nil, err
+			}
+			var lastErr error
+			for _, ip := range ips {
+				if !isPublicIP(ip) {
+					continue
+				}
+				conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+				if dialErr == nil {
+					return conn, nil
+				}
+				lastErr = dialErr
+			}
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			return nil, fmt.Errorf("OIDC endpoint resolved only to disallowed network addresses")
+		},
+	}
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func validateOIDCServiceURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return errors.New("OIDC endpoints must use HTTPS without userinfo")
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("OIDC endpoint host is missing")
+	}
+	if port := u.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return errors.New("OIDC endpoint port is invalid")
+		}
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !isPublicIP(ip) {
+			return errors.New("OIDC endpoint resolves to a disallowed network address")
+		}
+		return nil
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("resolving OIDC endpoint: %w", err)
+	}
+	for _, ip := range ips {
+		if isPublicIP(ip) {
+			return nil
+		}
+	}
+	return errors.New("OIDC endpoint resolves only to disallowed network addresses")
+}
+
+func isPublicIP(ip net.IP) bool {
+	return ip != nil &&
+		!ip.IsPrivate() &&
+		!ip.IsLoopback() &&
+		!ip.IsLinkLocalUnicast() &&
+		!ip.IsLinkLocalMulticast() &&
+		!ip.IsUnspecified() &&
+		!ip.IsMulticast()
+}
+
 func (p *OIDCProvider) fetchDiscovery(ctx context.Context) (*oidcDiscovery, error) {
 	discoveryURL := strings.TrimRight(p.config.Issuer, "/") + "/.well-known/openid-configuration"
 
@@ -188,8 +283,17 @@ func (p *OIDCProvider) fetchDiscovery(ctx context.Context) (*oidcDiscovery, erro
 	}
 
 	var disc oidcDiscovery
-	if err := json.NewDecoder(resp.Body).Decode(&disc); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&disc); err != nil {
 		return nil, err
+	}
+	if err := validateOIDCServiceURL(disc.AuthorizationEndpoint); err != nil {
+		return nil, fmt.Errorf("invalid authorization endpoint: %w", err)
+	}
+	if err := validateOIDCServiceURL(disc.TokenEndpoint); err != nil {
+		return nil, fmt.Errorf("invalid token endpoint: %w", err)
+	}
+	if err := validateOIDCServiceURL(disc.UserinfoEndpoint); err != nil {
+		return nil, fmt.Errorf("invalid userinfo endpoint: %w", err)
 	}
 
 	return &disc, nil
@@ -217,8 +321,8 @@ func (p *OIDCProvider) exchangeCode(ctx context.Context, code string) (*tokenRes
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("token endpoint returned %d", resp.StatusCode)
 	}
 
 	var tokenResp tokenResponse

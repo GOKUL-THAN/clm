@@ -141,12 +141,15 @@ func (c *ITSMController) RaiseIncident(ctx context.Context, tenantID uuid.UUID, 
 }
 
 // ResolveIncident marks an incident as resolved with root cause and remediation evidence.
-func (c *ITSMController) ResolveIncident(ctx context.Context, incidentID uuid.UUID, rootCause, remediation string) (*Incident, error) {
+func (c *ITSMController) ResolveIncident(ctx context.Context, tenantID, incidentID uuid.UUID, rootCause, remediation string) (*Incident, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	inc, ok := c.incidents[incidentID]
 	if !ok {
+		return nil, ErrIncidentNotFound
+	}
+	if inc.TenantID != tenantID {
 		return nil, ErrIncidentNotFound
 	}
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/m2p/clm/pkg/config"
+	"github.com/m2p/clm/pkg/models"
 	"go.uber.org/zap"
 )
 
@@ -30,5 +31,17 @@ func TestSSOConfigTenantIsolation(t *testing.T) {
 	service.RemoveTenantSSO(tenantB)
 	if _, err := service.GetTenantSSO(tenantA); err != nil {
 		t.Fatalf("cross-tenant delete removed owner config: %v", err)
+	}
+}
+
+func TestRegisterTenantSSORejectsPlatformRoles(t *testing.T) {
+	service := NewService(nil, nil, config.JWTConfig{}, zap.NewNop())
+	tenantID := uuid.New()
+
+	for _, role := range []models.UserRole{models.RoleSuperAdmin, models.RoleAdmin} {
+		cfg := &SSOConfig{Provider: ProviderOIDC, Enabled: true, DefaultRole: role}
+		if err := service.RegisterTenantSSO(tenantID, cfg); err == nil {
+			t.Fatalf("tenant SSO accepted platform role %q", role)
+		}
 	}
 }

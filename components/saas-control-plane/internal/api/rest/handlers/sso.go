@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -16,6 +18,13 @@ import (
 type SSOHandler struct {
 	ssoService  *sso.Service
 	groupMapper *sso.GroupMapper
+	stateMu     sync.Mutex
+	states      map[string]ssoState
+}
+
+type ssoState struct {
+	tenantID  uuid.UUID
+	expiresAt time.Time
 }
 
 // NewSSOHandler creates a new SSO handler.
@@ -23,6 +32,7 @@ func NewSSOHandler(ssoService *sso.Service) *SSOHandler {
 	return &SSOHandler{
 		ssoService:  ssoService,
 		groupMapper: sso.NewGroupMapper(zap.NewNop()),
+		states:      make(map[string]ssoState),
 	}
 }
 
@@ -107,7 +117,7 @@ func (h *SSOHandler) SAMLLogin(c *gin.Context) {
 		return
 	}
 
-	state := generateState(tenantID)
+	state := h.generateState(tenantID)
 	authURL, err := provider.GetAuthURL(c.Request.Context(), state)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate SAML request"})
@@ -121,7 +131,7 @@ func (h *SSOHandler) SAMLLogin(c *gin.Context) {
 // POST /api/v1/auth/saml/callback
 func (h *SSOHandler) SAMLCallback(c *gin.Context) {
 	relayState := c.PostForm("RelayState")
-	tenantID, err := parseTenantFromState(relayState)
+	tenantID, err := h.consumeState(relayState)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid relay state"})
 		return
@@ -169,7 +179,7 @@ func (h *SSOHandler) OIDCLogin(c *gin.Context) {
 		return
 	}
 
-	state := generateState(tenantID)
+	state := h.generateState(tenantID)
 	authURL, err := provider.GetAuthURL(c.Request.Context(), state)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build OIDC auth URL"})
@@ -183,7 +193,7 @@ func (h *SSOHandler) OIDCLogin(c *gin.Context) {
 // GET /api/v1/auth/oidc/callback?code=xxx&state=xxx
 func (h *SSOHandler) OIDCCallback(c *gin.Context) {
 	state := c.Query("state")
-	tenantID, err := parseTenantFromState(state)
+	tenantID, err := h.consumeState(state)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state parameter"})
 		return
@@ -233,7 +243,7 @@ func (h *SSOHandler) GoogleLogin(c *gin.Context) {
 		return
 	}
 
-	state := generateState(tenantID)
+	state := h.generateState(tenantID)
 	authURL, err := provider.GetAuthURL(c.Request.Context(), state)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build Google auth URL"})
@@ -247,7 +257,7 @@ func (h *SSOHandler) GoogleLogin(c *gin.Context) {
 // GET /api/v1/auth/google/callback?code=xxx&state=xxx
 func (h *SSOHandler) GoogleCallback(c *gin.Context) {
 	state := c.Query("state")
-	tenantID, err := parseTenantFromState(state)
+	tenantID, err := h.consumeState(state)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state parameter"})
 		return
@@ -296,7 +306,7 @@ func (h *SSOHandler) MicrosoftLogin(c *gin.Context) {
 		return
 	}
 
-	state := generateState(tenantID)
+	state := h.generateState(tenantID)
 	authURL, err := provider.GetAuthURL(c.Request.Context(), state)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build Microsoft auth URL"})
@@ -310,7 +320,7 @@ func (h *SSOHandler) MicrosoftLogin(c *gin.Context) {
 // GET /api/v1/auth/microsoft/callback?code=xxx&state=xxx
 func (h *SSOHandler) MicrosoftCallback(c *gin.Context) {
 	state := c.Query("state")
-	tenantID, err := parseTenantFromState(state)
+	tenantID, err := h.consumeState(state)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state parameter"})
 		return
@@ -449,18 +459,29 @@ func (h *SSOHandler) parseTenantID(c *gin.Context) (uuid.UUID, error) {
 	return tenantID, nil
 }
 
-// generateState creates an opaque state parameter encoding tenant ID + random nonce.
-func generateState(tenantID uuid.UUID) string {
-	nonce := make([]byte, 8)
-	rand.Read(nonce)
-	return tenantID.String() + ":" + hex.EncodeToString(nonce)
+// generateState creates an opaque, single-use state bound to a tenant.
+func (h *SSOHandler) generateState(tenantID uuid.UUID) string {
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return ""
+	}
+	state := hex.EncodeToString(nonce)
+	h.stateMu.Lock()
+	h.states[state] = ssoState{tenantID: tenantID, expiresAt: time.Now().Add(10 * time.Minute)}
+	h.stateMu.Unlock()
+	return state
 }
 
-// parseTenantFromState extracts tenant ID from the state parameter.
-func parseTenantFromState(state string) (uuid.UUID, error) {
-	// State format: "<tenant-uuid>:<random-hex>"
-	if len(state) < 36 {
+// consumeState validates and atomically consumes a single-use OAuth/SAML state.
+func (h *SSOHandler) consumeState(state string) (uuid.UUID, error) {
+	h.stateMu.Lock()
+	defer h.stateMu.Unlock()
+	entry, ok := h.states[state]
+	if ok {
+		delete(h.states, state)
+	}
+	if !ok || time.Now().After(entry.expiresAt) {
 		return uuid.Nil, sso.ErrInvalidToken
 	}
-	return uuid.Parse(state[:36])
+	return entry.tenantID, nil
 }

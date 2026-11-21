@@ -28,7 +28,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
         with:
-          go-version: '1.23.4'
+          go-version: '1.27.4'
           cache: false
       - name: Check formatting of changed Go files
         env:
@@ -298,7 +298,7 @@ jobs:
       - name: Set up Go for PostgreSQL-backed approval tests
         uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
         with:
-          go-version: '1.23.4'
+          go-version: '1.27.4'
           cache: false
 
       - name: Run tenant-isolated Go integration tests with isolated fixture credentials

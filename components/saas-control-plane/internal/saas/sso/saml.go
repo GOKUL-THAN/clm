@@ -9,7 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
+	"time"
 
+	"github.com/beevik/etree"
+	dsig "github.com/russellhaering/goxmldsig"
 	"go.uber.org/zap"
 )
 
@@ -25,6 +29,9 @@ func NewSAMLProvider(config *SAMLConfig, logger *zap.Logger) (*SAMLProvider, err
 	p := &SAMLProvider{
 		config: config,
 		logger: logger,
+	}
+	if strings.TrimSpace(config.IDPCert) == "" {
+		return nil, errors.New("SAML IdP certificate is required")
 	}
 
 	// Parse IdP certificate if provided
@@ -90,6 +97,9 @@ func (p *SAMLProvider) HandleCallback(ctx context.Context, params map[string]str
 	if err != nil {
 		return nil, fmt.Errorf("decoding SAMLResponse: %w", err)
 	}
+	if err := p.validateSignedResponse(responseXML); err != nil {
+		return nil, err
+	}
 
 	// Parse the SAML response
 	var response samlResponseEnvelope
@@ -141,10 +151,84 @@ func (p *SAMLProvider) HandleCallback(ctx context.Context, params map[string]str
 	return user, nil
 }
 
+func (p *SAMLProvider) validateSignedResponse(responseXML []byte) error {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(responseXML); err != nil {
+		return fmt.Errorf("parsing signed SAML response XML: %w", err)
+	}
+	root := doc.Root()
+	if root == nil {
+		return errors.New("SAML response XML is empty")
+	}
+
+	store := dsig.MemoryX509CertificateStore{Roots: []*x509.Certificate{p.idpCert}}
+	ctx := dsig.NewDefaultValidationContext(&store)
+	validated := false
+	if root.FindElement(".//Signature") != nil {
+		if _, err := ctx.Validate(root); err == nil {
+			validated = true
+		}
+	}
+	if !validated {
+		for _, assertion := range root.FindElements(".//Assertion") {
+			if assertion.FindElement(".//Signature") == nil {
+				continue
+			}
+			if _, err := ctx.Validate(assertion); err == nil {
+				validated = true
+				break
+			}
+		}
+	}
+	if !validated {
+		return errors.New("SAML response or assertion signature is missing or invalid")
+	}
+
+	if destination := root.SelectAttrValue("Destination", ""); destination != "" && destination != p.config.SPACSURL {
+		return errors.New("SAML response destination does not match ACS URL")
+	}
+
+	for _, audience := range root.FindElements(".//Audience") {
+		if strings.TrimSpace(audience.Text()) == p.config.SPEntityID {
+			return p.validateSAMLAssertionConditions(root)
+		}
+	}
+	// An audience restriction is mandatory for service-provider identity assertions.
+	if audiences := root.FindElements(".//AudienceRestriction"); len(audiences) > 0 {
+		return errors.New("SAML assertion audience does not match SP entity ID")
+	}
+	return p.validateSAMLAssertionConditions(root)
+}
+
+func (p *SAMLProvider) validateSAMLAssertionConditions(root *etree.Element) error {
+	now := time.Now()
+	for _, confirmation := range root.FindElements(".//SubjectConfirmationData") {
+		if recipient := confirmation.SelectAttrValue("Recipient", ""); recipient != "" && recipient != p.config.SPACSURL {
+			return errors.New("SAML subject confirmation recipient does not match ACS URL")
+		}
+		if raw := confirmation.SelectAttrValue("NotOnOrAfter", ""); raw != "" {
+			expiry, err := time.Parse(time.RFC3339, raw)
+			if err != nil || now.After(expiry) {
+				return errors.New("SAML subject confirmation is expired")
+			}
+		}
+		if raw := confirmation.SelectAttrValue("NotBefore", ""); raw != "" {
+			start, err := time.Parse(time.RFC3339, raw)
+			if err != nil || now.Before(start) {
+				return errors.New("SAML subject confirmation is not yet valid")
+			}
+		}
+	}
+	return nil
+}
+
 // ValidateConfig checks if the SAML configuration is complete.
 func (p *SAMLProvider) ValidateConfig() error {
 	if p.config.IDPSSOURL == "" {
 		return errors.New("SAML: idp_sso_url is required")
+	}
+	if p.config.IDPCert == "" {
+		return errors.New("SAML: idp_cert is required")
 	}
 	if p.config.SPEntityID == "" {
 		return errors.New("SAML: sp_entity_id is required")

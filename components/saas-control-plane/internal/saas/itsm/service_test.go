@@ -38,7 +38,7 @@ func TestITSMController_IncidentLifecycle(t *testing.T) {
 	}
 
 	// 3. Resolve incident
-	resolved, err := ctrl.ResolveIncident(ctx, inc.ID, "Automated renewal token expired", "Renewed via DigiCert ACME with zero-downtime staging")
+	resolved, err := ctrl.ResolveIncident(ctx, tenantID, inc.ID, "Automated renewal token expired", "Renewed via DigiCert ACME with zero-downtime staging")
 	if err != nil {
 		t.Fatalf("failed to resolve incident: %v", err)
 	}
@@ -50,9 +50,33 @@ func TestITSMController_IncidentLifecycle(t *testing.T) {
 	}
 
 	// 4. Try resolve again (should fail)
-	_, err = ctrl.ResolveIncident(ctx, inc.ID, "duplicate", "duplicate")
+	_, err = ctrl.ResolveIncident(ctx, tenantID, inc.ID, "duplicate", "duplicate")
 	if err != ErrAlreadyResolved {
 		t.Fatalf("expected ErrAlreadyResolved, got: %v", err)
+	}
+}
+
+func TestITSMController_ResolveIncidentRejectsCrossTenant(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	ctrl := NewITSMController(logger)
+	ownerTenant := uuid.New()
+	attackerTenant := uuid.New()
+	ctx := context.Background()
+
+	inc, err := ctrl.RaiseIncident(ctx, ownerTenant, &Incident{
+		Severity:       SeveritySEV2,
+		Title:          "Tenant scoped incident",
+		AffectedDomain: "tenant.example",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ctrl.ResolveIncident(ctx, attackerTenant, inc.ID, "forged", "forged"); err != ErrIncidentNotFound {
+		t.Fatalf("cross-tenant resolve error = %v, want ErrIncidentNotFound", err)
+	}
+	list := ctrl.ListIncidents(ownerTenant)
+	if len(list) != 1 || list[0].Status != StatusOpen {
+		t.Fatal("cross-tenant resolve modified the incident")
 	}
 }
 

@@ -1,4 +1,4 @@
-﻿{
+{
     "name": "clm",
     "version": "4.1.0",
     "description": "Enterprise Contract & Certificate Lifecycle Management (CLM) Platform",
@@ -40,4 +40,3 @@
     "author": "M2P Engineering Team",
     "license": "UNLICENSED"
 }
-
