@@ -131,7 +131,7 @@ Task 3 gateway transport APIs:
 
 - Machine routes: `POST /api/v1/satellites/:id/heartbeat`, `GET .../commands`, and command `ack`, `lease`, and `result` routes require the satellite bearer credential; production also requires a verified client certificate.
 - Operations: `POST /api/v1/satellites/:id/credentials/{rotate|revoke}` and command `:cmd_id/{cancel|retry}` use JWT role and tenant ownership checks.
-- Migration `004_secure_command_transport.sql` exists in both migration trees and adds credential metadata plus leased/idempotent command state. The server installer copies and applies migrations `001`–`004` in order with stop-on-error behavior. Plaintext credentials are never persisted and appear only in registration/rotation responses.
+- Application migrations `001`–`010` are embedded in `clm-server` and applied in order with per-migration transactions, advisory locking, version history, and checksums. Run `clm-server migrate` (or `make migrate`) before starting the service. Existing databases created before migration history was introduced must be validated and explicitly adopted with `CLM_BASELINE_LEGACY=true` (or `make migrate-baseline`); an untracked legacy schema is otherwise rejected. The separate `000_keycloak_db.sql` file is a Keycloak database bootstrap, not a CLM schema migration. Plaintext satellite credentials are never persisted and appear only in registration/rotation responses.
 - Production validation requires HTTPS, `client_auth: required`, a gateway CA bundle, and disables the explicit development-only legacy switch. This is offline code/test evidence only; no live certificate authority or handshake was exercised.
 
 ### Gateway Deployment Engine
@@ -726,7 +726,7 @@ gateway:
   retry_base: "5s"
 ```
 
-`components/shared/scripts/install-server.sh` requires CA-issued server certificate/key and a gateway client-CA bundle for production, installs them read-only for the service, writes the 32-byte cloud-account key to a separate secret file, copies migrations `001` through `004`, and applies each with `ON_ERROR_STOP=1`. It does not generate a PKI or claim a successful live handshake.
+`components/shared/scripts/install-server.sh` requires CA-issued server certificate/key and a gateway client-CA bundle for production, installs them read-only for the service, writes the 32-byte cloud-account key to a separate secret file, and runs the embedded migration runner before starting the service. Use `--baseline-legacy` only after confirming the existing database contains the schema through migration `004`; the runner verifies required tables and columns before recording that baseline. The installer does not generate a PKI or claim a successful live handshake.
 
 ---
 
@@ -798,7 +798,7 @@ Keycloak now runs in production mode against PostgreSQL instead of `start-dev` o
 
 - `deploy/migrations/000_keycloak_db.sql` creates a `keycloak` database owned by `clm`. It is numbered `000` so it runs before the CLM schema. Note that `/docker-entrypoint-initdb.d` scripts only execute on an **empty** data directory, so existing deployments need the database created by hand — the file documents the one-liner.
 - `deploy/docker-compose.test.yml` switches Keycloak to `command: start --import-realm` with `KC_DB=postgres` pointing at that database, and adds `depends_on: postgres (service_healthy)`.
-- Credentials moved to `${POSTGRES_PASSWORD}`, `${KEYCLOAK_ADMIN_USER}`, `${KEYCLOAK_ADMIN_PASS}`, and `${PUBLIC_URL}` with test-value fallbacks, sourced from `deploy/.env` (template in `deploy/.env.example`, and `.env` is git-ignored).
+- PostgreSQL bootstrap, application-login, and Keycloak database credentials are separate values in `deploy/.env`; Compose has no tracked credential fallbacks. Use `deploy/.env.example` as the template (the file is git-ignored).
 
 **Production mode is materially stricter than `start-dev`** — three settings are required or it refuses to serve:
 
@@ -930,7 +930,7 @@ The repository had **zero** `*_test.go` files. There are now 8 passing integrati
 
 **These are deliberately integration tests, not unit tests with mocks.** Every bug in this list is a NULL-handling or driver-level bug; a mock returns tidy zero values and would have hidden all of them.
 
-**Running them** — `deploy/run-tests.sh` provisions a throwaway `clm_test` database, applies the migrations, runs `go vet` and `go test` inside a `golang:1.22-alpine` container joined to the compose network, and drops the database afterwards. It never touches `clm_db`. This also gives the project a compile check, which matters because there is no local Go toolchain.
+**Running them** — `deploy/run-tests.sh` provisions a throwaway `clm_test` database, applies the embedded migrations with the same runner used by deployment, runs `go vet` and `go test` inside a `golang:1.27.3-alpine` container joined to the compose network, and drops the database afterwards. It never touches `clm_db`.
 
 **Guard against a false green:** `TestMain` exits 0 when `CLM_TEST_DB_DSN` is unset so `go test ./...` stays usable without a database — but that would otherwise print `ok` having run nothing. It now prints a loud warning, and setting `CLM_TEST_DB_REQUIRED=1` (which the runner does) turns a missing database into a hard failure. Verified both ways: 8 passes with a DSN, 0 tests run without one.
 

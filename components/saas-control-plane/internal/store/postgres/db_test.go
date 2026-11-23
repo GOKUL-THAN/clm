@@ -1,11 +1,14 @@
 package postgres
 
 import (
+	"context"
+	"database/sql"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m2p/clm/pkg/config"
 )
@@ -50,4 +53,48 @@ func TestNewDBConnectsUsingConfiguredCredentials(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatalf("close configured database connection: %v", err)
 	}
+}
+
+func TestVerifyApplicationRoleAcceptsRestrictedLogin(t *testing.T) {
+	testDSN := os.Getenv("CLM_TEST_APP_DB_DSN")
+	if testDSN == "" {
+		t.Skip("CLM_TEST_APP_DB_DSN is not set")
+	}
+
+	db := openTestDB(t, testDSN)
+	if err := db.VerifyApplicationRole(context.Background()); err != nil {
+		t.Fatalf("verify restricted application login: %v", err)
+	}
+}
+
+func TestVerifyApplicationRoleRejectsSuperuser(t *testing.T) {
+	testDSN := os.Getenv("CLM_TEST_SUPERUSER_DB_DSN")
+	if testDSN == "" {
+		t.Skip("CLM_TEST_SUPERUSER_DB_DSN is not set")
+	}
+
+	db := openTestDB(t, testDSN)
+	if err := db.VerifyApplicationRole(context.Background()); err == nil {
+		t.Fatal("superuser database session passed application role verification")
+	}
+}
+
+func openTestDB(t *testing.T, dsn string) *DB {
+	t.Helper()
+	rawDB, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := rawDB.PingContext(ctx); err != nil {
+		_ = rawDB.Close()
+		t.Fatalf("ping test database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := rawDB.Close(); err != nil {
+			t.Errorf("close test database: %v", err)
+		}
+	})
+	return &DB{DB: rawDB}
 }

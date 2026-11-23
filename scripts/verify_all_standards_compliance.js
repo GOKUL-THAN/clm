@@ -69,7 +69,7 @@ function runFullStepByStepVerification() {
     verifyCheck("1. ISO/IEC", "ISO/IEC 27017", "Cloud Multi-Tenant isolation & segregation", () => sqlRls.includes("tenant_isolation_contracts") && k8sNetPol.includes("default-deny-all"));
     verifyCheck("1. ISO/IEC", "ISO/IEC 27018", "Cloud Privacy & PII protection by cloud processor", () => sqlRls.includes("satellite_enclave_keys") && terraformAws.includes("clm_master_key"));
     verifyCheck("1. ISO/IEC", "ISO/IEC 27701:2025", "Privacy Information Management System (PIMS) DPAs", () => goModels.includes("ContractTypeDPA") && sqlClm.includes("contracts"));
-    verifyCheck("1. ISO/IEC", "ISO/IEC 27031", "ICT Readiness for Business Continuity", () => terraformAws.includes("multi_az              = true") && fs.existsSync("docs/25_DISASTER_RECOVERY.md"));
+    verifyCheck("1. ISO/IEC", "ISO/IEC 27031", "ICT Readiness for Business Continuity", () => /\bmulti_az\s*=\s*true/.test(terraformAws) && fs.existsSync("docs/25_DISASTER_RECOVERY.md"));
     verifyCheck("1. ISO/IEC", "ISO/IEC 27032", "Cybersecurity Internet & Application Defense", () => devServerCode.toLowerCase().includes("prompt injection attempt detected and neutralized"));
     verifyCheck("1. ISO/IEC", "ISO/IEC 27033", "Network Security & Boundary Segmentation", () => k8sNetPol.includes("NetworkPolicy") && k8sNetPol.includes("allow-control-plane-ingress"));
     verifyCheck("1. ISO/IEC", "ISO/IEC 27034", "Application Security Management in Software Life", () => fs.existsSync("compliance/deploy/SECURITY_GATES.yaml"));
@@ -165,7 +165,7 @@ function runFullStepByStepVerification() {
     verifyCheck("4. Privacy", "Privacy Act 1988 (Australia)", "Australian Privacy Principles (APP 11 security)", () => sqlRls.includes("tenant_isolation_contracts"));
     verifyCheck("4. Privacy", "Privacy Act 2020 (New Zealand)", "Information Privacy Principles (IPP 5 storage)", () => terraformAws.includes("clm_master_key"));
     verifyCheck("4. Privacy", "PIPL (China)", "Personal Information Protection Law Article 51", () => fs.existsSync("components/satellite-gateway/cmd/clm-satellite/main.go"));
-    verifyCheck("4. Privacy", "APPI (Japan)", "Act on Protection of Personal Information Article 23", () => terraformAws.includes("storage_encrypted     = true"));
+    verifyCheck("4. Privacy", "APPI (Japan)", "Act on Protection of Personal Information Article 23", () => /\bstorage_encrypted\s*=\s*true/.test(terraformAws));
     verifyCheck("4. Privacy", "PDPA (Malaysia)", "Personal Data Protection Act Security Principle", () => sqlRls.includes("tenant_isolation_contracts"));
     verifyCheck("4. Privacy", "Data Protection Act 2012 (Ghana)", "Section 28 security measures on personal data", () => sqlRls.includes("reject_contract_audit_mutation"));
     verifyCheck("4. Privacy", "UAE PDPL (Federal Decree 45)", "UAE Personal Data Protection Law Article 22", () => sqlRls.includes("satellite_enclave_keys"));
@@ -242,7 +242,7 @@ function runFullStepByStepVerification() {
     verifyCheck("7. Cloud/K8s", "OCI Container Image Spec", "Open Container Initiative container image packaging", () => fs.existsSync("components/saas-control-plane/deploy/Dockerfile.server"));
     verifyCheck("7. Cloud/K8s", "OCI Runtime Spec", "OCI runtime specification and container execution", () => k8sDeploy.includes("image: ghcr.io/m2p/clm-control-plane"));
     verifyCheck("7. Cloud/K8s", "OpenTelemetry Semantic Conv", "OTel standard attributes for traces and metrics", () => alertsConfig.includes("rules:") && fs.existsSync("deploy/observability/prometheus.yaml"));
-    verifyCheck("7. Cloud/K8s", "Terraform Security Best Practices", "Infrastructure as Code scanning and KMS encryption", () => terraformAws.includes("storage_encrypted     = true") && terraformAws.includes("enable_key_rotation"));
+    verifyCheck("7. Cloud/K8s", "Terraform Security Best Practices", "Infrastructure as Code scanning and KMS encryption", () => /\bstorage_encrypted\s*=\s*true/.test(terraformAws) && terraformAws.includes("enable_key_rotation"));
 
     // --------------------------------------------------------------------------
     // 8. FINANCIAL, ACCOUNTING & ENTERPRISE GOVERNANCE (22 STANDARDS)
@@ -302,12 +302,12 @@ function runFullStepByStepVerification() {
     console.log("\n▶ CATEGORY 10: Business Continuity, Resilience & Disaster Recovery");
     verifyCheck("10. BCDR", "ISO 22301", "Business Continuity Management Systems specification", () => fs.existsSync("docs/25_DISASTER_RECOVERY.md"));
     verifyCheck("10. BCDR", "ISO 22313", "Guidance on the use of ISO 22301", () => fs.existsSync("compliance/reports/15_BUSINESS_CONTINUITY_ASSESSMENT.md"));
-    verifyCheck("10. BCDR", "ISO/IEC 27031", "ICT Readiness for Business Continuity guidelines", () => terraformAws.includes("multi_az              = true"));
+    verifyCheck("10. BCDR", "ISO/IEC 27031", "ICT Readiness for Business Continuity guidelines", () => /\bmulti_az\s*=\s*true/.test(terraformAws));
     verifyCheck("10. BCDR", "NIST SP 800-34", "Contingency Planning Guide for Federal Info Systems", () => fs.existsSync("docs/25_DISASTER_RECOVERY.md"));
     verifyCheck("10. BCDR", "NIST SP 800-160", "Engineering Trustworthy, Resilient Systems", () => fs.existsSync("docs/01_ARCHITECTURE.md"));
     verifyCheck("10. BCDR", "EU DORA", "Digital Operational Resilience Act (Regulation EU 2022/2554)", () => fs.existsSync("compliance/reports/15_BUSINESS_CONTINUITY_ASSESSMENT.md"));
     verifyCheck("10. BCDR", "EU NIS2 Directive", "Directive (EU) 2022/2555 cybersecurity & resilience", () => alertsConfig.includes("rules:") && fs.existsSync("compliance/reports/15_BUSINESS_CONTINUITY_ASSESSMENT.md"));
-    verifyCheck("10. BCDR", "FFIEC BCM Guidance", "Financial Institutions Business Continuity Management", () => terraformAws.includes("backup_retention_period = 35"));
+    verifyCheck("10. BCDR", "FFIEC BCM Guidance", "Financial Institutions Business Continuity Management", () => /\bbackup_retention_period\s*=\s*35/.test(terraformAws));
     verifyCheck("10. BCDR", "Basel Resilience Principles", "Operational Resilience Principles for Banking Entities", () => fs.existsSync("docs/25_DISASTER_RECOVERY.md"));
     verifyCheck("10. BCDR", "CSA Resilience Guidance", "Cloud Security Alliance Business Continuity best practices", () => fs.existsSync("compliance/reports/12_CLOUD_SECURITY_ASSESSMENT.md"));
     verifyCheck("10. BCDR", "Chaos Engineering Principles", "In-VPC Satellite resilience during simulated cloud outage", () => fs.existsSync("scripts/verify_scenarios_a_to_h.js"));

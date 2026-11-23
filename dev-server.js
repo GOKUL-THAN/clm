@@ -38,6 +38,8 @@ let riskHeatmapEngine = null;
 let counterpartyPortalEngine = null;
 let sourcingConverterEngine = null;
 let terminationRunbookEngine = null;
+let tasks6to11Router = null;
+let platformSuiteRouter = null;
 try {
     playbookEngine = require('./services/playbook-engine');
     comparisonEngine = require('./services/contract-comparison');
@@ -47,6 +49,8 @@ try {
     counterpartyPortalEngine = require('./services/counterparty-portal');
     sourcingConverterEngine = require('./services/sourcing-converter');
     terminationRunbookEngine = require('./services/termination-runbook');
+    try { tasks6to11Router = require('./dev-server-tasks6-11.js'); } catch(e) {}
+    try { platformSuiteRouter = require('./dev-server-platform-suite.js'); } catch(e) {}
 } catch (e) {
     console.error("Advanced CLM engines failed to load:", e.message);
 }
@@ -2605,7 +2609,7 @@ function handleMockAPI(req, res) {
                     "ignore", "override", "system", "disregard", "bypass", "jailbreak",
                     "dan", "unrestricted mode", "developer unrestricted mode", "developer mode",
                     "base64", "prompt injection", "system prompt", "forget rules",
-                    "ignorar", "ignorieren", "ÃƒÂÃ‚Â¸ÃƒÂÃ‚Â³ÃƒÂÃ‚Â½ÃƒÂÃ‚Â¾Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¸Ãƒâ€˜Ã¢â€šÂ¬ÃƒÂÃ‚Â¾ÃƒÂÃ‚Â²ÃƒÂÃ‚Â°Ãƒâ€˜Ã¢â‚¬Å¡Ãƒâ€˜Ã…â€™", "ÃƒÂ¥Ã‚Â¿Ã‚Â½ÃƒÂ§Ã¢â‚¬Â¢Ã‚Â¥", "print previous",
+                    "ignorar", "ignorieren", "игнорировать", "\u0438\u0433\u043d\u043e\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c", "忽略", "\u5ffd\u7565", "print previous",
                     "repeat instructions", "what is your prompt"
                 ];
                 if (injectionPatterns.some(p => q.includes(p) || (b64Decoded && b64Decoded.includes(p)))) {
@@ -6118,6 +6122,8 @@ function handleMockAPI(req, res) {
         return true;
     }
 
+        if (tasks6to11Router && tasks6to11Router.handleTasks6to11API(req, res, pathname, parsed)) return true;
+    if (platformSuiteRouter && platformSuiteRouter.handlePlatformSuiteAPI(req, res, pathname, parsed)) return true;
     return false;
 }
 

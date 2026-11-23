@@ -3,8 +3,8 @@
 # import layout without mutating source go.mod files.
 set -euo pipefail
 
-COMPONENT="${1:?usage: go-staged.sh <control|satellite|vsatellite> <build|test|vet>}"
-ACTION="${2:?usage: go-staged.sh <control|satellite|vsatellite> <build|test|vet>}"
+COMPONENT="${1:?usage: go-staged.sh <control|satellite|vsatellite> <build|test|vet|migrate>}"
+ACTION="${2:?usage: go-staged.sh <control|satellite|vsatellite> <build|test|vet|migrate>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPONENTS="$(cd "$SCRIPT_DIR/../.." && pwd)"
 STAGE="$(mktemp -d)"
@@ -16,6 +16,7 @@ case "$COMPONENT" in
     cp -R "$SOURCE/." "$STAGE/"
     sed -i.bak 's|module github.com/m2p/clm/saas-control-plane|module github.com/m2p/clm|' "$STAGE/go.mod"
     rm -f "$STAGE/go.mod.bak"
+    (cd "$STAGE" && go mod tidy)
     ;;
   satellite)
     SOURCE="$COMPONENTS/satellite-gateway"
@@ -43,6 +44,13 @@ esac
 case "$ACTION" in
   test) (cd "$STAGE" && go test ./...) ;;
   vet) (cd "$STAGE" && go vet ./...) ;;
+  migrate)
+    if [[ "$COMPONENT" != control ]]; then
+      echo "migrate is only supported for the control component" >&2
+      exit 2
+    fi
+    (cd "$STAGE" && go run ./cmd/clm-server migrate)
+    ;;
   build)
     mkdir -p "$SOURCE/bin"
     case "$COMPONENT" in

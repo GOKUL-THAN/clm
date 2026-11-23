@@ -11,17 +11,45 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../internal/store/postgres/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
-      - ../internal/store/postgres/migrations/002_sso_fields.sql:/docker-entrypoint-initdb.d/002_sso_fields.sql
-      - ../internal/store/postgres/migrations/003_tenant_security.sql:/docker-entrypoint-initdb.d/003_tenant_security.sql
-      - ../internal/store/postgres/migrations/004_secure_command_transport.sql:/docker-entrypoint-initdb.d/004_secure_command_transport.sql
-      - ./migrations/009_approval_requests_rls.sql:/docker-entrypoint-initdb.d/009_approval_requests_rls.sql
-      - ./migrations/010_certificates_rls.sql:/docker-entrypoint-initdb.d/010_certificates_rls.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U clm"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  database-roles:
+    image: postgres:16-alpine
+    entrypoint: ["psql"]
+    command: ["-v", "ON_ERROR_STOP=1", "-h", "postgres", "-U", "clm", "-d", "clm_db", "-f", "/bootstrap/bootstrap-database-roles.sql"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      CLM_APP_DB_PASSWORD: ${CLM_APP_DB_PASSWORD:?set CLM_APP_DB_PASSWORD in deploy/.env}
+      CLM_KEYCLOAK_DB_PASSWORD: ${CLM_KEYCLOAK_DB_PASSWORD:?set CLM_KEYCLOAK_DB_PASSWORD in deploy/.env}
+    volumes:
+      - ./bootstrap-database-roles.sql:/bootstrap/bootstrap-database-roles.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    command: ["migrate"]
+    environment:
+      CLM_CONFIG: /etc/clm/server.yaml
+      CLM_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      CLM_BASELINE_LEGACY: ${CLM_BASELINE_LEGACY:-false}
+      DATABASE_HOST: postgres
+    volumes:
+      - ../configs/server.yaml:/etc/clm/server.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      database-roles:
+        condition: service_completed_successfully
+    restart: "no"
 
   redis:
     image: redis:7-alpine
@@ -42,18 +70,20 @@ services:
       - "9090:9090"
     environment:
       CLM_CONFIG: /etc/clm/server.yaml
-      CLM_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      CLM_DB_PASSWORD: ${CLM_APP_DB_PASSWORD:?set CLM_APP_DB_PASSWORD in deploy/.env}
+      DATABASE_USER: clm_app_login
       CLM_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       CLM_JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
       CLM_JWKS_URL: ${CLM_JWKS_URL:-}
       CLM_EXTERNAL_JWT_ISSUER: ${CLM_EXTERNAL_JWT_ISSUER:-}
       CLM_EXTERNAL_JWT_AUDIENCE: ${CLM_EXTERNAL_JWT_AUDIENCE:-}
       CLM_CLOUD_ACCOUNT_MASTER_KEY: ${CLM_CLOUD_ACCOUNT_MASTER_KEY:?set CLM_CLOUD_ACCOUNT_MASTER_KEY in deploy/.env}
+      DATABASE_HOST: postgres
     volumes:
       - ../configs/server.yaml:/etc/clm/server.yaml:ro
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     restart: unless-stopped

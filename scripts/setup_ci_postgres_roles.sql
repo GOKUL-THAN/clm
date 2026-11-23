@@ -27,17 +27,29 @@ BEGIN
 END $$;
 GRANT clm_table_owner TO clm_migration_owner;
 
--- 3. Application Runtime Role: Used by clm-server and tests. NOSUPERUSER, NOBYPASSRLS.
+-- 3. Restricted permissions role used after transaction-local SET ROLE.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'clm_app_role') THEN
-        CREATE ROLE clm_app_role NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS LOGIN PASSWORD 'app_ci_secret';
-        RAISE NOTICE 'Role clm_app_role created successfully.';
+        CREATE ROLE clm_app_role NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOLOGIN;
+        RAISE NOTICE 'Restricted role clm_app_role created successfully.';
     END IF;
 END $$;
+ALTER ROLE clm_app_role NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
+-- A separate non-privileged login may assume only the restricted app role.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'clm_app_login') THEN
+        CREATE ROLE clm_app_login NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS LOGIN PASSWORD 'app_ci_secret';
+        RAISE NOTICE 'Login role clm_app_login created successfully.';
+    END IF;
+END $$;
+ALTER ROLE clm_app_login LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD 'app_ci_secret';
+GRANT clm_app_role TO clm_app_login;
 
 -- 4. Database & Schema Grants
-GRANT CONNECT ON DATABASE clm_test TO clm_table_owner, clm_migration_owner, clm_app_role;
+GRANT CONNECT ON DATABASE clm_test TO clm_table_owner, clm_migration_owner, clm_app_role, clm_app_login;
 GRANT USAGE, CREATE ON SCHEMA public TO clm_table_owner, clm_migration_owner;
 GRANT USAGE ON SCHEMA public TO clm_app_role;
 
@@ -53,4 +65,3 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 \echo '>>> Enterprise CLM Role Setup Complete <<<'
-

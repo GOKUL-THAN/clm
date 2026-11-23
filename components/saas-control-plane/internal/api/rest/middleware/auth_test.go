@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/m2p/clm/internal/core"
 	"github.com/m2p/clm/pkg/config"
 )
 
@@ -55,6 +56,60 @@ func TestAuthMiddlewareFailClosedClaims(t *testing.T) {
 			}
 			if got := authenticateStatus(tt.cfg, token); got != tt.want {
 				t.Fatalf("status = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAuthMiddlewarePropagatesTenantAndPlatformContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	secret := strings.Repeat("x", 32)
+	tenantID := uuid.New()
+	cfg := config.JWTConfig{
+		Secret:            secret,
+		Issuer:            "test-issuer",
+		Audience:          "test-api",
+		AllowedAlgorithms: []string{"HS256"},
+	}
+
+	for _, test := range []struct {
+		name         string
+		role         string
+		tenantID     *uuid.UUID
+		wantTenant   uuid.UUID
+		wantPlatform bool
+	}{
+		{name: "tenant user", role: "viewer", tenantID: &tenantID, wantTenant: tenantID},
+		{name: "platform user", role: "super_admin", wantPlatform: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			userID := uuid.New()
+			token, err := jwt.NewWithClaims(jwt.SigningMethodHS256,
+				accessClaims(userID, test.tenantID, test.role, cfg.Issuer, cfg.Audience),
+			).SignedString([]byte(secret))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			router := gin.New()
+			router.Use(AuthMiddleware(cfg))
+			router.GET("/", func(c *gin.Context) {
+				gotTenant, hasTenant := core.TenantIDFromContext(c.Request.Context())
+				if hasTenant != (test.wantTenant != uuid.Nil) || (hasTenant && gotTenant != test.wantTenant) {
+					t.Errorf("tenant context = %s, present=%t; want %s, present=%t", gotTenant, hasTenant, test.wantTenant, test.wantTenant != uuid.Nil)
+				}
+				if got := core.HasPlatformAccess(c.Request.Context()); got != test.wantPlatform {
+					t.Errorf("platform context = %t, want %t", got, test.wantPlatform)
+				}
+				c.Status(http.StatusNoContent)
+			})
+
+			request := httptest.NewRequest(http.MethodGet, "/", nil)
+			request.Header.Set("Authorization", "Bearer "+token)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusNoContent)
 			}
 		})
 	}

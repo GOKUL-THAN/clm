@@ -126,21 +126,23 @@ func (r *CertificateRepository) listAcrossTenants(ctx context.Context, filter *c
 		return nil, 0, err
 	}
 
-	rows, err := r.db.QueryContext(ctx, `SELECT id FROM tenants ORDER BY id`)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
 	var tenantIDs []uuid.UUID
-	for rows.Next() {
-		var tenantID uuid.UUID
-		if err := rows.Scan(&tenantID); err != nil {
-			return nil, 0, err
+	err = r.db.WithPlatformContext(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT id FROM tenants ORDER BY id`)
+		if err != nil {
+			return err
 		}
-		tenantIDs = append(tenantIDs, tenantID)
-	}
-	if err := rows.Err(); err != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var tenantID uuid.UUID
+			if err := rows.Scan(&tenantID); err != nil {
+				return err
+			}
+			tenantIDs = append(tenantIDs, tenantID)
+		}
+		return rows.Err()
+	})
+	if err != nil {
 		return nil, 0, err
 	}
 
@@ -160,7 +162,8 @@ func (r *CertificateRepository) listAcrossTenants(ctx context.Context, filter *c
 	var certificates []*models.Certificate
 	total := 0
 	for _, tenantID := range tenantIDs {
-		tenantCertificates, tenantTotal, err := r.listForTenant(ctx, tenantID, scanFilter)
+		tenantCtx := core.WithTenantID(ctx, tenantID)
+		tenantCertificates, tenantTotal, err := r.listForTenant(tenantCtx, tenantID, scanFilter)
 		if err != nil {
 			return nil, 0, err
 		}

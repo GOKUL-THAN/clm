@@ -53,14 +53,7 @@ echo "=== creating a clean $TEST_DB ==="
 psql_admin -c "DROP DATABASE IF EXISTS $TEST_DB;" > /dev/null
 psql_admin -c "CREATE DATABASE $TEST_DB OWNER $PGUSER;" > /dev/null
 
-echo "=== applying schema ==="
-for f in migrations/001_initial.sql migrations/002_sso_fields.sql migrations/003_tenant_security.sql migrations/004_secure_command_transport.sql migrations/009_approval_requests_rls.sql migrations/010_certificates_rls.sql; do
-    if [ -f "$f" ]; then
-        echo "  $f"
-        psql_test -v ON_ERROR_STOP=1 -q < "$f" > /dev/null
-    fi
-done
-echo "  tables: $(psql_test -tAc "select count(*) from information_schema.tables where table_schema='public'")"
+echo "=== applying schema through the migration runner ==="
 
 echo "=== running go test ==="
 # The module path is rewritten the same way the production image does it, so the
@@ -71,12 +64,14 @@ docker run --rm \
     -w /src \
     -e CLM_TEST_DB_DSN="postgres://$PGUSER:$PGPASS@postgres:5432/$TEST_DB?sslmode=disable" \
     -e GOFLAGS=-buildvcs=false \
-    golang:1.22-alpine \
+    golang:1.27.3-alpine \
     sh -c '
         apk add --no-cache git > /dev/null 2>&1
         cp -r /src /build && cd /build
         sed -i "s|module github.com/m2p/clm/saas-control-plane|module github.com/m2p/clm|" go.mod
         go mod tidy > /dev/null 2>&1
+        echo "--- apply schema migrations ---"
+        CLM_MIGRATE_DSN="$CLM_TEST_DB_DSN" go run ./cmd/clm-server migrate
         echo "--- go vet ---"
         go vet ./...
         echo "--- go test ---"
@@ -85,3 +80,4 @@ docker run --rm \
         # final command so its exit status cannot be hidden by output filters.
         CLM_TEST_DB_REQUIRED=1 go test ./... -count=1 -v
     '
+echo "  tables: $(psql_test -tAc "select count(*) from information_schema.tables where table_schema='public'")"

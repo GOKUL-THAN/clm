@@ -116,3 +116,52 @@ has separate existing local edits, and untracked `CLM/` remains untouched. Run
 3. Continue remaining phases in `MASTER_REQUIREMENT_TRACKER.md`; do not
    declare production readiness until every applicable release gate has
    evidence.
+
+## Supplemental checkpoint — 2026-11-06 identity role-ceiling finding
+
+- Independent inspection of the tracked Keycloak identity handlers found an
+  admin privilege-escalation path: user creation/role assignment and group
+  role/membership operations did not consistently apply the existing
+  `users.CanAssignRole` privilege ceiling. Group membership also needed to
+  account for inherited parent-group roles.
+- Added actor-aware role checks to `CreateUser`, `SetUserRole`, `CreateGroup`,
+  `SetGroupRole`, and `AddUserToGroup`, including inherited group roles. Added
+  three focused regression tests in `identity_role_test.go`; mirrored the
+  source/test fix in the pre-existing untracked nested `CLM/` tree.
+- Attempted `go test ./internal/api/rest/handlers -run 'TestIdentity' -count=1`
+  from each module directory. Both attempts were blocked because `go` is not
+  installed/on PATH. No CI run includes the edits. The finding is
+  `FIXED_IN_SOURCE`, not verified by test or CI.
+- The bounded platform diff review covered changed satellite gateway auth,
+  installer/secrets, Kubernetes manifests, cloud Terraform, CI, and selected
+  build scripts. It found no actionable issue within those changed files only;
+  it did not cover unchanged identity/tenant code or execute runtime tests.
+- Production readiness remains unestablished. No commit, push, merge, or
+  deployment was performed. The exact finding, test limitation, and remaining
+  audit blockers are recorded in `CLM_REMEDIATION_TRACKER.md`,
+  `CLM_TEST_EVIDENCE_MATRIX.md`, and `CLM_FINAL_SECURITY_AUDIT.md`.
+
+## Supplemental checkpoint — 2026-11-06 tenant repository coverage
+
+- Current repository: `D:\400 clm\CLM`; branch `audit/phase0-ci-workflow`;
+  HEAD `360f3b9`. Existing root `README.md` edits and untracked `CLM/` were
+  preserved and not staged.
+- Added `TestUserRepositoryEnforcesTenantScope` to
+  `components/saas-control-plane/internal/store/postgres/repo_test.go`. It
+  checks tenant-scoped user lookup/listing, cross-tenant update/delete denial,
+  and owning-tenant update/delete behavior using the existing real-PostgreSQL
+  integration test harness.
+- Added the test to the PostgreSQL 15 CI repository-test selector in
+  `.github/workflows/ci.yml`.
+- `git diff --check` passed after these edits. Go, gofmt, PostgreSQL, Docker,
+  Terraform, and kubectl are unavailable locally, so the new Go test and
+  workflow execution remain unverified. The last successful CI run,
+  `42257224350`, predates these edits; no push or remote workflow was started.
+- Modified for this increment: `.github/workflows/ci.yml`,
+  `components/saas-control-plane/internal/store/postgres/repo_test.go`,
+  `MASTER_REQUIREMENT_TRACKER.md`, and `EXECUTION_CHECKPOINT.md`. The root
+  README changes predate this increment and remain uncommitted.
+- Next: run `gofmt` and the selected app-role PostgreSQL test in PostgreSQL 15
+  CI after an authorized push; then continue tenant-scoped repository and API
+  coverage. Do not claim this test or broader tenant isolation verified until
+  the CI execution succeeds.

@@ -218,4 +218,3 @@ BEGIN
     GRANT EXECUTE ON FUNCTION reject_contract_audit_mutation() TO clm_table_owner;
     GRANT EXECUTE ON FUNCTION compute_contract_audit_hash_chain() TO clm_table_owner;
 END $$;
-

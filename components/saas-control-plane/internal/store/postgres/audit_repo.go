@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -13,8 +14,10 @@ type AuditRepository struct{ db *DB }
 func NewAuditRepository(db *DB) *AuditRepository { return &AuditRepository{db: db} }
 
 func (r *AuditRepository) Append(ctx context.Context, e *models.AuditEvent) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO control_plane_audit_events (id,tenant_id,request_id,actor_id,actor_role,action,resource_type,resource_id,outcome,source_ip,metadata,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, e.ID, e.TenantID, e.RequestID, e.ActorID, e.ActorRole, e.Action, e.ResourceType, e.ResourceID, e.Outcome, e.SourceIP, e.Metadata, e.CreatedAt)
-	return err
+	return r.db.WithTenantContext(ctx, e.TenantID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO control_plane_audit_events (id,tenant_id,request_id,actor_id,actor_role,action,resource_type,resource_id,outcome,source_ip,metadata,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, e.ID, e.TenantID, e.RequestID, e.ActorID, e.ActorRole, e.Action, e.ResourceType, e.ResourceID, e.Outcome, e.SourceIP, e.Metadata, e.CreatedAt)
+		return err
+	})
 }
 
 func (r *AuditRepository) ListByTenant(ctx context.Context, tenantID uuid.UUID, f models.AuditFilter) ([]*models.AuditEvent, error) {
@@ -45,18 +48,21 @@ func (r *AuditRepository) ListByTenant(ctx context.Context, tenantID uuid.UUID, 
 	}
 	args = append(args, limit, f.Offset)
 	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
-	rows, err := r.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var events []*models.AuditEvent
-	for rows.Next() {
-		e := &models.AuditEvent{}
-		if err := rows.Scan(&e.ID, &e.TenantID, &e.RequestID, &e.ActorID, &e.ActorRole, &e.Action, &e.ResourceType, &e.ResourceID, &e.Outcome, &e.SourceIP, &e.Metadata, &e.CreatedAt); err != nil {
-			return nil, err
+	err := r.db.WithTenantContext(ctx, tenantID, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, query, args...)
+		if err != nil {
+			return err
 		}
-		events = append(events, e)
-	}
-	return events, rows.Err()
+		defer rows.Close()
+		for rows.Next() {
+			e := &models.AuditEvent{}
+			if err := rows.Scan(&e.ID, &e.TenantID, &e.RequestID, &e.ActorID, &e.ActorRole, &e.Action, &e.ResourceType, &e.ResourceID, &e.Outcome, &e.SourceIP, &e.Metadata, &e.CreatedAt); err != nil {
+				return err
+			}
+			events = append(events, e)
+		}
+		return rows.Err()
+	})
+	return events, err
 }

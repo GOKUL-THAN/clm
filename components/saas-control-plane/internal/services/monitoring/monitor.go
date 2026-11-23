@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/m2p/clm/internal/core"
 	"github.com/m2p/clm/pkg/models"
 	"go.uber.org/zap"
@@ -121,7 +120,7 @@ func (m *Monitor) checkCertificates(ctx context.Context) {
 		PageSize:   1000,
 	}
 
-	certs, _, err := m.certRepo.ListAllTenants(ctx, filter)
+	certs, _, err := m.certRepo.ListAllTenants(core.WithPlatformAccess(ctx), filter)
 	if err != nil {
 		m.logger.Error("monitor: failed to query certificates", zap.Error(err))
 		return
@@ -181,8 +180,9 @@ func (m *Monitor) checkCertificates(ctx context.Context) {
 // checkSatellites verifies satellite connectivity.
 func (m *Monitor) checkSatellites(ctx context.Context) {
 	// Check all satellites - find ones with stale heartbeats
-	sats, err := m.satRepo.ListByTenant(ctx, uuid.Nil)
+	sats, err := m.satRepo.ListAll(core.WithPlatformAccess(ctx))
 	if err != nil {
+		m.logger.Error("monitor: failed to query satellites", zap.Error(err))
 		return
 	}
 

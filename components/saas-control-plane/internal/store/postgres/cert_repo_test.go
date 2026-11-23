@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -33,6 +34,8 @@ func TestCertificateRepositoryListsAcrossTenantsWithScopedQueries(t *testing.T) 
 	ctx := context.Background()
 	tenantA := seedTenant(t, ctx, "cert-scan-a-"+uuid.NewString()[:8])
 	tenantB := seedTenant(t, ctx, "cert-scan-b-"+uuid.NewString()[:8])
+	ctxA := core.WithTenantID(ctx, tenantA)
+	ctxB := core.WithTenantID(ctx, tenantB)
 	repo := NewCertificateRepository(testDB)
 	const environment = "repository-tenant-scan-test"
 
@@ -45,11 +48,13 @@ func TestCertificateRepositoryListsAcrossTenantsWithScopedQueries(t *testing.T) 
 		{id: createdByA, tenantID: tenantA},
 		{id: createdByB, tenantID: tenantB},
 	} {
-		_, err := testDB.ExecContext(ctx,
-			`INSERT INTO users (id, tenant_id, email, name, role, status, password_hash)
-			 VALUES ($1, $2, $3, 'Certificate Test User', 'approver', 'active', 'test-only')`,
-			requester.id, requester.tenantID, uuid.NewString()+"@example.invalid")
-		if err != nil {
+		if err := testDB.WithTenantContext(core.WithTenantID(ctx, requester.tenantID), requester.tenantID, func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx,
+				`INSERT INTO users (id, tenant_id, email, name, role, status, password_hash)
+				 VALUES ($1, $2, $3, 'Certificate Test User', 'approver', 'active', 'test-only')`,
+				requester.id, requester.tenantID, uuid.NewString()+"@example.invalid")
+			return err
+		}); err != nil {
 			t.Fatalf("seed certificate requester: %v", err)
 		}
 	}
@@ -67,16 +72,19 @@ func TestCertificateRepositoryListsAcrossTenantsWithScopedQueries(t *testing.T) 
 		Environment: environment, CreatedBy: createdByB, CreatedAt: createdAtB, UpdatedAt: createdAtB,
 	}
 	t.Cleanup(func() {
-		_ = repo.Delete(context.Background(), tenantA, certA.ID)
-		_ = repo.Delete(context.Background(), tenantB, certB.ID)
+		_ = repo.Delete(ctxA, tenantA, certA.ID)
+		_ = repo.Delete(ctxB, tenantB, certB.ID)
 	})
-	for _, cert := range []*models.Certificate{certA, certB} {
-		if err := repo.Create(ctx, cert); err != nil {
+	for _, row := range []struct {
+		ctx  context.Context
+		cert *models.Certificate
+	}{{ctxA, certA}, {ctxB, certB}} {
+		if err := repo.Create(row.ctx, row.cert); err != nil {
 			t.Fatalf("create tenant certificate: %v", err)
 		}
 	}
 
-	ownCertificates, ownTotal, err := repo.List(ctx, tenantA, &core.CertFilter{Environment: environment})
+	ownCertificates, ownTotal, err := repo.List(ctxA, tenantA, &core.CertFilter{Environment: environment})
 	if err != nil {
 		t.Fatalf("list owning tenant certificates: %v", err)
 	}
@@ -88,14 +96,15 @@ func TestCertificateRepositoryListsAcrossTenantsWithScopedQueries(t *testing.T) 
 		t.Fatal("tenant-scoped list accepted a nil tenant")
 	}
 
-	firstPage, total, err := repo.ListAllTenants(ctx, &core.CertFilter{Environment: environment, Page: 1, PageSize: 1})
+	platformCtx := core.WithPlatformAccess(ctx)
+	firstPage, total, err := repo.ListAllTenants(platformCtx, &core.CertFilter{Environment: environment, Page: 1, PageSize: 1})
 	if err != nil {
 		t.Fatalf("list certificates across tenants: %v", err)
 	}
 	if total != 2 || len(firstPage) != 1 || firstPage[0].ID != certB.ID {
 		t.Fatalf("global page 1 = %v, total %d; want newest certificate %s and total 2", certificateIDs(firstPage), total, certB.ID)
 	}
-	secondPage, secondTotal, err := repo.ListAllTenants(ctx, &core.CertFilter{Environment: environment, Page: 2, PageSize: 1})
+	secondPage, secondTotal, err := repo.ListAllTenants(platformCtx, &core.CertFilter{Environment: environment, Page: 2, PageSize: 1})
 	if err != nil {
 		t.Fatalf("list second certificate page across tenants: %v", err)
 	}

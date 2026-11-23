@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-10-31T10:50:13.827Z",
+  "timestamp": "2026-11-23T08:30:49.621Z",
   "environment": {
     "nodeVersion": "v24.19.0",
     "platform": "win32",
     "arch": "x64",
-    "goAvailable": false,
+    "goAvailable": true,
     "dockerAvailable": false,
     "psqlAvailable": false
   },
@@ -60,14 +60,14 @@
     },
     "phase2_go_backend": {
       "total": 4,
-      "passed": 3,
-      "failed": 1,
+      "passed": 4,
+      "failed": 0,
       "tests": [
         {
           "id": "GO-001",
           "name": "Host Go Toolchain Availability",
-          "status": "BLOCKED - HOST DEPENDENCY",
-          "details": "go binary is absent on host PATH. Local go test/vet execution delegated to CI container environment."
+          "status": "PASSED",
+          "details": "Go is installed on host: go version go1.27.3 windows/amd64"
         },
         {
           "id": "GO-002",
@@ -79,7 +79,7 @@
           "id": "GO-003",
           "name": "Parameterized SQL Audit (Zero String Interpolation)",
           "status": "DEFENDED",
-          "details": "Audited 8 SQL operations across Go stores; all use strict $1, $2 parameterization."
+          "details": "Audited 17 SQL operations across Go stores; all use strict $1, $2 parameterization."
         },
         {
           "id": "GO-004",
@@ -449,15 +449,6 @@
       ]
     }
   },
-  "findings": [
-    {
-      "id": "GO-001",
-      "name": "Host Go Toolchain Availability",
-      "status": "BLOCKED - HOST DEPENDENCY",
-      "details": "go binary is absent on host PATH. Local go test/vet execution delegated to CI container environment.",
-      "cvss": 0,
-      "cwe": ""
-    }
-  ],
+  "findings": [],
   "readinessStatus": "STAGING VERIFIED"
 }

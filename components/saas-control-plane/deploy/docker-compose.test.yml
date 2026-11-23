@@ -10,19 +10,63 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations/000_keycloak_db.sql:/docker-entrypoint-initdb.d/000_keycloak_db.sql
-      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
-      - ./migrations/002_sso_fields.sql:/docker-entrypoint-initdb.d/002_sso_fields.sql
-      - ./migrations/003_tenant_security.sql:/docker-entrypoint-initdb.d/003_tenant_security.sql
-      - ./migrations/004_secure_command_transport.sql:/docker-entrypoint-initdb.d/004_secure_command_transport.sql
-      - ./init-seed.sql:/docker-entrypoint-initdb.d/005_seed.sql
-      - ./migrations/009_approval_requests_rls.sql:/docker-entrypoint-initdb.d/009_approval_requests_rls.sql
-      - ./migrations/010_certificates_rls.sql:/docker-entrypoint-initdb.d/010_certificates_rls.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U clm"]
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  database-roles:
+    image: postgres:16-alpine
+    entrypoint: ["psql"]
+    command: ["-v", "ON_ERROR_STOP=1", "-h", "postgres", "-U", "clm", "-d", "clm_db", "-f", "/bootstrap/bootstrap-database-roles.sql"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      CLM_APP_DB_PASSWORD: ${CLM_APP_DB_PASSWORD:?set CLM_APP_DB_PASSWORD in deploy/.env}
+      CLM_KEYCLOAK_DB_PASSWORD: ${CLM_KEYCLOAK_DB_PASSWORD:?set CLM_KEYCLOAK_DB_PASSWORD in deploy/.env}
+    volumes:
+      - ./bootstrap-database-roles.sql:/bootstrap/bootstrap-database-roles.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  migrate:
+    build:
+      context: /opt/clm
+      dockerfile: deploy/Dockerfile.server
+    command: ["migrate"]
+    environment:
+      CLM_CONFIG: /etc/clm/server-test.yaml
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      CLM_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      CLM_BASELINE_LEGACY: ${CLM_BASELINE_LEGACY:-false}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
+      CLM_CLOUD_ACCOUNT_MASTER_KEY: ${CLM_CLOUD_ACCOUNT_MASTER_KEY:?set CLM_CLOUD_ACCOUNT_MASTER_KEY in deploy/.env}
+    volumes:
+      - /opt/clm/configs/server-test.yaml:/etc/clm/server-test.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      database-roles:
+        condition: service_completed_successfully
+    restart: "no"
+
+  seed:
+    image: postgres:16-alpine
+    entrypoint:
+      - /bin/sh
+      - -c
+      - psql -v ON_ERROR_STOP=1 -h postgres -U clm -d clm_db -f /seed/init-seed.sql
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - ./init-seed.sql:/seed/init-seed.sql:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
 
   redis:
     image: redis:7-alpine
@@ -45,8 +89,8 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASS:?set KEYCLOAK_ADMIN_PASS in deploy/.env}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: clm
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      KC_DB_USERNAME: clm_keycloak
+      KC_DB_PASSWORD: ${CLM_KEYCLOAK_DB_PASSWORD:?set CLM_KEYCLOAK_DB_PASSWORD in deploy/.env}
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: 8180
       KC_PROXY_HEADERS: xforwarded
@@ -63,8 +107,8 @@ services:
     volumes:
       - ./keycloak/clm-realm.json:/opt/keycloak/data/import/clm-realm.json:ro
     depends_on:
-      postgres:
-        condition: service_healthy
+      database-roles:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   clm-server:
@@ -77,7 +121,8 @@ services:
     environment:
       CLM_CONFIG: /etc/clm/server-test.yaml
       GIN_MODE: debug
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      CLM_DB_PASSWORD: ${CLM_APP_DB_PASSWORD:?set CLM_APP_DB_PASSWORD in deploy/.env}
+      DATABASE_USER: clm_app_login
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
       CLM_JWKS_URL: http://keycloak:8180/auth/realms/clm/protocol/openid-connect/certs
@@ -93,8 +138,10 @@ services:
       - /opt/clm/configs/server-test.yaml:/etc/clm/server-test.yaml:ro
       - /opt/clm/web/admin-portal:/srv/admin-portal:ro
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      seed:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       keycloak:

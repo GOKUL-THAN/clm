@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/m2p/clm/internal/core"
 	"github.com/m2p/clm/internal/saas/tenant"
 	"github.com/m2p/clm/internal/saas/users"
 	"github.com/m2p/clm/pkg/models"
@@ -58,7 +59,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// Create tenant for this organization
-	newTenant, err := h.tenantService.CreateTenant(c.Request.Context(), req.Organization, "free", "ap-south-1")
+	registrationCtx := core.WithTenantProvisioning(c.Request.Context())
+	newTenant, err := h.tenantService.CreateTenant(registrationCtx, req.Organization, "free", "ap-south-1")
 	if err != nil {
 		if err == tenant.ErrTenantExists {
 			c.JSON(http.StatusConflict, gin.H{"error": "an organization with this name already exists"})
@@ -69,7 +71,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// Create admin user for the tenant
-	user, err := h.userService.CreateUser(c.Request.Context(), newTenant.ID, req.Email, req.Name, req.Password, models.RoleTenantAdmin)
+	tenantCtx := core.WithTenantID(c.Request.Context(), newTenant.ID)
+	user, err := h.userService.CreateUser(tenantCtx, newTenant.ID, req.Email, req.Name, req.Password, models.RoleTenantAdmin)
 	if err != nil {
 		if err == users.ErrUserExists {
 			c.JSON(http.StatusConflict, gin.H{"error": "an account with this email already exists"})

@@ -17,13 +17,17 @@ func TestApprovalRepositoryEnforcesTenantContext(t *testing.T) {
 	ctx := context.Background()
 	tenantA := seedTenant(t, ctx, "approval-a-"+uuid.NewString()[:8])
 	tenantB := seedTenant(t, ctx, "approval-b-"+uuid.NewString()[:8])
+	ctxA := core.WithTenantID(ctx, tenantA)
+	ctxB := core.WithTenantID(ctx, tenantB)
 	requestedBy := uuid.New()
 
-	_, err := testDB.ExecContext(ctx,
-		`INSERT INTO users (id, tenant_id, email, name, role, status, password_hash)
-		 VALUES ($1, $2, $3, 'Approval Requester', 'approver', 'active', 'test-only')`,
-		requestedBy, tenantA, uuid.NewString()+"@example.invalid")
-	if err != nil {
+	if err := testDB.WithTenantContext(core.WithTenantID(ctx, tenantA), tenantA, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO users (id, tenant_id, email, name, role, status, password_hash)
+			 VALUES ($1, $2, $3, 'Approval Requester', 'approver', 'active', 'test-only')`,
+			requestedBy, tenantA, uuid.NewString()+"@example.invalid")
+		return err
+	}); err != nil {
 		t.Fatalf("seed requester: %v", err)
 	}
 
@@ -43,42 +47,42 @@ func TestApprovalRepositoryEnforcesTenantContext(t *testing.T) {
 	repo := NewApprovalRepository(testDB)
 	ruleID := uuid.New()
 	t.Cleanup(func() {
-		_ = testDB.WithTenantContext(context.Background(), tenantA, func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(context.Background(), `DELETE FROM approval_rules WHERE id = $1`, ruleID)
+		_ = testDB.WithTenantContext(ctxA, tenantA, func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctxA, `DELETE FROM approval_rules WHERE id = $1`, ruleID)
 			if err != nil {
 				return err
 			}
-			_, err = tx.ExecContext(context.Background(), `DELETE FROM approval_requests WHERE id = $1`, request.ID)
+			_, err = tx.ExecContext(ctxA, `DELETE FROM approval_requests WHERE id = $1`, request.ID)
 			return err
 		})
 	})
-	if err := repo.Create(ctx, request); err != nil {
+	if err := repo.Create(ctxA, request); err != nil {
 		t.Fatalf("create approval in owning tenant: %v", err)
 	}
 
-	if _, err := repo.GetByID(ctx, tenantA, request.ID); err != nil {
+	if _, err := repo.GetByID(ctxA, tenantA, request.ID); err != nil {
 		t.Fatalf("read approval in owning tenant: %v", err)
 	}
-	if _, err := repo.GetByID(ctx, tenantB, request.ID); err == nil {
+	if _, err := repo.GetByID(ctxA, tenantB, request.ID); err == nil {
 		t.Fatal("cross-tenant approval lookup succeeded")
 	}
-	if _, err := repo.GetByID(ctx, tenantA, uuid.New()); !errors.Is(err, core.ErrNotFound) {
+	if _, err := repo.GetByID(ctxA, tenantA, uuid.New()); !errors.Is(err, core.ErrNotFound) {
 		t.Fatalf("missing approval lookup error = %v, want core.ErrNotFound", err)
 	}
 
 	request.TenantID = tenantB
 	request.Status = models.ApprovalApproved
-	if err := repo.Update(ctx, request); err == nil {
+	if err := repo.Update(ctxA, request); err == nil {
 		t.Fatal("cross-tenant approval update succeeded")
 	}
 	missingRequest := *request
 	missingRequest.ID = uuid.New()
 	missingRequest.TenantID = tenantA
-	if err := repo.Update(ctx, &missingRequest); !errors.Is(err, core.ErrNotFound) {
+	if err := repo.Update(ctxA, &missingRequest); !errors.Is(err, core.ErrNotFound) {
 		t.Fatalf("missing approval update error = %v, want core.ErrNotFound", err)
 	}
 
-	pending, err := repo.ListPending(ctx, tenantB)
+	pending, err := repo.ListPending(ctxB, tenantB)
 	if err != nil {
 		t.Fatalf("list approvals for other tenant: %v", err)
 	}
@@ -88,8 +92,8 @@ func TestApprovalRepositoryEnforcesTenantContext(t *testing.T) {
 		}
 	}
 
-	if err := testDB.WithTenantContext(ctx, tenantA, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx,
+	if err := testDB.WithTenantContext(ctxA, tenantA, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctxA,
 			`INSERT INTO approval_rules (id, tenant_id, name, level, priority)
 			 VALUES ($1, $2, 'tenant isolation test rule', 'L1', 1)`,
 			ruleID, tenantA)
@@ -97,14 +101,14 @@ func TestApprovalRepositoryEnforcesTenantContext(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed approval rule: %v", err)
 	}
-	rules, err := repo.GetRules(ctx, tenantA)
+	rules, err := repo.GetRules(ctxA, tenantA)
 	if err != nil {
 		t.Fatalf("list rules in owning tenant: %v", err)
 	}
 	if len(rules) != 1 || rules[0].ID != ruleID {
 		t.Fatalf("owning tenant rules = %v, want only rule %s", rules, ruleID)
 	}
-	rules, err = repo.GetRules(ctx, tenantB)
+	rules, err = repo.GetRules(ctxB, tenantB)
 	if err != nil {
 		t.Fatalf("list rules for other tenant: %v", err)
 	}

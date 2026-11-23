@@ -1,21 +1,43 @@
 # ENTERPRISE SECURITY & COMPLIANCE REMEDIATION TRACKER
 
-**Audit Cycle:** Post-Adversarial Assessment Remediation  
-**Managing Authority:** Chief Technology Officer / Principal Security Architect  
-**Tracking Period:** 2026-10-31 to Production Release  
-**Status:** ALL CODE DEFICIENCIES RESOLVED (100% Technical Remediations Deployed)  
+**Audit Cycle:** Historical remediation records; current evidence review 2026-11-06
+**Managing Authority:** Engineering
+**Tracking Period:** Historical entries dated 2026-10-31; not a current audit
+**Status:** OPEN — prior closure claims are not independently substantiated
+
+> **Evidence correction (2026-11-06):** This tracker previously asserted
+> “ALL CODE DEFICIENCIES RESOLVED (100% Technical Remediations Deployed)” and
+> marked multiple findings “CLOSED (RESOLVED)” using references to attack-suite
+> results that were not reproduced in this verification. Those closure claims
+> are historical assertions, not current verified status. See
+> [FINAL_INDEPENDENT_VERIFICATION_REPORT.md](./FINAL_INDEPENDENT_VERIFICATION_REPORT.md)
+> for the evidence-based status. No certification, independent audit level,
+> staging readiness, or complete remediation rate is established.
+
+| Issue ID | Severity | Domain | Finding | Correction / disposition | Status |
+|---|---|---|---|---|---|
+| REM-019 | P1 documentation integrity | Assurance reporting | Unsupported independent-audit, standards-coverage, attack-test, and remediation-closure claims in historical reports | Replaced the verification and readiness declarations with evidence-scoped status; labeled historical closure rows unverified and superseded older CI references | CORRECTED — historical technical findings remain unverified |
+| REM-020 | HIGH, confidence 9/10 | Keycloak identity role authorization | Admin actors could request `super_admin` assignments through identity user and group operations despite the existing privilege ceiling | Applied the existing role-assignment policy to direct role assignment, identity user creation, group role mapping, and group membership including inherited roles; added regression tests to tracked and untracked source copies | FIXED_IN_SOURCE — Go regression tests not run; not included in latest CI |
 
 ---
 
 ## 1. REMEDIATION ACTION LOG & STATUS REGISTER
 
+> The following historical counts were not substantiated in the current
+> verification and are not current status metrics.
+
 ```mermaid
-pie title Remediation Status Overview
-    "Code Remediations Completed & Verified" : 12
-    "Operational External Audits Scheduled" : 3
+pie title Historical unverified tracker counts
+    "Previously claimed code remediations completed" : 12
+    "Previously claimed external audits scheduled" : 3
 ```
 
-| Issue ID | Severity / CVSS | Affected Component | Flaw Description | Remediation Implemented | Verification Evidence | Resolution Status |
+> **Table status correction:** Any `CLOSED (RESOLVED)` label below is an
+> unverified historical assertion, not a current closure. The cited attacks
+> were not replayed in the current review; only the specific evidence stated
+> in the current verification report may be treated as verified.
+
+| Issue ID | Severity / CVSS | Affected Component | Flaw Description | Historical Remediation Claim | Historical Evidence Claim (not current verification) | Historical Status (not current status) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **REM-001** | **Critical (9.1)** | API Gateway / `dev-server.js` | BOLA / IDOR allowed unscoped contract query leaking all tenants | Implemented strict caller tenant scoping and Bearer token enforcement | `independent_adversarial_test_suite.js` ATK-001 ✅ Defended | **CLOSED (RESOLVED)** |
 | **REM-002** | **Critical (9.1)** | API Gateway / `dev-server.js` | Parameter tampering via `?tenant_id=` allowed cross-tenant harvesting | Added tenant context mismatch rejection returning `403 Forbidden` | `independent_adversarial_test_suite.js` ATK-002 ✅ Defended | **CLOSED (RESOLVED)** |
@@ -125,4 +147,3 @@ for _, pat := range injectionPatterns {
 2. **Certification Strategy:**
    * **Stage 1 (Internal Milestone):** Technical implementation and evidence compilation completed (Level 4 Audit Ready achieved).
    * **Stage 2 (External Milestone):** Engage accredited third-party audit firm for SOC 2 Type II observation kickoff and ISO 27001 registrar audit.
-

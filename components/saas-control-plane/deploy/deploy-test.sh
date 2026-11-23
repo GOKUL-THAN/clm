@@ -285,6 +285,8 @@ if [ ! -f .env ]; then
     keycloak_admin_password=$(container_env keycloak KEYCLOAK_ADMIN_PASSWORD)
     server_client_secret=$(container_env keycloak CLM_SERVER_CLIENT_SECRET)
     redis_password=$(container_env redis REDIS_PASSWORD)
+    app_db_password=$(openssl rand -hex 32)
+    keycloak_db_password=$(openssl rand -hex 32)
 
     if [ -n "$existing_stack" ]; then
         [ -n "$postgres_password" ] || {
@@ -311,6 +313,8 @@ POSTGRES_PASSWORD=$postgres_password
 REDIS_PASSWORD=$redis_password
 JWT_SECRET=$jwt_secret
 CLM_CLOUD_ACCOUNT_MASTER_KEY=$(openssl rand -hex 16)
+CLM_APP_DB_PASSWORD=$app_db_password
+CLM_KEYCLOAK_DB_PASSWORD=$keycloak_db_password
 KEYCLOAK_ADMIN_USER=$keycloak_admin_user
 KEYCLOAK_ADMIN_PASS=$keycloak_admin_password
 CLM_SERVER_CLIENT_SECRET=$server_client_secret
@@ -322,6 +326,16 @@ else
     if ! grep -q '^CLM_CLOUD_ACCOUNT_MASTER_KEY=.' .env; then
         printf 'CLM_CLOUD_ACCOUNT_MASTER_KEY=%s\n' "$(openssl rand -hex 16)" >> .env
     fi
+    for key in CLM_APP_DB_PASSWORD CLM_KEYCLOAK_DB_PASSWORD; do
+        if ! grep -q "^${key}=." .env; then
+            value=$(openssl rand -hex 32)
+            if grep -q "^${key}=" .env; then
+                sed -i "s/^${key}=.*/${key}=${value}/" .env
+            else
+                printf '%s=%s\n' "$key" "$value" >> .env
+            fi
+        fi
+    done
 fi
 chmod 600 .env
 REMOTE_ENV

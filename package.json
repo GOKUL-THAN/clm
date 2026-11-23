@@ -1,4 +1,4 @@
-﻿{
+{
     "name": "clm",
     "version": "4.1.0",
     "description": "Enterprise Contract & Certificate Lifecycle Management (CLM) Platform",
@@ -15,13 +15,16 @@
         "workflow:feature": "node scripts/workflow-engine.js feature",
         "workflow:bugfix": "node scripts/workflow-engine.js bugfix",
         "workflow:spec": "node scripts/workflow-engine.js spec",
+        "workflow:plan": "node scripts/workflow-engine.js plan",
         "demo:setup": "node scripts/setup-demo.js",
         "demo:start": "node scripts/start-demo.js",
         "demo:stop": "node scripts/stop-demo.js",
         "demo:reset": "node scripts/reset-demo-data.js",
         "demo:test": "node scripts/run-demo-tests.js",
         "demo:health": "node scripts/health-check.js",
-        "test:v410": "node scripts/test_v410_gaps.js"
+        "test:v410": "node scripts/test_v410_gaps.js",
+        "test:400-impl": "node scripts/test_400_implementation.js",
+        "test:platform": "node scripts/test_platform_suite.js"
     },
     "engines": {
         "node": ">=18.0.0"

@@ -25,6 +25,7 @@
 #   --data-dir      Data directory (default: /var/lib/clm)
 #   --config-dir    Config directory (default: /etc/clm)
 #   --skip-db       Skip database setup (use existing)
+#   --baseline-legacy Adopt a validated pre-history CLM schema before upgrading
 #   --admin-email   Initial admin email (default: admin@localhost)
 #   --admin-pass    Initial admin password (default: auto-generated)
 #   --version       CLM version to install (default: latest)
@@ -51,6 +52,7 @@ DB_USER="${DB_USER:-clm}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 DB_NAME="${DB_NAME:-clm_db}"
 DB_SSLMODE="${DB_SSLMODE:-}"
+BASELINE_LEGACY="${CLM_BASELINE_LEGACY:-false}"
 
 REDIS_ADDR="${REDIS_ADDR:-localhost:6379}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-}"
@@ -109,6 +111,7 @@ while [[ $# -gt 0 ]]; do
         --data-dir)      DATA_DIR="$2"; shift 2 ;;
         --config-dir)    CONFIG_DIR="$2"; shift 2 ;;
         --skip-db)       SKIP_DB=true; shift ;;
+        --baseline-legacy) BASELINE_LEGACY=true; shift ;;
         --admin-email)   ADMIN_EMAIL="$2"; shift 2 ;;
         --admin-pass)    ADMIN_PASSWORD="$2"; shift 2 ;;
         --version)       CLM_VERSION="$2"; shift 2 ;;
@@ -134,6 +137,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --data-dir DIR        Data directory (default: /var/lib/clm)"
             echo "  --config-dir DIR      Config directory (default: /etc/clm)"
             echo "  --skip-db             Skip database creation"
+            echo "  --baseline-legacy     Adopt a validated existing schema before upgrading"
             echo "  --admin-email EMAIL   Admin email (default: admin@localhost)"
             echo "  --admin-pass PASS     Admin password (auto-generated if empty)"
             echo "  --version VER         Version to install (default: latest)"
@@ -344,14 +348,10 @@ setup_database() {
             die "Cannot connect to PostgreSQL at $DB_HOST:$DB_PORT. Ensure the database and user exist."
     fi
 
-    # Run every schema migration in lexical order and stop on the first error.
-    # Missing or partially applied secure-transport schema must never be hidden.
     log_info "Running database migrations..."
-    for migration in "$CONFIG_DIR"/migrations/*.sql; do
-        [[ -f "$migration" ]] || die "No database migrations found in $CONFIG_DIR/migrations"
-        log_info "Applying $(basename "$migration")"
-        PGPASSWORD="$DB_PASSWORD" psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$migration"
-    done
+    CLM_CONFIG="$CONFIG_DIR/server.yaml" \
+        CLM_BASELINE_LEGACY="$BASELINE_LEGACY" \
+        "$BIN_DIR/clm-server" migrate || die "Database migration failed"
 
     log_ok "Database setup complete"
 }
@@ -366,7 +366,7 @@ setup_directories() {
     id -u clm &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin clm
 
     # Create directories
-    mkdir -p "$DATA_DIR" "$CONFIG_DIR" "$LOG_DIR" "$CONFIG_DIR/migrations"
+    mkdir -p "$DATA_DIR" "$CONFIG_DIR" "$LOG_DIR"
     chown -R clm:clm "$DATA_DIR" "$LOG_DIR"
 
     log_ok "Directories created"
@@ -398,22 +398,31 @@ install_clm_binary() {
         # For now, build from source if Go is available
         if command -v go &>/dev/null; then
             log_info "Building from source..."
-            cd /tmp
-            if [[ -d /tmp/clm-build ]]; then rm -rf /tmp/clm-build; fi
-            git clone https://github.com/m2p/clm.git /tmp/clm-build 2>/dev/null || true
-
-            # If source is available locally
-            if [[ -f /opt/clm/go.mod ]]; then
-                cd /opt/clm
-            elif [[ -f /tmp/clm-build/go.mod ]]; then
-                cd /tmp/clm-build
-            else
-                die "Cannot find CLM source. Place source at /opt/clm or ensure git clone works."
+            local source_root=""
+            local clone_dir=""
+            local candidate
+            for candidate in \
+                "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)" \
+                "/opt/clm"; do
+                if [[ -f "$candidate/components/shared/scripts/go-staged.sh" ]]; then
+                    source_root="$candidate"
+                    break
+                fi
+            done
+            if [[ -z "$source_root" ]]; then
+                clone_dir=$(mktemp -d /tmp/clm-build.XXXXXX) || die "Could not create a temporary build directory"
+                git clone https://github.com/m2p/clm.git "$clone_dir/source" || {
+                    rm -rf -- "$clone_dir"
+                    die "Could not obtain CLM source"
+                }
+                source_root="$clone_dir/source"
             fi
-
-            go build -ldflags="-s -w" -o "$BIN_DIR/$BINARY_NAME" ./cmd/clm-server
-            go build -ldflags="-s -w" -o "$BIN_DIR/clm" ./cmd/clm-cli
-            rm -rf /tmp/clm-build
+            bash "$source_root/components/shared/scripts/go-staged.sh" control build
+            install -m 0755 "$source_root/components/saas-control-plane/bin/clm-server" "$BIN_DIR/$BINARY_NAME"
+            install -m 0755 "$source_root/components/saas-control-plane/bin/clm" "$BIN_DIR/clm"
+            if [[ -n "$clone_dir" ]]; then
+                rm -rf -- "$clone_dir"
+            fi
         else
             # Download pre-built binary
             DOWNLOAD_URL="https://github.com/m2p/clm/releases/latest/download/${BINARY_NAME}-${PLATFORM}-${ARCH}"
@@ -518,24 +527,6 @@ gateway:
   max_result_bytes: 262144
   retry_base: "5s"
 EOF
-
-    local script_dir migration_source=""
-    script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-    for candidate in \
-        "$script_dir/../../saas-control-plane/internal/store/postgres/migrations" \
-        "/opt/clm/internal/store/postgres/migrations" \
-        "/opt/clm/components/saas-control-plane/internal/store/postgres/migrations"; do
-        if [[ -f "$candidate/004_secure_command_transport.sql" ]]; then
-            migration_source="$candidate"
-            break
-        fi
-    done
-    [[ -n "$migration_source" ]] || die "Could not find the complete migration set including 004_secure_command_transport.sql"
-    rm -f "$CONFIG_DIR"/migrations/*.sql
-    for migration in 001_initial.sql 002_sso_fields.sql 003_tenant_security.sql 004_secure_command_transport.sql; do
-        [[ -f "$migration_source/$migration" ]] || die "Required migration is missing: $migration"
-        install -m 0640 -o root -g clm "$migration_source/$migration" "$CONFIG_DIR/migrations/$migration"
-    done
 
     chmod 0640 "$CONFIG_DIR/server.yaml"
     chown root:clm "$CONFIG_DIR/server.yaml"

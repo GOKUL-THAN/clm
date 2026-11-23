@@ -23,6 +23,8 @@ rand_hex() {
 }
 
 POSTGRES_PASS=$(rand_hex 16)
+CLM_APP_DB_PASS=$(rand_hex 32)
+CLM_KEYCLOAK_DB_PASS=$(rand_hex 32)
 JWT_SEC=$(rand_hex 32)
 MASTER_KEY=$(rand_hex 16) # 16 bytes = 32 hex chars
 KEYCLOAK_PASS=$(rand_hex 16)
@@ -30,6 +32,8 @@ CLIENT_SEC=$(rand_hex 16)
 
 cat > "$ENV_FILE" <<EOF
 POSTGRES_PASSWORD=$POSTGRES_PASS
+CLM_APP_DB_PASSWORD=$CLM_APP_DB_PASS
+CLM_KEYCLOAK_DB_PASSWORD=$CLM_KEYCLOAK_DB_PASS
 REDIS_PASSWORD=
 JWT_SECRET=$JWT_SEC
 CLM_JWKS_URL=http://keycloak:8180/auth/realms/clm/protocol/openid-connect/certs
@@ -54,4 +58,3 @@ EOF
 
 chmod 600 "$ENV_FILE"
 echo "Generated $ENV_FILE successfully (mode 600)."
-

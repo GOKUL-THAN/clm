@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/m2p/clm/internal/store/postgres"
 	"github.com/m2p/clm/pkg/models"
 	"go.uber.org/zap"
 )
@@ -19,7 +20,7 @@ import (
 var errNotFound = errors.New("record not found")
 
 type postgresService struct {
-	db     *sql.DB
+	db     *postgres.DB
 	logger *zap.Logger
 }
 
@@ -75,16 +76,9 @@ func (s *postgresService) beginTenantTx(ctx context.Context, tenantID uuid.UUID)
 	if tenantID == uuid.Nil {
 		return nil, errors.New("tenant isolation violation: tenantID cannot be nil")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTenantTransaction(ctx, tenantID)
 	if err != nil {
 		return nil, err
-	}
-	var setValue string
-	if err := tx.QueryRowContext(ctx,
-		"SELECT set_config('app.current_tenant_id', $1, true)",
-		tenantID.String()).Scan(&setValue); err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("setting transaction-local tenant context: %w", err)
 	}
 	return tx, nil
 }
@@ -120,7 +114,7 @@ func (e tenantError) Scan(...any) error {
 
 // NewPostgresService creates a service that uses PostgreSQL and never falls back
 // to the in-memory implementation.
-func NewPostgresService(db *sql.DB, logger *zap.Logger) (Service, error) {
+func NewPostgresService(db *postgres.DB, logger *zap.Logger) (Service, error) {
 	if db == nil {
 		return nil, errors.New("contract service requires a database")
 	}

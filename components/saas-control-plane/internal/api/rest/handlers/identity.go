@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/m2p/clm/internal/api/rest/middleware"
 	"github.com/m2p/clm/internal/saas/identity"
+	"github.com/m2p/clm/internal/saas/users"
+	"github.com/m2p/clm/pkg/models"
 	"go.uber.org/zap"
 )
 
@@ -100,6 +103,9 @@ func (h *IdentityHandler) CreateUser(c *gin.Context) {
 	var req createIdentityUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Role != "" && !h.authorizeRoleAssignment(c, req.Role) {
 		return
 	}
 
@@ -349,6 +355,9 @@ func (h *IdentityHandler) SetUserRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !h.authorizeRoleAssignment(c, req.Role) {
+		return
+	}
 	if err := h.svc.SetUserRole(c.Request.Context(), c.Param("id"), req.Role); err != nil {
 		h.fail(c, err, "assign keycloak role")
 		return
@@ -356,6 +365,23 @@ func (h *IdentityHandler) SetUserRole(c *gin.Context) {
 	h.logger.Info("keycloak role assigned",
 		zap.String("id", c.Param("id")), zap.String("role", req.Role))
 	c.JSON(http.StatusOK, gin.H{"message": "role updated to " + req.Role})
+}
+
+func (h *IdentityHandler) authorizeRoleAssignment(c *gin.Context, requestedRole string) bool {
+	actorRole := contextRole(c)
+	if actorRole == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "invalid role context"})
+		return false
+	}
+	if err := users.CanAssignRole(actorRole, models.UserRole(requestedRole)); err != nil {
+		status := http.StatusForbidden
+		if errors.Is(err, users.ErrInvalidRole) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return false
+	}
+	return true
 }
 
 // LogoutUser kills every session for a user.
@@ -626,6 +652,9 @@ func (h *IdentityHandler) CreateGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.Role != "" && !h.authorizeRoleAssignment(c, req.Role) {
+		return
+	}
 
 	id, err := h.svc.CreateGroupWithRole(c.Request.Context(), req.Name, req.Role)
 	if err != nil {
@@ -659,6 +688,9 @@ func (h *IdentityHandler) SetGroupRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.Role != "" && !h.authorizeRoleAssignment(c, req.Role) {
+		return
+	}
 	if err := h.svc.SetGroupRole(c.Request.Context(), c.Param("gid"), req.Role); err != nil {
 		h.fail(c, err, "set keycloak group role")
 		return
@@ -680,6 +712,14 @@ func (h *IdentityHandler) ListGroupMembers(c *gin.Context) {
 // AddUserToGroup puts a user into a group.
 // PUT /api/v1/identity/users/:id/groups/:gid
 func (h *IdentityHandler) AddUserToGroup(c *gin.Context) {
+	groups, err := h.svc.ListGroups(c.Request.Context())
+	if err != nil {
+		h.fail(c, err, "list keycloak groups")
+		return
+	}
+	if !h.authorizeGroupMembership(c, groups, c.Param("gid")) {
+		return
+	}
 	if err := h.svc.AddUserToGroup(c.Request.Context(), c.Param("id"), c.Param("gid")); err != nil {
 		h.fail(c, err, "add user to keycloak group")
 		return
@@ -687,6 +727,37 @@ func (h *IdentityHandler) AddUserToGroup(c *gin.Context) {
 	h.logger.Info("user added to group",
 		zap.String("user", c.Param("id")), zap.String("group", c.Param("gid")))
 	c.JSON(http.StatusOK, gin.H{"message": "user added to group"})
+}
+
+func (h *IdentityHandler) authorizeGroupMembership(c *gin.Context, groups []identity.Group, groupID string) bool {
+	roles, found := findGroupRoleNames(groups, groupID, nil)
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
+		return false
+	}
+	for _, role := range roles {
+		if strings.HasPrefix(role, "default-roles-") ||
+			role == "offline_access" || role == "uma_authorization" {
+			continue
+		}
+		if !h.authorizeRoleAssignment(c, role) {
+			return false
+		}
+	}
+	return true
+}
+
+func findGroupRoleNames(groups []identity.Group, targetID string, inherited []string) ([]string, bool) {
+	for _, group := range groups {
+		roles := append(append([]string(nil), inherited...), group.RealmRoles...)
+		if group.ID == targetID {
+			return roles, true
+		}
+		if childRoles, found := findGroupRoleNames(group.SubGroups, targetID, roles); found {
+			return childRoles, true
+		}
+	}
+	return nil, false
 }
 
 // RemoveUserFromGroup takes a user out of a group.

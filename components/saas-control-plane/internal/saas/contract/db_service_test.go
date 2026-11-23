@@ -1,12 +1,13 @@
 package contract
 
 import (
-	"database/sql"
 	"testing"
+
+	"github.com/m2p/clm/internal/store/postgres"
 )
 
 func TestNewPostgresServiceRequiresDatabase(t *testing.T) {
-	if _, err := NewPostgresService((*sql.DB)(nil), nil); err == nil {
+	if _, err := NewPostgresService((*postgres.DB)(nil), nil); err == nil {
 		t.Fatal("NewPostgresService() accepted a nil database")
 	}
 }

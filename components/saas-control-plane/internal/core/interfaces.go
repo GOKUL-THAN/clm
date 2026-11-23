@@ -14,6 +14,9 @@ import (
 // reporting every error as "not found".
 var ErrNotFound = errors.New("not found")
 
+// ErrTenantExists is returned when a tenant slug is already in use.
+var ErrTenantExists = errors.New("tenant already exists")
+
 // CertificateRepository defines data access for certificates.
 type CertificateRepository interface {
 	Create(ctx context.Context, cert *models.Certificate) error

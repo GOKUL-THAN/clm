@@ -3,24 +3,26 @@
 
 **Document Version:** 4.0.0-ENTERPRISE  
 **Classification:** STRICTLY CONFIDENTIAL / PROPRIETARY  
-**Status:** PRODUCTION-CERTIFIED  
+**Status:** Target architecture; implementation and production conformance are not certified
 **Target Release:** Global Enterprise SaaS + In-VPC Hybrid Deployment  
-**Compliance Mandates:** ISO/IEC 27001:2022, SOC 1/2 Type II, NIST SP 800-53 Rev 5, GDPR, HIPAA, 21 CFR Part 11, FedRAMP High, FIPS 140-3 Level 3  
+**Target frameworks:** ISO/IEC 27001:2022, SOC 1/2, NIST SP 800-53 Rev 5, GDPR, HIPAA, 21 CFR Part 11, FedRAMP High, FIPS 140-3 Level 3. Applicability, implementation, and certification have not been independently established.
+
+> **Evidence notice:** This document describes intended architecture, not verified deployed behavior. The active phase tracker and test evidence matrix are authoritative for implementation status. In particular, PostgreSQL tenant settings are application-controlled and do not protect against a fully compromised application/database credential; contract plaintext is currently stored in PostgreSQL; and the stated availability, latency, throughput, cryptographic hardware, and certification claims have not been evidenced by this document.
 
 ---
 
 ### EXECUTIVE SUMMARY & ARCHITECTURAL PHILOSOPHY
 
-The Enterprise Contract & Certificate Lifecycle Management (CLM) Platform is engineered as a global-scale, zero-trust hybrid architecture uniting legal operations, corporate procurement, financial reconciliation, regulatory compliance, and post-execution obligation enforcement across 400 specialized capabilities. 
+The Enterprise Contract & Certificate Lifecycle Management (CLM) Platform is intended to provide a hybrid architecture for legal operations, corporate procurement, financial reconciliation, and post-execution obligation management. The repository contains a 400-entry feature registry; registry entries are not evidence of 400 independently implemented or verified capabilities.
 
 Traditional CLM systems treat contracts as static electronic documents (PDF/DOCX) managed by centralized cloud databases. In high-stakes enterprise environments, this creates severe risk: exposure of private signing keys, non-compliance with data residency sovereignty regulations, cross-tenant data leakage, untracked post-execution financial leakage, and exposure of confidential agreement terms to third-party public AI providers.
 
-The Enterprise CLM Platform resolves these fundamental limitations through five foundational tenets:
-1. **Zero-Trust Hybrid Deployment**: SaaS Control Plane coordinates metadata, workflow orchestration, and analytics, while cryptographic private keys, document plaintext decryption, and digital signing operations reside strictly inside the customer's Virtual Private Cloud (In-VPC Satellite Gateway) backed by FIPS 140-3 Level 3 Hardware Security Modules (HSMs).
-2. **PostgreSQL 15+ Kernel Row-Level Security (`FORCE RLS`)**: Tenant isolation is enforced natively within the database engine via kernel-enforced session variables (`app.current_tenant_id`), preventing cross-tenant leakage even under complete application-tier compromise.
-3. **Cryptographically Chained Immutable WORM Audit Ledger**: All state mutations, approval signoffs, redline modifications, and signature applications generate SHA-256 linked blocks with monotonic sequence numbers, guarded by non-bypassable PostgreSQL triggers preventing UPDATE, DELETE, or TRUNCATE operations.
-4. **Zero-Egress AI & Contract Intelligence**: Semantic clause classification, deviation analysis, risk scoring, and counterparty redline evaluation are processed in-process using local deterministic models and heuristic AST parsers. Zero confidential customer contract text leaves the isolated security boundary.
-5. **Continuous 26-Stage Contract Lifecycle Engine**: Formal finite state machine governing the complete lifecycle from initial intake request, playbook authoring, counterparty negotiation, segregation-of-duties approval, In-VPC digital signing, three-way financial matching, obligation tracking, through to immutable archival or litigation hold.
+The target architecture is based on five design goals; conformance remains subject to phase-specific implementation and runtime evidence:
+1. **Hybrid Deployment**: Separate SaaS orchestration from customer-side cryptographic operations and document storage. The use of customer-managed HSMs and the boundary are not verified for every deployment.
+2. **PostgreSQL Row-Level Security (`FORCE RLS`)**: Apply tenant policies and transaction-local tenant context as defense in depth. These application-settable settings do not prevent access by a compromised application credential able to set arbitrary session context.
+3. **Tamper-Evident Audit Ledger**: Use chained audit records and database mutation guards where implemented; coverage of all state mutations and deployed WORM properties requires further verification.
+4. **Restricted AI Egress**: Keep contract text within approved processing boundaries. No blanket zero-egress claim is made; provider and data-flow behavior requires runtime validation.
+5. **Contract Lifecycle**: Model the intended 26 stages; the diagram is not proof that all stages are enforced by a persisted production state machine.
 
 ---
 
@@ -89,7 +91,7 @@ The platform is decomposed into loosely coupled, highly isolated containerized s
 | **Satellite Gateway** | Go / Rust native binary | Customer In-VPC | Executes local cryptographic operations, RSA-PSS/ECDSA document signing, and HSM custody. |
 | **PostgreSQL 15+ Primary** | PostgreSQL 15.6 + pgvector + RLS | Isolated Cloud DB VPC | Multi-tenant relational storage with kernel-enforced Row-Level Security and 4-tier database roles. |
 | **WORM Audit Ledger Store** | PostgreSQL 15+ Append-Only Tables | Isolated Cloud DB VPC | Immutable cryptographic hash chain (Migration 007) with tamper-detection triggers. |
-| **In-VPC Object Store** | MinIO / AWS S3 with KMS-SSE | Customer In-VPC | Stores encrypted document binaries; plaintext never transits across the cloud boundary. |
+| **In-VPC Object Store** | MinIO / AWS S3 with KMS-SSE | Customer In-VPC | Intended encrypted document storage. The current SaaS schema also contains `contracts.content_body`; plaintext isolation is not verified. |
 
 ```mermaid
 graph LR
@@ -112,7 +114,7 @@ graph LR
 
 ### 2. ZERO-TRUST HYBRID TOPOLOGY & KEY BOUNDARIES
 
-In compliance with FIPS 140-3 Level 3 and NIST SP 800-57, **cryptographic key custody is strictly physically separated from cloud metadata**:
+The target design separates cryptographic key custody from cloud metadata. FIPS 140-3 Level 3 validation, NIST SP 800-57 conformance, and physical key separation are not established by this specification:
 
 ```
 +-----------------------------------------------------------------------------------+
@@ -234,13 +236,13 @@ stateDiagram-v2
 
 ---
 
-### 5. ZERO-EGRESS AI ARCHITECTURE
+### 5. TARGET AI EGRESS CONTROLS (NOT VERIFIED)
 
-To eliminate privacy and intellectual property leakage:
-1. **No Third-Party Cloud AI API Dependencies**: Cleartext agreements are never sent to external LLMs (OpenAI, Anthropic, Google Gemini Cloud APIs) in production tenant environments.
-2. **Deterministic Heuristic AST Engines**: Clause matching uses abstract syntax tree (AST) tokenization, Levenshtein distance matrices, and regex rule engines.
-3. **Local Embedding & Scoring**: Contract risk matrices and deviation percentages are computed in-process via local cosine similarity vectors.
-4. **Adversarial Prompt Injection Defense**: All user-entered text, counterparty commentary, and redline annotations pass through a sanitization filter intercepting system-prompt overrides, delimiter escapes, and privilege escalation patterns.
+The following are design requirements, not verified deployment claims:
+1. Do not send cleartext agreements to unapproved third-party AI services.
+2. Use local analysis where possible and validate every external provider and egress path.
+3. Record the model, data handling, and authorization boundaries for each AI operation.
+4. Treat prompt-injection filters as defense in depth, not as a guarantee that arbitrary user text is safe.
 
 ---
 
@@ -248,21 +250,17 @@ To eliminate privacy and intellectual property leakage:
 
 | Operational Metric | Architectural Target | Verified Benchmark | Architecture Mechanism |
 |:---|:---|:---|:---|
-| **High Availability (HA)** | 99.99% Uptime | 99.995% | Multi-AZ EKS/AKS deployment with automatic pod failure recovery and Aurora Multi-AZ replication. |
-| **Recovery Point Objective (RPO)** | < 1 Minute | 0 Seconds (Synchronous) | Multi-AZ synchronous PostgreSQL streaming replication and WAL archiving. |
-| **Recovery Time Objective (RTO)** | < 15 Minutes | 4.2 Minutes | Automated Terraform infrastructure orchestration + Kubernetes state restoration. |
-| **API Latency (p95)** | < 100 ms | 12.8 ms | Go compiled binary core with zero-allocation HTTP request multiplexing. |
-| **Document Signing Throughput** | > 200 docs/sec | 420 docs/sec | Asynchronous In-VPC Satellite Gateway queue with parallel HSM worker threads. |
-| **Tenant Isolation Leakage** | ZERO (0 records) | VERIFIED 0.00% | Kernel-level PostgreSQL 15+ Row-Level Security with `FORCE RLS`. |
+| **High Availability (HA)** | 99.99% target | Not measured | Requires deployed multi-zone service and an observed availability window. |
+| **Recovery Point Objective (RPO)** | < 1 minute target | Not measured | Requires backup/replication configuration and a restore/failover exercise. |
+| **Recovery Time Objective (RTO)** | < 15 minutes target | Not measured | Requires a timed recovery exercise. |
+| **API Latency (p95)** | < 100 ms target | Not measured | Requires a documented workload and reproducible load test. |
+| **Document Signing Throughput** | > 200 docs/sec target | Not measured | Requires supported signing hardware/provider and a reproducible benchmark. |
+| **Tenant Isolation Leakage** | No cross-tenant access target | Not fully verified | Requires migration execution and negative database/API tests on supported PostgreSQL versions. |
 
 ---
 
 ### 7. ARCHITECTURAL APPROVAL & CONFORMANCE DECLARATION
 
-This architecture document serves as the binding engineering specification for the Enterprise CLM Platform. All 400 capability modules, 20 operational domains, and 26 lifecycle stages conform strictly to these design patterns.
+This document is a target design, not an approval or conformance declaration. The 400-entry registry, 20 domain labels, and 26 lifecycle-stage diagram do not establish that each capability or stage is implemented or verified.
 
-**Approved by:**
-- *Principal Enterprise Software Architect* — CLM Engineering Division
-- *Chief Information Security Officer (CISO)* — Zero-Trust & Cryptography Group
-- *Head of Legal Technology & Regulatory Compliance* — Enterprise Governance Board
-
+No approval records or independent certification evidence are included here. Release status must be determined from the active requirement tracker and reproducible evidence, not this architecture specification.

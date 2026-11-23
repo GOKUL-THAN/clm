@@ -11,17 +11,22 @@
 
 ## Evidence boundary
 
+> **Superseding update (2026-11-06):** Earlier run references below predate
+> the latest verification. GitHub Actions run
+> [42257224350](https://github.com/GOKUL-THAN/clm/actions/runs/42257224350)
+> passed all nine jobs on commit
+> `360f3b95d64d60fcf07e17ae4f429a6b533f93ad`, including the configured
+> vSatellite image build/scan and non-root assertions. This later run supersedes
+> earlier CI status statements. No cloud
+> deployment, branch-protection change, restore exercise, compliance
+> assessment, or production operation was performed.
+
 This register records what is present in the repository and which checks have
 actually run. A manifest is not proof that infrastructure is deployed. The
-last all-green CI run before the changes described in this assessment was
-[run 42153501338](https://github.com/GOKUL-THAN/clm/actions/runs/42153501338)
-on commit `4262e6d`. After the infrastructure and CI changes, run
-[42253960553](https://github.com/GOKUL-THAN/clm/actions/runs/42253960553)
-passed all nine jobs on commit `403d2d7`, including dedicated
-ServiceAccount/token assertions, Kubernetes policy checks, Terraform
-formatting/provider validation, SBOM upload, and SLSA provenance attestation
-for the SBOM. The attestation was downloaded and verified with GitHub CLI,
-constraining both repository and signer workflow.
+latest successful branch run is
+[42257224350](https://github.com/GOKUL-THAN/clm/actions/runs/42257224350)
+on commit `360f3b95d64d60fcf07e17ae4f429a6b533f93ad`. Its nine CI jobs passed.
+This proves only the configured checks for that commit.
 
 No cloud apply, Kubernetes deployment, branch-protection change, restore
 exercise, compliance assessment, or production operation was performed.
@@ -30,20 +35,20 @@ exercise, compliance assessment, or production operation was performed.
 
 | Area | Repository evidence | Verified result | Remaining gap |
 |---|---|---|---|
-| Docker | Multi-stage Dockerfiles for the SaaS server, satellite gateway, and vSatellite; runtime stages declare a non-root `clm` user | CI run `42253960553` built the SaaS and gateway images and passed its configured Trivy critical-severity scan; vSatellite build/scan and explicit non-root image assertions were added afterward and are pending CI | Base-image pinning, provenance, runtime policy, and deployment behavior are not independently validated |
-| Kubernetes | Restricted Pod Security labels and non-root, read-only-root-filesystem, no-privilege-escalation settings in the control-plane and gateway workloads; dedicated namespace ServiceAccounts with API-token automount disabled; NetworkPolicy manifests | YAML syntax, NetworkPolicy and pod-security assertions, ServiceAccount definitions, and pod-level account/token settings passed in CI run `42253960553` | No Role/RoleBinding grants are added because no Kubernetes API client use was found in the Go workloads; cloud IAM/workload identity must be provisioned separately; no cluster/CNI deployment test |
-| Terraform | AWS, Azure, and GCP configuration; partial S3, AzureRM, and GCS remote backends declared; AWS now specifies private RDS access, provider-managed master-password storage, S3 public-access blocking, versioning, TLS-only bucket access, and required Object Lock retention inputs | Terraform formatting passed; provider initialization with `-backend=false` and `terraform validate` passed for all three modules in CI run `42253960553` | Backend buckets/accounts/containers must be provisioned and passed through backend config with restrictive IAM, encryption, versioning, and locking; no plan/apply, drift check, or cloud validation; Azure/GCP controls need separate review |
-| CI/CD | `.github/workflows/ci.yml` runs Go formatting, vet, tests, race tests, builds, Gosec, govulncheck, Gitleaks, Trivy filesystem/IaC scan, Syft SBOM generation and upload, PostgreSQL 15 RLS tests, container scans, Kubernetes policy assertions, and Terraform validation | CI run `42253960553` passed all nine jobs, including SBOM upload and attestation; expanded vSatellite/non-root container checks are pending CI | Branch protection, required-check settings, deployment approvals, and rollback gates are GitHub/environment configuration and remain unverified |
-| Dependencies | `govulncheck` runs for each staged Go module; Trivy scans the filesystem | All three module dependency checks passed in run `42253960553` | No independent Node dependency SCA inventory or scheduled vulnerability-response exercise was verified |
-| Source code | Gosec runs on each Go module; Gitleaks scans Git history | Gosec and full-history Gitleaks passed in run `42253960553` | SAST coverage of JavaScript and other languages is not established |
-| Container scanning | Trivy scans built SaaS, gateway, and vSatellite images and fails for critical findings; CI also checks image runtime users are non-root | SaaS and gateway scans passed in run `42253960553`; vSatellite scan and explicit non-root assertions were added afterward and are pending CI | Threshold is critical-only; no container image provenance/signing or runtime policy is verified |
-| SBOM | Syft generates CycloneDX JSON; the workflow uploads it as a GitHub Actions artifact | Run `42253960553` uploaded `clm-filesystem-sbom-403d2d77c991c58058b6d8e7e79b08c18dfb17b2` (69,087 bytes); artifact expiration is not set by the workflow and follows repository policy | The SBOM describes the source filesystem, not the built images; artifact is not a permanent archive |
-| Provenance | GitHub SLSA provenance attestation is generated for the SBOM on trusted workflow runs | `gh attestation verify` passed for the downloaded artifact with repository `GOKUL-THAN/clm` and signer workflow `.github/workflows/ci.yml`; predicate type is `https://slsa.dev/provenance/v1` and subject SHA-256 is `a9acc74106849ac80ab427e0b0b64b8bd4c9d6cd4694891d20399a46816ad87c` | Container images/release artifacts are not attested; an SBOM attestation does not establish an independent SLSA level or release provenance |
-| Secrets | Gitleaks full-history scan; AWS RDS master password is configured for provider-managed storage | Gitleaks passed in run `42253960553` | No end-to-end secret-manager rotation, application consumption, or cloud IAM validation |
+| Docker | Multi-stage Dockerfiles for the SaaS server, satellite gateway, and vSatellite; CI checks non-root runtime identity | All configured image builds and critical-severity Trivy scans passed in run `42257224350` | Base-image pinning, image signing/provenance, runtime policy, and deployment behavior are not independently validated |
+| Kubernetes | Restricted Pod Security labels, non-root/read-only/no-escalation settings, dedicated namespace ServiceAccounts and NetworkPolicy manifests | Configured YAML, policy, account and pod setting assertions passed in run `42257224350` | No cluster/CNI deployment test; cloud IAM/workload identity and real namespace label behavior remain unverified |
+| Terraform | AWS, Azure, and GCP configuration with partial remote backend declarations | Formatting, provider initialization with `-backend=false`, and validation passed in run `42257224350` | No plan/apply, cloud validation, or drift check; backend security and Azure/GCP controls need deployment-time review |
+| CI/CD | `.github/workflows/ci.yml` runs Go checks, Gosec, govulncheck, Gitleaks, Trivy, SBOM, PostgreSQL, container, Kubernetes, and Terraform checks | All nine jobs passed in CI run `42257224350` | Branch protection, required-check settings, deployment approvals, and rollback gates remain unverified |
+| Dependencies | `govulncheck` runs for each staged Go module; Trivy scans the filesystem | Configured checks passed in run `42257224350` | Independent Node dependency SCA inventory and scheduled vulnerability-response exercise not verified |
+| Source code | Gosec runs on each Go module; Gitleaks scans Git history | Configured Gosec and Gitleaks checks passed in run `42257224350` | SAST coverage of JavaScript and other languages is not established |
+| Container scanning | Trivy scans built SaaS, gateway, and vSatellite images and fails for critical findings; CI checks non-root runtime identity | All configured image scans and non-root assertions passed in run `42257224350` | Critical-only threshold; no image provenance/signing or runtime policy is verified |
+| SBOM | Syft generates CycloneDX JSON; workflow uploads it as a GitHub Actions artifact | SBOM generation/upload job passed in run `42257224350` | Scope, retention, and built-image completeness are not independently verified here |
+| Provenance | GitHub attestation is generated for the SBOM on trusted workflow runs | Run `42257224350` attestation job passed; earlier downloaded SBOM attestation was verified with `gh attestation verify` | Current run artifact attestation not independently verified in this assessment; container images/release artifacts not attested |
+| Secrets | Gitleaks full-history scan; AWS RDS master password is configured for provider-managed storage | Gitleaks passed in run `42257224350` | No end-to-end secret-manager rotation, application consumption, or cloud IAM validation |
 | Monitoring | Prometheus, Grafana dashboard, and alerting configuration exist under `deploy/observability` | Configuration presence only | No live telemetry, alert delivery, SLO, or incident-response exercise |
 | Backup | Cloud database backup configuration exists in provider IaC | Configuration presence only | No current backup job or restore validation evidence |
 | Disaster recovery | DR and recovery documents exist | Documentation only | No measured RPO/RTO or isolated restore/failover exercise in this assessment |
-| Network | Kubernetes NetworkPolicies exist; a former control-plane ingress rule admitted `0.0.0.0/0` on gRPC port 9090 | Source fix restricts the peer to labeled gateway pods in `clm-in-vpc`; its CI invariant check passed in run `42253960553` | Must be tested with the selected CNI and real namespace labels; external egress allowlists remain deployment-specific |
+| Network | Kubernetes NetworkPolicies exist; a former control-plane ingress rule admitted `0.0.0.0/0` on gRPC port 9090 | Source fix restricts the peer to labeled gateway pods in `clm-in-vpc`; its CI invariant check passed in run `42257224350` | Must be tested with the selected CNI and real namespace labels; external egress allowlists remain deployment-specific |
 
 ## Standards applicability and evidence register
 

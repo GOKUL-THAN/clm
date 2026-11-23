@@ -38,8 +38,9 @@ func TestMain(m *testing.M) {
 			panic("CLM_TEST_DB_REQUIRED is set but CLM_TEST_DB_DSN is empty: " +
 				"the repository integration tests cannot run")
 		}
-		println("WARNING: CLM_TEST_DB_DSN not set — repository integration tests SKIPPED (0 tests run)")
-		os.Exit(0)
+		println("WARNING: CLM_TEST_DB_DSN not set — PostgreSQL integration tests will be skipped")
+		code := m.Run()
+		os.Exit(code)
 	}
 
 	raw, err := sql.Open("postgres", dsn)
@@ -68,24 +69,125 @@ func skipIfNoDB(t *testing.T) {
 func seedTenant(t *testing.T, ctx context.Context, name string) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
-	_, err := testDB.ExecContext(ctx,
-		`INSERT INTO tenants (id, name, slug, plan, status, max_certs, max_satellites,
-		    max_users, sso_enabled, data_region)
-		 VALUES ($1, $2, $3, 'free', 'active', 100, 2, 5, false, 'ap-south-1')`,
-		id, name, name)
-	if err != nil {
+	provisionCtx := core.WithTenantProvisioning(ctx)
+	if err := testDB.WithTenantProvisioningContext(provisionCtx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO tenants (id, name, slug, plan, status, max_certs, max_satellites,
+			    max_users, sso_enabled, data_region)
+			 VALUES ($1, $2, $3, 'free', 'active', 100, 2, 5, false, 'ap-south-1')`,
+			id, name, name)
+		return err
+	}); err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = testDB.Exec(`DELETE FROM satellite_commands WHERE tenant_id = $1`, id)
-		_, _ = testDB.Exec(`DELETE FROM satellites WHERE tenant_id = $1`, id)
-		_, _ = testDB.Exec(`DELETE FROM cloud_account_idempotency WHERE tenant_id = $1`, id)
-		_, _ = testDB.Exec(`DELETE FROM cloud_accounts WHERE tenant_id = $1`, id)
-		_, _ = testDB.Exec(`DELETE FROM users WHERE tenant_id = $1`, id)
-		_, _ = testDB.Exec(`DELETE FROM teams WHERE tenant_id = $1`, id)
-		_, _ = testDB.Exec(`DELETE FROM tenants WHERE id = $1`, id)
+		platformCtx := core.WithPlatformAccess(context.Background())
+		_ = testDB.WithPlatformContext(platformCtx, func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, `DELETE FROM satellite_commands WHERE tenant_id = $1`, id)
+			if err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `DELETE FROM satellites WHERE tenant_id = $1`, id)
+			if err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `DELETE FROM cloud_account_idempotency WHERE tenant_id = $1`, id)
+			if err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `DELETE FROM cloud_accounts WHERE tenant_id = $1`, id)
+			if err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `DELETE FROM users WHERE tenant_id = $1`, id)
+			if err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `DELETE FROM teams WHERE tenant_id = $1`, id)
+			if err != nil {
+				return err
+			}
+			_, err = tx.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, id)
+			return err
+		})
 	})
 	return id
+}
+
+func TestUserRepositoryEnforcesTenantScope(t *testing.T) {
+	skipIfNoDB(t)
+	ctx := context.Background()
+	tenantA := seedTenant(t, ctx, "user-scope-a-"+uuid.NewString()[:8])
+	tenantB := seedTenant(t, ctx, "user-scope-b-"+uuid.NewString()[:8])
+	ctxA := core.WithTenantID(ctx, tenantA)
+	ctxB := core.WithTenantID(ctx, tenantB)
+	repo := NewUserRepository(testDB)
+	userA := &models.User{
+		ID: uuid.New(), TenantID: tenantA, Email: uuid.NewString() + "@example.invalid",
+		Name: "Tenant A User", Role: models.RoleViewer, Status: "active",
+		PasswordHash: "test-only", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	userB := &models.User{
+		ID: uuid.New(), TenantID: tenantB, Email: uuid.NewString() + "@example.invalid",
+		Name: "Tenant B User", Role: models.RoleViewer, Status: "active",
+		PasswordHash: "test-only", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	for _, row := range []struct {
+		ctx  context.Context
+		user *models.User
+	}{{ctxA, userA}, {ctxB, userB}} {
+		if err := repo.Create(row.ctx, row.user); err != nil {
+			t.Fatalf("create tenant user: %v", err)
+		}
+	}
+
+	if _, err := repo.GetByIDForTenant(ctxA, tenantA, userA.ID); err != nil {
+		t.Fatalf("read user in owning tenant: %v", err)
+	}
+	if _, err := repo.GetByIDForTenant(ctxA, tenantB, userA.ID); err == nil {
+		t.Fatal("cross-tenant user lookup was accepted without a platform context")
+	}
+
+	users, err := repo.ListByTenant(ctxA, tenantA)
+	if err != nil {
+		t.Fatalf("list users in tenant A: %v", err)
+	}
+	if len(users) != 1 || users[0].ID != userA.ID || users[0].TenantID != tenantA {
+		t.Fatalf("tenant A user list = %+v, want only user %s", users, userA.ID)
+	}
+
+	crossTenantUpdate := *userA
+	crossTenantUpdate.Name = "Unauthorized cross-tenant update"
+	if err := repo.UpdateForTenant(ctxA, tenantB, &crossTenantUpdate); err == nil {
+		t.Fatal("cross-tenant user update was accepted without a platform context")
+	}
+	if err := repo.DeleteForTenant(ctxA, tenantB, userA.ID); err == nil {
+		t.Fatal("cross-tenant user delete was accepted without a platform context")
+	}
+
+	stillOwned, err := repo.GetByIDForTenant(ctxA, tenantA, userA.ID)
+	if err != nil {
+		t.Fatalf("read user after rejected cross-tenant operations: %v", err)
+	}
+	if stillOwned.Name != userA.Name {
+		t.Fatalf("cross-tenant update changed user name to %q", stillOwned.Name)
+	}
+
+	userA.Name = "Updated Tenant A User"
+	userA.UpdatedAt = time.Now().UTC()
+	if err := repo.UpdateForTenant(ctxA, tenantA, userA); err != nil {
+		t.Fatalf("update user in owning tenant: %v", err)
+	}
+	updated, err := repo.GetByIDForTenant(ctxA, tenantA, userA.ID)
+	if err != nil || updated.Name != userA.Name {
+		t.Fatalf("read updated tenant A user = %+v, error = %v", updated, err)
+	}
+	if err := repo.DeleteForTenant(ctxA, tenantA, userA.ID); err != nil {
+		t.Fatalf("delete user in owning tenant: %v", err)
+	}
+	if _, err := repo.GetByIDForTenant(ctxA, tenantA, userA.ID); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("read deleted user error = %v, want ErrUserNotFound", err)
+	}
 }
 
 // TestUserRepo_GetByEmail_NullPasswordHash guards the bug that mattered most:
@@ -103,11 +205,13 @@ func TestUserRepo_GetByEmail_NullPasswordHash(t *testing.T) {
 	email := "sso-only-" + uuid.NewString()[:8] + "@aiforgers.tech"
 
 	// password_hash deliberately omitted, so it is NULL.
-	_, err := testDB.ExecContext(ctx,
-		`INSERT INTO users (id, tenant_id, email, name, role, status, mfa_enabled)
-		 VALUES ($1, $2, $3, 'SSO Only', 'viewer', 'active', false)`,
-		uuid.New(), tenantID, email)
-	if err != nil {
+	if err := testDB.WithTenantContext(core.WithTenantID(ctx, tenantID), tenantID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(core.WithTenantID(ctx, tenantID),
+			`INSERT INTO users (id, tenant_id, email, name, role, status, mfa_enabled)
+			 VALUES ($1, $2, $3, 'SSO Only', 'viewer', 'active', false)`,
+			uuid.New(), tenantID, email)
+		return err
+	}); err != nil {
 		t.Fatalf("insert passwordless user: %v", err)
 	}
 
@@ -147,17 +251,20 @@ func TestUserRepo_GetByEmail_NotFound(t *testing.T) {
 func TestTenantRepo_GetByID_NullSSOProvider(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
+	platformCtx := core.WithPlatformAccess(ctx)
 	repo := NewTenantRepository(testDB)
 
 	tenantID := seedTenant(t, ctx, "null-sso-"+uuid.NewString()[:8])
 
 	// Make the nullable column explicitly NULL.
-	if _, err := testDB.ExecContext(ctx,
-		`UPDATE tenants SET sso_provider = NULL WHERE id = $1`, tenantID); err != nil {
+	if err := testDB.WithPlatformContext(core.WithPlatformAccess(ctx), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `UPDATE tenants SET sso_provider = NULL WHERE id = $1`, tenantID)
+		return err
+	}); err != nil {
 		t.Fatalf("null out sso_provider: %v", err)
 	}
 
-	tenant, err := repo.GetByID(ctx, tenantID)
+	tenant, err := repo.GetByID(platformCtx, tenantID)
 	if err != nil {
 		t.Fatalf("GetByID on a NULL sso_provider must succeed, got: %v", err)
 	}
@@ -166,7 +273,7 @@ func TestTenantRepo_GetByID_NullSSOProvider(t *testing.T) {
 	}
 
 	// List must agree with the single-row read — the two drifted before.
-	all, err := repo.List(ctx)
+	all, err := repo.List(platformCtx)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -185,7 +292,7 @@ func TestTenantRepo_GetByID_NotFound(t *testing.T) {
 	skipIfNoDB(t)
 	repo := NewTenantRepository(testDB)
 
-	tenant, err := repo.GetByID(context.Background(), uuid.New())
+	tenant, err := repo.GetByID(core.WithPlatformAccess(context.Background()), uuid.New())
 	if !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("expected core.ErrNotFound, got %v", err)
 	}
@@ -200,12 +307,13 @@ func TestTenantRepo_GetByID_NotFound(t *testing.T) {
 func TestTenantRepo_CountDependents_And_Delete(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
+	platformCtx := core.WithPlatformAccess(ctx)
 	repo := NewTenantRepository(testDB)
 
 	tenantID := seedTenant(t, ctx, "deps-"+uuid.NewString()[:8])
 
 	// Empty tenant: no dependents, delete succeeds.
-	deps, err := repo.CountDependents(ctx, tenantID)
+	deps, err := repo.CountDependents(platformCtx, tenantID)
 	if err != nil {
 		t.Fatalf("CountDependents: %v", err)
 	}
@@ -214,14 +322,17 @@ func TestTenantRepo_CountDependents_And_Delete(t *testing.T) {
 	}
 
 	// Attach a user, and the tenant must now report exactly that.
-	if _, err := testDB.ExecContext(ctx,
-		`INSERT INTO users (id, tenant_id, email, name, role, status, mfa_enabled, password_hash)
-		 VALUES ($1, $2, $3, 'Dep User', 'viewer', 'active', false, 'x')`,
-		uuid.New(), tenantID, "dep-"+uuid.NewString()[:8]+"@aiforgers.tech"); err != nil {
+	if err := testDB.WithTenantContext(core.WithTenantID(ctx, tenantID), tenantID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(core.WithTenantID(ctx, tenantID),
+			`INSERT INTO users (id, tenant_id, email, name, role, status, mfa_enabled, password_hash)
+			 VALUES ($1, $2, $3, 'Dep User', 'viewer', 'active', false, 'x')`,
+			uuid.New(), tenantID, "dep-"+uuid.NewString()[:8]+"@aiforgers.tech")
+		return err
+	}); err != nil {
 		t.Fatalf("insert dependent user: %v", err)
 	}
 
-	deps, err = repo.CountDependents(ctx, tenantID)
+	deps, err = repo.CountDependents(platformCtx, tenantID)
 	if err != nil {
 		t.Fatalf("CountDependents: %v", err)
 	}
@@ -229,16 +340,35 @@ func TestTenantRepo_CountDependents_And_Delete(t *testing.T) {
 		t.Errorf("expected users=1 in dependents, got %v", deps)
 	}
 
+	auditID := uuid.New()
+	if err := testDB.WithTenantContext(core.WithTenantID(ctx, tenantID), tenantID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(core.WithTenantID(ctx, tenantID),
+			`INSERT INTO audit_log (id, tenant_id, action, resource_type) VALUES ($1, $2, 'test', 'tenant')`,
+			auditID, tenantID)
+		return err
+	}); err != nil {
+		t.Fatalf("insert immutable audit record: %v", err)
+	}
+	if err := repo.DeleteCascade(platformCtx, tenantID); err == nil {
+		t.Fatal("DeleteCascade removed a tenant with immutable audit records")
+	}
+	if err := testDB.WithPlatformContext(core.WithPlatformAccess(ctx), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `DELETE FROM audit_log WHERE id = $1`, auditID)
+		return err
+	}); err != nil {
+		t.Fatalf("clean up immutable audit fixture: %v", err)
+	}
+
 	// A plain delete must fail while the foreign key still points at it.
-	if err := repo.Delete(ctx, tenantID); err == nil {
+	if err := repo.Delete(platformCtx, tenantID); err == nil {
 		t.Error("Delete should fail while dependents exist")
 	}
 
 	// Cascade removes the dependents and the tenant together.
-	if err := repo.DeleteCascade(ctx, tenantID); err != nil {
+	if err := repo.DeleteCascade(platformCtx, tenantID); err != nil {
 		t.Fatalf("DeleteCascade: %v", err)
 	}
-	if _, err := repo.GetByID(ctx, tenantID); !errors.Is(err, core.ErrNotFound) {
+	if _, err := repo.GetByID(platformCtx, tenantID); !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("tenant should be gone, got %v", err)
 	}
 
@@ -254,7 +384,7 @@ func TestTenantRepo_CountDependents_And_Delete(t *testing.T) {
 
 func TestTenantRepo_DeleteMissing(t *testing.T) {
 	skipIfNoDB(t)
-	err := NewTenantRepository(testDB).Delete(context.Background(), uuid.New())
+	err := NewTenantRepository(testDB).Delete(core.WithPlatformAccess(context.Background()), uuid.New())
 	if !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("expected core.ErrNotFound deleting an absent tenant, got %v", err)
 	}
@@ -277,10 +407,11 @@ func TestSatelliteRepo_GetByID_NotFound(t *testing.T) {
 func TestTenantRepo_UpdateRoundTrip(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
+	platformCtx := core.WithPlatformAccess(ctx)
 	repo := NewTenantRepository(testDB)
 
 	tenantID := seedTenant(t, ctx, "upd-"+uuid.NewString()[:8])
-	tenant, err := repo.GetByID(ctx, tenantID)
+	tenant, err := repo.GetByID(platformCtx, tenantID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -289,11 +420,11 @@ func TestTenantRepo_UpdateRoundTrip(t *testing.T) {
 	tenant.Plan = "enterprise"
 	tenant.MaxCerts = 100000
 	tenant.UpdatedAt = time.Now()
-	if err := repo.Update(ctx, tenant); err != nil {
+	if err := repo.Update(platformCtx, tenant); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 
-	got, err := repo.GetByID(ctx, tenantID)
+	got, err := repo.GetByID(platformCtx, tenantID)
 	if err != nil {
 		t.Fatalf("GetByID after update: %v", err)
 	}
@@ -305,9 +436,23 @@ func TestTenantRepo_UpdateRoundTrip(t *testing.T) {
 func TestControlPlaneAuditEventsAreAppendOnly(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
+	tenantID := uuid.New()
+	provisionCtx := core.WithTenantProvisioning(ctx)
+	if err := testDB.WithTenantProvisioningContext(provisionCtx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO tenants (id, name, slug, plan, status, max_certs, max_satellites, max_users, sso_enabled, data_region)
+			 VALUES ($1, $2, $3, 'free', 'active', 100, 2, 5, false, 'ap-south-1')`,
+			tenantID, "audit-event-tenant", "audit-event-tenant")
+		return err
+	}); err != nil {
+		t.Fatalf("seed audit tenant: %v", err)
+	}
 	id := uuid.New()
-	_, err := testDB.ExecContext(ctx, `INSERT INTO control_plane_audit_events (id,tenant_id,request_id,actor_id,actor_role,action,resource_type,outcome,source_ip) VALUES ($1,$2,'request',$3,'tenant_admin','POST /api/v1/users','users','success','127.0.0.1')`, id, uuid.New(), uuid.New())
-	if err != nil {
+	tenantCtx := core.WithTenantID(ctx, tenantID)
+	if err := testDB.WithTenantContext(tenantCtx, tenantID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(tenantCtx, `INSERT INTO control_plane_audit_events (id,tenant_id,request_id,actor_id,actor_role,action,resource_type,outcome,source_ip) VALUES ($1,$2,'request',$3,'tenant_admin','POST /api/v1/users','users','success','127.0.0.1')`, id, tenantID, uuid.New())
+		return err
+	}); err != nil {
 		t.Fatalf("insert audit event: %v", err)
 	}
 	if _, err := testDB.ExecContext(ctx, `UPDATE control_plane_audit_events SET outcome='failure' WHERE id=$1`, id); err == nil {
@@ -323,15 +468,21 @@ func TestCloudAccountIdempotencyCascadesOnDelete(t *testing.T) {
 	ctx := context.Background()
 	tenantID := seedTenant(t, ctx, "cloud-"+uuid.NewString()[:8])
 	accountID := uuid.New()
-	_, err := testDB.ExecContext(ctx, `INSERT INTO cloud_accounts (id,tenant_id,name,provider,encryption_version,credential_nonce,credential_ciphertext) VALUES ($1,$2,'primary','aws',1,$3,$4)`, accountID, tenantID, []byte("123456789012"), []byte("ciphertext"))
-	if err != nil {
-		t.Fatalf("insert cloud account: %v", err)
+	tenantCtx := core.WithTenantID(ctx, tenantID)
+	if err := testDB.WithTenantContext(tenantCtx, tenantID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(tenantCtx, `INSERT INTO cloud_accounts (id,tenant_id,name,provider,encryption_version,credential_nonce,credential_ciphertext) VALUES ($1,$2,'primary','aws',1,$3,$4)`, accountID, tenantID, []byte("123456789012"), []byte("ciphertext"))
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(tenantCtx, `INSERT INTO cloud_account_idempotency (tenant_id,idempotency_key,request_hash,cloud_account_id) VALUES ($1,'request-key','hash',$2)`, tenantID, accountID)
+		return err
+	}); err != nil {
+		t.Fatalf("insert cloud account/idempotency: %v", err)
 	}
-	_, err = testDB.ExecContext(ctx, `INSERT INTO cloud_account_idempotency (tenant_id,idempotency_key,request_hash,cloud_account_id) VALUES ($1,'request-key','hash',$2)`, tenantID, accountID)
-	if err != nil {
-		t.Fatalf("insert idempotency row: %v", err)
-	}
-	if _, err := testDB.ExecContext(ctx, `DELETE FROM cloud_accounts WHERE tenant_id=$1 AND id=$2`, tenantID, accountID); err != nil {
+	if err := testDB.WithTenantContext(core.WithTenantID(ctx, tenantID), tenantID, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(core.WithTenantID(ctx, tenantID), `DELETE FROM cloud_accounts WHERE tenant_id=$1 AND id=$2`, tenantID, accountID)
+		return err
+	}); err != nil {
 		t.Fatalf("delete cloud account: %v", err)
 	}
 	var remaining int
@@ -347,6 +498,7 @@ func TestCloudAccountCreateIdempotentConcurrentReplay(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
 	tenantID := seedTenant(t, ctx, "cloud-race-"+uuid.NewString()[:8])
+	ctx = core.WithTenantID(ctx, tenantID)
 	repo := NewCloudAccountRepository(testDB)
 	type result struct {
 		existing *models.EncryptedCloudCredentials
@@ -398,7 +550,7 @@ func seedSatellite(t *testing.T, ctx context.Context, tenantID uuid.UUID) (*Sate
 	repo := NewSatelliteRepository(testDB)
 	now := time.Now().UTC()
 	sat := &models.Satellite{ID: uuid.New(), TenantID: tenantID, Name: "sat-" + uuid.NewString()[:8], Type: models.SatelliteLocal, Status: models.SatelliteRegistering, ConnectorMode: models.ConnectorDirect, SecretsBackend: "vault", CreatedAt: now, UpdatedAt: now}
-	if err := repo.Create(ctx, sat); err != nil {
+	if err := repo.Create(core.WithTenantID(ctx, tenantID), sat); err != nil {
 		t.Fatalf("create satellite: %v", err)
 	}
 	return repo, sat
@@ -408,6 +560,7 @@ func TestSatelliteCredentialHashVerifyAndBinding(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
 	tenantID := seedTenant(t, ctx, "sat-auth-"+uuid.NewString()[:8])
+	ctx = core.WithTenantID(ctx, tenantID)
 	repo, sat := seedSatellite(t, ctx, tenantID)
 	plaintext, encoded, err := satelliteauth.Generate()
 	if err != nil {
@@ -441,6 +594,7 @@ func TestCommandIdempotencyClaimLeaseAndResult(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
 	tenantID := seedTenant(t, ctx, "cmd-"+uuid.NewString()[:8])
+	ctx = core.WithTenantID(ctx, tenantID)
 	repo, sat := seedSatellite(t, ctx, tenantID)
 	command := &models.SatelliteCommand{ID: uuid.New(), TenantID: tenantID, SatelliteID: sat.ID, IdempotencyKey: "stable-key", Type: "discover", Payload: `{}`, Status: models.CommandQueued, MaxAttempts: 3}
 	created, wasCreated, err := repo.QueueCommandIdempotent(ctx, tenantID, command)
@@ -501,6 +655,7 @@ func TestCommandLeaseExpiryAndDeadLetter(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
 	tenantID := seedTenant(t, ctx, "lease-"+uuid.NewString()[:8])
+	ctx = core.WithTenantID(ctx, tenantID)
 	repo, sat := seedSatellite(t, ctx, tenantID)
 	cmd := &models.SatelliteCommand{SatelliteID: sat.ID, IdempotencyKey: "expires", Type: "discover", Payload: `{}`, MaxAttempts: 2}
 	if err := repo.QueueCommandForTenant(ctx, tenantID, cmd); err != nil {
@@ -543,6 +698,7 @@ func TestRetryableCommandResultRequeuesAndGetsNewAttempt(t *testing.T) {
 	skipIfNoDB(t)
 	ctx := context.Background()
 	tenantID := seedTenant(t, ctx, "retry-"+uuid.NewString()[:8])
+	ctx = core.WithTenantID(ctx, tenantID)
 	repo, sat := seedSatellite(t, ctx, tenantID)
 	cmd := &models.SatelliteCommand{SatelliteID: sat.ID, IdempotencyKey: "retryable", Type: "discover", Payload: `{}`, MaxAttempts: 2}
 	if err := repo.QueueCommandForTenant(ctx, tenantID, cmd); err != nil {

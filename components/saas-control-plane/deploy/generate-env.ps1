@@ -15,6 +15,8 @@ function Get-RandomHex([int]$bytes) {
 }
 
 $pgPass = Get-RandomHex 16
+$appDbPass = Get-RandomHex 32
+$keycloakDbPass = Get-RandomHex 32
 $jwtSec = Get-RandomHex 32
 $masterKey = Get-RandomHex 16
 $kcPass = Get-RandomHex 16
@@ -23,6 +25,8 @@ $satToken = Get-RandomHex 16
 
 $content = @"
 POSTGRES_PASSWORD=$pgPass
+CLM_APP_DB_PASSWORD=$appDbPass
+CLM_KEYCLOAK_DB_PASSWORD=$keycloakDbPass
 REDIS_PASSWORD=
 JWT_SECRET=$jwtSec
 CLM_JWKS_URL=http://keycloak:8180/auth/realms/clm/protocol/openid-connect/certs
@@ -47,4 +51,3 @@ CLM_TLS_SERVER_NAME=localhost
 
 Set-Content -Path $envPath -Value $content -Encoding ASCII
 Write-Host "Generated $envPath successfully."
-

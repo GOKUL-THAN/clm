@@ -54,7 +54,7 @@ func (m *Monitor) checkGateways(ctx context.Context) {
 	// List all gateways across all tenants that are not already offline
 	// For now, we use a simplified approach: check satellites with status != "offline"
 	// In production, this would query with a filter
-	satellites, err := m.satRepo.ListAll(ctx)
+	satellites, err := m.satRepo.ListAll(core.WithPlatformAccess(ctx))
 	if err != nil {
 		m.logger.Debug("gateway health check: could not list satellites", zap.Error(err))
 		return
@@ -72,7 +72,7 @@ func (m *Monitor) checkGateways(ctx context.Context) {
 		if sat.LastHeartbeat == nil || now.Sub(*sat.LastHeartbeat) > m.offlineTimeout {
 			sat.Status = "offline"
 			sat.UpdatedAt = now
-			if err := m.satRepo.Update(ctx, sat); err != nil {
+			if err := m.satRepo.Update(core.WithTenantID(ctx, sat.TenantID), sat); err != nil {
 				m.logger.Warn("failed to mark gateway offline",
 					zap.String("satellite_id", sat.ID.String()),
 					zap.Error(err),

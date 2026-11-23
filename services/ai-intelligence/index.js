@@ -60,7 +60,11 @@ class AIIntelligenceEngine {
             /you\s+are\s+now\s+in\s+jailbreak/i,
             /print\s+(your\s+)?system\s+prompt/i,
             /repeat\s+(everything\s+)?above/i,
-            /bypass\s+(human|security)\s+review/i
+            /bypass\s+(human|security)\s+review/i,
+            /ignorar\s+(todas\s+las\s+)?instrucciones/i,
+            /ignorieren\s+sie/i,
+            /\u0438\u0433\u043d\u043e\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c/i,
+            /\u5ffd\u7565/i
         ];
     }
 

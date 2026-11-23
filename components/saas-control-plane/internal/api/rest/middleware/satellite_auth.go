@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/m2p/clm/internal/core"
 	"github.com/m2p/clm/pkg/config"
 	"github.com/m2p/clm/pkg/models"
 )
@@ -81,6 +82,7 @@ func SatelliteAuth(auth SatelliteAuthenticator, server config.ServerConfig) gin.
 		}
 		c.Set("satellite_id", identity.SatelliteID)
 		c.Set("tenant_id", identity.TenantID)
+		c.Request = c.Request.WithContext(core.WithTenantID(c.Request.Context(), identity.TenantID))
 		c.Next()
 	}
 }

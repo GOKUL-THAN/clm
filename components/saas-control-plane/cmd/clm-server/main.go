@@ -4,14 +4,17 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	schemamigrations "github.com/m2p/clm/deploy/migrations"
 	"github.com/m2p/clm/internal/api/rest"
 	"github.com/m2p/clm/internal/saas/approval"
 	"github.com/m2p/clm/internal/saas/cloudaccounts"
@@ -31,6 +34,18 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		if len(os.Args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: clm-server migrate")
+			os.Exit(2)
+		}
+		if err := runMigrations(); err != nil {
+			fmt.Fprintf(os.Stderr, "database migration failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Load configuration
 	cfgPath := os.Getenv("CLM_CONFIG")
 	if cfgPath == "" {
@@ -58,6 +73,12 @@ func main() {
 		logger.Fatal("failed to connect to database", zap.Error(err))
 	}
 	defer db.Close()
+	roleCtx, roleCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := db.VerifyApplicationRole(roleCtx); err != nil {
+		roleCancel()
+		logger.Fatal("database tenant-isolation role is not ready", zap.Error(err))
+	}
+	roleCancel()
 
 	// Initialize repositories (control plane scope only)
 	userRepo := postgres.NewUserRepository(db)
@@ -73,10 +94,9 @@ func main() {
 	ssoService := sso.NewService(userRepo, tenantRepo, cfg.JWT, logger)
 	auditService := auditservice.NewService(auditRepo)
 	approvalEngine := approval.NewEngine(approvalRepo, logger)
-	contractService, err := contract.NewPostgresService(db.DB, logger)
+	contractService, err := contract.NewPostgresService(db, logger)
 	if err != nil {
-		logger.Warn("postgres contract service fallback to memory", zap.Error(err))
-		contractService = contract.NewService(logger)
+		logger.Fatal("failed to initialize persistent contract service", zap.Error(err))
 	}
 	onboardingService := onboarding.NewService(tenantRepo, userRepo, satRepo, logger)
 	var cloudAccountService *cloudaccounts.Service
@@ -195,6 +215,60 @@ func main() {
 	}
 
 	logger.Info("server stopped")
+}
+
+func runMigrations() error {
+	baselineLegacy := false
+	if value := strings.TrimSpace(os.Getenv("CLM_BASELINE_LEGACY")); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("CLM_BASELINE_LEGACY must be a boolean: %w", err)
+		}
+		baselineLegacy = parsed
+	}
+
+	var db *sql.DB
+	if dsn := strings.TrimSpace(os.Getenv("CLM_MIGRATE_DSN")); dsn != "" {
+		var err error
+		db, err = sql.Open("postgres", dsn)
+		if err != nil {
+			return fmt.Errorf("opening migration database: %w", err)
+		}
+	} else {
+		cfgPath := os.Getenv("CLM_CONFIG")
+		if cfgPath == "" {
+			cfgPath = "configs/server.yaml"
+		}
+		cfg, err := config.LoadServerConfig(cfgPath)
+		if err != nil {
+			return fmt.Errorf("loading configuration: %w", err)
+		}
+		connectedDB, err := postgres.NewDB(&cfg.Database)
+		if err != nil {
+			return fmt.Errorf("connecting to migration database: %w", err)
+		}
+		db = connectedDB.DB
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("pinging migration database: %w", err)
+	}
+	result, err := schemamigrations.Apply(ctx, db, baselineLegacy)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Migrations applied: %d; already applied: %d; legacy baseline entries: %d\n",
+		len(result.Applied), len(result.Skipped), len(result.Baselined))
+	for _, name := range result.Applied {
+		fmt.Printf("Applied %s\n", name)
+	}
+	for _, name := range result.Baselined {
+		fmt.Printf("Baselined %s\n", name)
+	}
+	return nil
 }
 
 // envOr reads an environment variable, falling back to def when unset or empty.

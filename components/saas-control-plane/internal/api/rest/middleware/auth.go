@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/m2p/clm/internal/core"
 	"github.com/m2p/clm/pkg/config"
 )
 
@@ -101,6 +102,10 @@ func (a *Authenticator) Middleware() gin.HandlerFunc {
 		c.Set("user_id", identity.userID)
 		if identity.tenantID != nil {
 			c.Set("tenant_id", *identity.tenantID)
+			c.Request = c.Request.WithContext(core.WithTenantID(c.Request.Context(), *identity.tenantID))
+		}
+		if IsPlatformRole(identity.role) {
+			c.Request = c.Request.WithContext(core.WithPlatformAccess(c.Request.Context()))
 		}
 		c.Set("email", identity.email)
 		c.Set("role", identity.role)
@@ -387,6 +392,7 @@ func RequireTenantAccess(c *gin.Context, target uuid.UUID) bool {
 	}
 	if IsPlatformAdmin(c) {
 		c.Set("audit_tenant_id", target)
+		c.Request = c.Request.WithContext(core.WithTenantID(c.Request.Context(), target))
 		return true
 	}
 	caller := GetTenantID(c)
@@ -395,6 +401,7 @@ func RequireTenantAccess(c *gin.Context, target uuid.UUID) bool {
 		return false
 	}
 	c.Set("audit_tenant_id", target)
+	c.Request = c.Request.WithContext(core.WithTenantID(c.Request.Context(), target))
 	return true
 }
 

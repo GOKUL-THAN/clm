@@ -131,6 +131,7 @@ func TestLoadServerConfigReferences(t *testing.T) {
 	if err := os.WriteFile(databaseSecretPath, []byte(strongTestValue(24)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+
 	cloudKeyPath := filepath.Join(secretDir, "cloud-account-key")
 	if err := os.WriteFile(cloudKeyPath, []byte(strongTestValue(32)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -194,6 +195,21 @@ gateway:
 				t.Fatal("cloud-account master-key file was not resolved")
 			}
 		})
+	}
+}
+
+func TestLoadServerConfigAllowsRuntimeDatabaseUserOverride(t *testing.T) {
+	t.Setenv("DATABASE_USER", "clm_app_login")
+	t.Setenv("CLM_DB_PASSWORD", "test-only-database-password")
+	t.Setenv("CLM_JWT_SECRET", strongTestValue(32))
+	t.Setenv("CLM_CLOUD_ACCOUNT_MASTER_KEY", strongTestValue(32))
+
+	cfg, err := LoadServerConfig(filepath.Join("..", "..", "configs", "server.yaml"))
+	if err != nil {
+		t.Fatalf("load server config with runtime database role: %v", err)
+	}
+	if cfg.Database.User != "clm_app_login" {
+		t.Fatalf("database user = %q, want clm_app_login", cfg.Database.User)
 	}
 }
 

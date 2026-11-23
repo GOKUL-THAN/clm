@@ -81,7 +81,7 @@ func (s *Scheduler) checkAndRenew(ctx context.Context) {
 		PageSize:   500,
 	}
 
-	certs, total, err := s.certRepo.ListAllTenants(ctx, filter)
+	certs, total, err := s.certRepo.ListAllTenants(core.WithPlatformAccess(ctx), filter)
 	if err != nil {
 		s.logger.Error("failed to query expiring certificates", zap.Error(err))
 		return
@@ -145,7 +145,8 @@ func (s *Scheduler) checkAndRenew(ctx context.Context) {
 			Priority:       2,
 		}
 
-		queuedCommand, created, err := s.satRepo.QueueCommandIdempotent(ctx, cert.TenantID, cmd)
+		tenantCtx := core.WithTenantID(ctx, cert.TenantID)
+		queuedCommand, created, err := s.satRepo.QueueCommandIdempotent(tenantCtx, cert.TenantID, cmd)
 		if err != nil {
 			s.logger.Error("failed to queue renewal command",
 				zap.String("cert_id", cert.ID.String()),
@@ -164,7 +165,7 @@ func (s *Scheduler) checkAndRenew(ctx context.Context) {
 
 		cert.Status = models.CertStatusRenewing
 		cert.UpdatedAt = time.Now().UTC()
-		if err := s.certRepo.Update(ctx, cert); err != nil {
+		if err := s.certRepo.Update(tenantCtx, cert); err != nil {
 			s.logger.Error("failed to mark certificate as renewing",
 				zap.String("cert_id", cert.ID.String()),
 				zap.String("command_id", queuedCommand.ID.String()),

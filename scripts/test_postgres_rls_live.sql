@@ -6,6 +6,7 @@
 
 \set ON_ERROR_STOP on
 \echo '>>> Starting Live PostgreSQL RLS & Audit Hash Chain Test Suite <<<'
+SET ROLE clm_app_role;
 
 -- ------------------------------------------------------------------------------
 -- 0. Assert Strict Unprivileged Role Context (Zero Superuser False Positives)

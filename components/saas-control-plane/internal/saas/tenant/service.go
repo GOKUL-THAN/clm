@@ -17,7 +17,7 @@ import (
 var (
 	// ErrTenantNotFound wraps core.ErrNotFound so handlers can match either.
 	ErrTenantNotFound = fmt.Errorf("tenant not found: %w", core.ErrNotFound)
-	ErrTenantExists   = errors.New("tenant with this slug already exists")
+	ErrTenantExists   = core.ErrTenantExists
 )
 
 // Service handles tenant lifecycle operations.
@@ -35,9 +35,14 @@ func NewService(repo core.TenantRepository, logger *zap.Logger) *Service {
 func (s *Service) CreateTenant(ctx context.Context, name, plan, region string) (*models.Tenant, error) {
 	slug := strings.ToLower(strings.ReplaceAll(name, " ", "-"))
 
-	existing, _ := s.repo.GetBySlug(ctx, slug)
-	if existing != nil {
-		return nil, ErrTenantExists
+	if core.HasPlatformAccess(ctx) {
+		existing, err := s.repo.GetBySlug(ctx, slug)
+		if err == nil && existing != nil {
+			return nil, ErrTenantExists
+		}
+		if err != nil && !errors.Is(err, core.ErrNotFound) {
+			return nil, fmt.Errorf("check existing tenant: %w", err)
+		}
 	}
 
 	tenant := &models.Tenant{
@@ -55,6 +60,9 @@ func (s *Service) CreateTenant(ctx context.Context, name, plan, region string) (
 	}
 
 	if err := s.repo.Create(ctx, tenant); err != nil {
+		if errors.Is(err, core.ErrTenantExists) {
+			return nil, ErrTenantExists
+		}
 		return nil, err
 	}
 
