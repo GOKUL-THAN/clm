@@ -87,6 +87,7 @@ func main() {
 	auditRepo := postgres.NewAuditRepository(db)
 	cloudAccountRepo := postgres.NewCloudAccountRepository(db)
 	approvalRepo := postgres.NewApprovalRepository(db)
+	certRepo := postgres.NewCertificateRepository(db)
 
 	// Initialize services
 	userService := users.NewService(userRepo, cfg.JWT, logger)
@@ -156,6 +157,7 @@ func main() {
 		ContractService:     contractService,
 		OnboardingService:   onboardingService,
 		SatelliteRepo:       satRepo,
+		CertRepo:            certRepo,
 		Config:              cfg,
 		Logger:              logger,
 	}

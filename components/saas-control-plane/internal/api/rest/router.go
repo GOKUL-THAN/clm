@@ -44,6 +44,7 @@ type Dependencies struct {
 	ContractService       contract.Service
 	AIContractService     aicontract.Service
 	SatelliteRepo       core.SatelliteRepository
+	CertRepo            core.CertificateRepository
 	Config              *config.ServerConfig
 	Logger              *zap.Logger
 }
@@ -235,6 +236,18 @@ func NewRouter(deps *Dependencies) *gin.Engine {
 		if deps.AuditService != nil {
 			auditHandler := handlers.NewAuditHandler(deps.AuditService)
 			api.GET("/audits", middleware.RoleRequired("super_admin", "admin", "tenant_admin", "auditor"), auditHandler.List)
+		}
+
+		// Certificates Management (PKI Lifecycle)
+		if deps.CertRepo != nil {
+			certHandler := handlers.NewCertHandler(deps.CertRepo, deps.SatelliteRepo)
+			certs := api.Group("/certificates")
+			{
+				certs.GET("", certHandler.ListCertificates)
+				certs.POST("", certHandler.CreateCertificate)
+				certs.GET("/:id", certHandler.GetCertificate)
+				certs.POST("/:id/revoke", certHandler.RevokeCertificate)
+			}
 		}
 
 		// Corporate multi-level approval workflow with segregation of duties (ARC-004)

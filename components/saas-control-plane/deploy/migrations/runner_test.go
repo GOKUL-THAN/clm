@@ -11,8 +11,8 @@ func TestListReturnsOrderedApplicationMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 11 {
-		t.Fatalf("migration count = %d, want 11", len(got))
+	if len(got) != 12 {
+		t.Fatalf("migration count = %d, want 12", len(got))
 	}
 
 	checksumPattern := regexp.MustCompile(`^[a-f0-9]{64}$`)

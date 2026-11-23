@@ -1,4 +1,4 @@
-module github.com/m2p/clm/saas-control-plane
+module github.com/m2p/clm
 
 go 1.26.0
 
@@ -6,13 +6,11 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.30.0
 	github.com/aws/aws-sdk-go-v2/config v1.27.20
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.20
-	github.com/aws/aws-sdk-go-v2/service/acm v1.27.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.165.0
 	github.com/aws/aws-sdk-go-v2/service/eks v1.44.0
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.33.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.34.0
 	github.com/aws/aws-sdk-go-v2/service/lightsail v1.38.0
-	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v5 v5.2.2
@@ -20,6 +18,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
+	github.com/stretchr/testify v1.8.4
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
 )
@@ -36,6 +35,7 @@ require (
 	github.com/aws/smithy-go v1.20.2 // indirect
 	github.com/bytedance/sonic v1.9.1 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
@@ -55,6 +55,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
