@@ -7,6 +7,7 @@
     "scripts": {
         "start": "node dev-server.js",
         "test": "node scripts/verify_scenarios_a_to_h.js",
+        "test:all": "npm test && npm run test:400 && npm run test:corporate && npm run test:lifecycle && npm run test:workflows && npm run test:global && npm run test:v410 && npm run test:400-impl && npm run test:platform",
         "test:400": "node scripts/test_400_features.js",
         "test:corporate": "node scripts/test_corporate_modules.js",
         "test:lifecycle": "node scripts/test_lifecycle_26_stages.js",

@@ -1,7 +1,7 @@
 // ==============================================================================
 // scripts/test_platform_suite.js
-// Enterprise Platform & Real-Time Production Operations Verification Suite
-// Verifies all core enterprise modules in-process via handleMockAPI:
+// In-process mock API endpoint smoke suite.
+// This exercises the demo server through handleMockAPI, not live integrations:
 // - Organization Verifications & Domain Control Validation (DCV)
 // - SSO Configuration & Live Handshake Simulation
 // - Cloud Accounts Verification & Resource Discovery Sync
@@ -97,7 +97,7 @@ function runTest(category, name, method, url, body, check) {
 
 async function runAllPlatformTests() {
     console.log('='.repeat(80));
-    console.log('ENTERPRISE PLATFORM & REAL-TIME OPERATIONS VERIFICATION SUITE');
+    console.log('IN-PROCESS DEMO API ENDPOINT SMOKE SUITE');
     console.log('='.repeat(80));
 
     const testCases = [
@@ -177,7 +177,7 @@ async function runAllPlatformTests() {
         console.error(`\x1b[31mPlatform suite failed with ${failedCount} failing tests.\x1b[0m`);
         process.exit(1);
     } else {
-        console.log(`\x1b[32mAll ${passedCount} Real-Time Enterprise Platform tests passed with 100% success rate!\x1b[0m`);
+        console.log(`\x1b[32mAll ${passedCount} in-process demo API endpoint checks passed.\x1b[0m`);
         process.exit(0);
     }
 }

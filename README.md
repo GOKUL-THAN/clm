@@ -39,7 +39,7 @@ The CLM repository is an enterprise Contract and Certificate Lifecycle Managemen
 - Complete Certificate Management System (CMS) — X.509 upload with ASN.1 DER parsing, RBAC (5 roles), templates, notifications, tracking, and audit trail
 - 12 enterprise security and compliance endpoints — session validation, lockout, password policy, CSRF, LDAP/AD, pagination, PDF export, audit integrity, background jobs, HTML sanitizer, security headers, and rate-limit config
 - XSS vulnerability fix in certificate search
-- Live Vercel API bridge restored — all endpoints now live at https://clm-website-1cc7.vercel.app/
+- Vercel demo API is configured at https://clm-website-1cc7.vercel.app/; it serves in-memory mock APIs, not a production backend
 
 ### Platform Numbers
 
@@ -47,7 +47,7 @@ The CLM repository is an enterprise Contract and Certificate Lifecycle Managemen
 |---|---|
 | Mock API routes | ~105 (87 core + 12 security + 6 CMS) |
 | Feature registry entries | 400 across 20 domains |
-| Local test results | 476 total — 40 scenario, 400 registry, 26 lifecycle, 10 corporate |
+| Local Node test suites | 9 in-process/demo harnesses; their checks are not a production-readiness measure |
 | CMS UI pages | 7 (upload, inventory, users/roles, templates, notifications, tracking, audit) |
 | Security endpoints | 12 new in v4.1.0 |
 | Contract lifecycle stages | 26 |
@@ -80,6 +80,7 @@ npm test                  # Enterprise scenarios A-H (40 tests)
 npm run test:lifecycle    # 26-stage lifecycle (26 tests)
 npm run test:400          # Feature registry smoke (400 tests)
 npm run test:corporate    # Corporate modules (10 tests)
+npm run test:all          # Run every local Node.js suite
 npm run demo:health       # Health check all endpoints
 ```
 
@@ -651,21 +652,26 @@ AWS_REGION=ap-south-1
 ## 14. Test Suites
 
 ```bash
+npm run test:all        # Run all nine local Node.js suites
 npm test                # Scenarios A-H: 40/40 PASS
 npm run test:lifecycle  # 26 lifecycle stages: 26/26 PASS
 npm run test:400        # Feature registry: 400/400 PASS
 npm run test:corporate  # Corporate modules: 10/10 PASS
-# Total: 476 tests, all passing
 ```
 
 | Suite | Count | What it checks |
 |---|---|---|
-| Scenarios A-H | 40 | Contract flow, obligations, tenant isolation, BOLA, digital signing, AI safety, audit immutability |
-| 26-Stage Lifecycle | 26 | Each stage transition in the full contract lifecycle |
-| 400 Feature Registry | 400 | Registry entries, module metadata, domain-level smoke |
-| Corporate Modules | 10 | 10 corporate department module behaviors |
+| Scenarios A-H | 40 | In-process contract/demo scenarios; not a deployed API test |
+| 26-Stage Lifecycle | 26 | Local lifecycle harness path; not persistence or concurrency verification |
+| 400 Feature Registry | 400 | Registry wrapper checks; does not verify 400 business capabilities |
+| Corporate Modules | 10 | In-process scenario harness; no corporate systems connected |
+| Workflow Engine | 4 | Local test-mode workflow behavior |
+| Global Features | 15 | In-process feature scenarios |
+| v4.1.0 Gaps | 20 | Local mock API scenario checks |
+| 400 Implementation | 79 | Local mock API route scenarios |
+| Platform API | 27 | In-process `handleMockAPI` smoke checks; no live integrations |
 
-These are local in-memory harnesses. They do not replace PostgreSQL integration tests, live CA verification, or production deployment validation.
+These suites run against local/in-memory harnesses. Their counts overlap in scope and must not be added into a product capability total. They do not replace PostgreSQL-backed end-to-end testing, live provider verification, browser testing, disaster-recovery exercises, or staging/production validation. A passing `test:all` run is not evidence that the platform is production-ready.
 
 ---
 

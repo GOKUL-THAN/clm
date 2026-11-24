@@ -59,6 +59,8 @@ go.sum.tmp
 
 # Local tooling
 .DS_Store
+._*
+Thumbs.db
 .idea/
 .vscode/
 .vercel/

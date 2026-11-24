@@ -359,11 +359,5 @@ jobs:
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: '20'
-      - name: Run enterprise scenario tests
-        run: node scripts/verify_scenarios_a_to_h.js
-      - name: Run lifecycle tests
-        run: node scripts/test_lifecycle_26_stages.js
-      - name: Run feature registry tests
-        run: node scripts/test_400_features.js
-      - name: Run corporate module tests
-        run: node scripts/test_corporate_modules.js
+      - name: Run all local Node.js suites
+        run: npm run test:all
