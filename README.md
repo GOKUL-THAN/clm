@@ -1,4 +1,4 @@
-﻿# Enterprise Certificate & Contract Lifecycle Management (CLM) Platform
+# Enterprise Certificate & Contract Lifecycle Management (CLM) Platform
 
 > **The Definitive Unified Enterprise Architecture, PKI Automation, Hybrid Enclave Governance, and Security Specification.**
 
